@@ -80,20 +80,34 @@
         <textarea
           id="message"
           placeholder="Ask the agent for a summary or instruction..."
+          aria-label="Agent prompt input"
+          role="textbox"
         ></textarea>
         <div style="margin-top: 1rem; display: flex; gap: 1rem; align-items: center">
-          <button id="run" type="button">Run</button>
-          <span id="status" class="trace-info"></span>
+          <button id="run" type="button" aria-label="Run agent" role="button">Run</button>
+          <span id="status" class="trace-info" role="status" aria-live="polite"></span>
         </div>
         <div style="margin-top: 1rem">
           <strong>Final Output</strong>
-          <div id="final" class="logs"></div>
+          <div
+            id="final"
+            class="logs"
+            role="status"
+            aria-live="polite"
+            aria-label="Final agent output"
+          ></div>
         </div>
       </section>
       <section class="panel">
         <h2>LogFlow</h2>
-        <div class="trace-info" id="trace"></div>
-        <div id="log" class="logs"></div>
+        <div class="trace-info" id="trace" role="status" aria-live="polite"></div>
+        <div
+          id="log"
+          class="logs"
+          role="log"
+          aria-live="polite"
+          aria-label="Streaming agent events"
+        ></div>
       </section>
     </main>
     <script>
@@ -103,14 +117,106 @@
       const logOutput = document.getElementById("log");
       const traceInfo = document.getElementById("trace");
       const status = document.getElementById("status");
+      let eventSource = null;
+      let logLines = [];
+
+      function closeStream() {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+      }
+
+      function appendLogLine(line) {
+        logLines.push(line);
+        logOutput.textContent = logLines.join("\n");
+        logOutput.scrollTop = logOutput.scrollHeight;
+      }
+
+      async function hydrateEpisode(traceId) {
+        try {
+          const response = await fetch(`/api/episodes/${traceId}`);
+          if (response.ok) {
+            const text = (await response.text()).trim();
+            if (text.length > 0) {
+              logLines = text.split(/\n/);
+              logOutput.textContent = logLines.join("\n");
+              logOutput.scrollTop = logOutput.scrollHeight;
+            }
+          }
+        } catch (error) {
+          console.error("Failed to hydrate episode", error);
+        }
+      }
+
+      function subscribeToEvents(traceId) {
+        closeStream();
+        const source = new EventSource(`/api/run/${traceId}/events`);
+        eventSource = source;
+
+        source.addEventListener("open", () => {
+          status.textContent = "Running...";
+        });
+
+        source.addEventListener("event", (evt) => {
+          try {
+            const payload = JSON.parse(evt.data);
+            appendLogLine(JSON.stringify(payload));
+            status.textContent = "Streaming events...";
+          } catch (error) {
+            console.error("Failed to parse event", error);
+          }
+        });
+
+        source.addEventListener("complete", async (evt) => {
+          try {
+            const payload = JSON.parse(evt.data);
+            const reason = payload.reason ? ` (${payload.reason})` : "";
+            status.textContent = `Completed${reason}`;
+            finalOutput.textContent = JSON.stringify(payload.final ?? null, null, 2);
+          } catch (error) {
+            status.textContent = "Completed";
+            console.error("Failed to parse completion payload", error);
+          }
+          runButton.disabled = false;
+          await hydrateEpisode(traceId);
+          closeStream();
+        });
+
+        source.addEventListener("run-error", (evt) => {
+          try {
+            const payload = JSON.parse(evt.data);
+            status.textContent = `Failed: ${payload.message || "Unknown error"}`;
+            finalOutput.textContent = payload.message || "Run failed.";
+          } catch (error) {
+            status.textContent = "Failed";
+            finalOutput.textContent = "Run failed.";
+            console.error("Failed to parse error payload", error);
+          }
+          runButton.disabled = false;
+          closeStream();
+        });
+
+        source.onerror = () => {
+          if (source.readyState === EventSource.CLOSED) {
+            if (runButton.disabled) {
+              status.textContent = "Stream closed";
+              runButton.disabled = false;
+            }
+            closeStream();
+          }
+        };
+      }
 
       async function runChat() {
         const prompt = messageInput.value.trim();
+        closeStream();
         runButton.disabled = true;
-        status.textContent = "Running...";
+        status.textContent = "Starting...";
         finalOutput.textContent = "";
         logOutput.textContent = "";
         traceInfo.textContent = "";
+        logLines = [];
 
         try {
           const response = await fetch("/api/run", {
@@ -126,21 +232,15 @@
 
           const data = await response.json();
           const traceId = data.trace_id;
-          status.textContent = "Completed";
-          traceInfo.textContent = `trace_id: ${traceId}`;
-          finalOutput.textContent = JSON.stringify(data.result, null, 2);
-
-          const episodeResponse = await fetch(`/api/episodes/${traceId}`);
-          if (episodeResponse.ok) {
-            const episodeText = await episodeResponse.text();
-            logOutput.textContent = episodeText.trim();
-          } else {
-            logOutput.textContent = "Episode not available yet.";
+          if (!traceId) {
+            throw new Error("Trace id missing from response");
           }
+          traceInfo.textContent = `trace_id: ${traceId}`;
+          status.textContent = "Waiting for events...";
+          subscribeToEvents(traceId);
         } catch (error) {
           status.textContent = "Failed";
-          finalOutput.textContent = String(error.message || error);
-        } finally {
+          finalOutput.textContent = String(error?.message || error);
           runButton.disabled = false;
         }
       }
