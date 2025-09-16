@@ -4,6 +4,15 @@ export interface EpisodeIndexEntry {
   byte_offset: number;
 }
 
+export type LogFlowMessageData =
+  | Record<string, unknown>
+  | unknown[]
+  | string
+  | number
+  | boolean
+  | null
+  | undefined;
+
 export interface LogFlowMessage {
   id: string;
   ln: number;
@@ -13,7 +22,7 @@ export interface LogFlowMessage {
   ts: string;
   level?: "debug" | "info" | "warn" | "error";
   message: string;
-  data: unknown;
+  data: LogFlowMessageData;
   byte_offset?: number;
 }
 
