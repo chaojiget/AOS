@@ -1,43 +1,127 @@
-import { NextPage } from "next";
+import { FormEventHandler, useCallback, useState } from "react";
+import type { NextPage } from "next";
+import LogFlowPanel from "../components/LogFlowPanel";
 
 const HomePage: NextPage = () => {
+  const [input, setInput] = useState("");
+  const [isRunning, setIsRunning] = useState(false);
+  const [traceId, setTraceId] = useState<string | undefined>(undefined);
+  const [finalOutput, setFinalOutput] = useState<any>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+
+  const handleRun = useCallback(async () => {
+    if (isRunning) return;
+    const prompt = input.trim();
+    setIsRunning(true);
+    setRunError(null);
+    setTraceId(undefined);
+    setFinalOutput(null);
+    try {
+      const response = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: prompt }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data) {
+        throw new Error(data?.message ?? `Request failed (${response.status})`);
+      }
+      setTraceId(data.trace_id);
+      setFinalOutput(data.result);
+    } catch (err: any) {
+      setRunError(err?.message ?? "Failed to run agent");
+    } finally {
+      setIsRunning(false);
+    }
+  }, [input, isRunning]);
+
+  const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
+    (event) => {
+      event.preventDefault();
+      void handleRun();
+    },
+    [handleRun],
+  );
+
   return (
-    <div style={{ padding: "2rem" }}>
-      <h1>Agent OS (AOS)</h1>
-      <p>Welcome to Agent Operating System</p>
-      <div>
-        <h2>Project Features</h2>
-        <ul>
-          <li>最小可信闭环：围绕感知、计划、执行、评审与产出的 RunLoop</li>
-          <li>Episode 事件日志：以追加写 JSONL 记录所有事件</li>
-          <li>可回放与审计工具链：支持离线回放、审计与故障排查</li>
-          <li>工具/MCP 兼容层：统一封装 LLM 与工具调用</li>
-          <li>TypeScript 一体化：前后端、CLI 与脚本共享类型定义</li>
-        </ul>
-      </div>
-      <div>
-        <h2>Available Scripts</h2>
-        <ul>
-          <li>
-            <code>pnpm dev</code> - 启动开发服务器
-          </li>
-          <li>
-            <code>pnpm test</code> - 运行单元测试
-          </li>
-          <li>
-            <code>pnpm lint</code> - 运行代码检查
-          </li>
-          <li>
-            <code>pnpm typecheck</code> - 执行类型检查
-          </li>
-          <li>
-            <code>pnpm smoke</code> - 执行端到端冒烟测试
-          </li>
-          <li>
-            <code>pnpm replay</code> - 重放最近任务轨迹
-          </li>
-        </ul>
-      </div>
+    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0" }}>
+      <header style={{ padding: "1.5rem 2rem", background: "#1e293b", boxShadow: "0 1px 12px rgba(0,0,0,0.4)" }}>
+        <h1 style={{ margin: 0 }}>AgentOS · Chat + LogFlow</h1>
+        <p style={{ margin: "0.25rem 0 0", fontSize: "0.95rem", color: "#94a3b8" }}>
+          Submit a prompt to run the local agent, inspect timeline events, and explore task branches.
+        </p>
+      </header>
+
+      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "2rem", display: "grid", gap: "1.5rem" }}>
+        <section style={{ background: "#1e293b", borderRadius: 12, padding: "1.5rem", boxShadow: "inset 0 0 0 1px rgba(148,163,184,0.15)" }}>
+          <form onSubmit={handleSubmit} style={{ display: "grid", gap: "1rem" }}>
+            <label htmlFor="prompt" style={{ fontWeight: 600 }}>
+              Chat Input
+            </label>
+            <textarea
+              id="prompt"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault();
+                  void handleRun();
+                }
+              }}
+              placeholder="Ask the agent for a summary or instruction..."
+              style={{
+                width: "100%",
+                minHeight: 140,
+                padding: "1rem",
+                borderRadius: 8,
+                border: "1px solid #334155",
+                background: "#0f172a",
+                color: "inherit",
+                fontSize: "1rem",
+              }}
+            />
+            <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+              <button
+                type="submit"
+                disabled={isRunning}
+                style={{
+                  padding: "0.75rem 1.5rem",
+                  borderRadius: 999,
+                  border: "none",
+                  background: isRunning ? "#475569" : "#38bdf8",
+                  color: "#0f172a",
+                  fontWeight: 600,
+                  cursor: isRunning ? "not-allowed" : "pointer",
+                }}
+              >
+                {isRunning ? "Running…" : "Run"}
+              </button>
+              <span style={{ fontSize: "0.9rem", color: "#94a3b8" }}>
+                {traceId ? `trace_id: ${traceId}` : runError ? runError : isRunning ? "Running agent" : "Idle"}
+              </span>
+            </div>
+          </form>
+
+          <div style={{ marginTop: "1.5rem" }}>
+            <h3 style={{ margin: "0 0 0.5rem" }}>Final Output</h3>
+            <pre
+              style={{
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                background: "#0f172a",
+                borderRadius: 8,
+                padding: "1rem",
+                border: "1px solid #1f2937",
+                minHeight: 120,
+              }}
+            >
+              {finalOutput ? JSON.stringify(finalOutput, null, 2) : "No output yet."}
+            </pre>
+          </div>
+        </section>
+
+        <LogFlowPanel traceId={traceId} />
+      </main>
     </div>
   );
 };
