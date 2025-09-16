@@ -1,10 +1,21 @@
-import { readFile } from 'node:fs/promises';
-import { ToolInvoker, ToolCall, ToolResult, ToolOk, ToolError, AgentKernel, Plan, PlanStep, ActionOutcome, ReviewResult } from '../core/agent';
+import { readFile } from "node:fs/promises";
+import {
+  ToolInvoker,
+  ToolCall,
+  ToolResult,
+  ToolOk,
+  ToolError,
+  AgentKernel,
+  Plan,
+  PlanStep,
+  ActionOutcome,
+  ReviewResult,
+} from "../core/agent";
 
 async function handleHttpGet(args: any): Promise<ToolResult> {
   const url = args?.url;
   if (!url) {
-    return { ok: false, code: 'http.invalid_url', message: 'url is required' };
+    return { ok: false, code: "http.invalid_url", message: "url is required" };
   }
   try {
     const response = await fetch(url);
@@ -21,8 +32,8 @@ async function handleHttpGet(args: any): Promise<ToolResult> {
   } catch (err: any) {
     return {
       ok: false,
-      code: 'http.error',
-      message: err?.message ?? 'request failed',
+      code: "http.error",
+      message: err?.message ?? "request failed",
       retryable: true,
     } satisfies ToolError;
   }
@@ -31,16 +42,16 @@ async function handleHttpGet(args: any): Promise<ToolResult> {
 async function handleFileRead(args: any): Promise<ToolResult> {
   const path = args?.path;
   if (!path) {
-    return { ok: false, code: 'file.invalid_path', message: 'path is required' };
+    return { ok: false, code: "file.invalid_path", message: "path is required" };
   }
   try {
-    const content = await readFile(path, 'utf8');
+    const content = await readFile(path, "utf8");
     return { ok: true, data: { path, content } } satisfies ToolOk;
   } catch (err: any) {
     return {
       ok: false,
-      code: 'file.read_error',
-      message: err?.message ?? 'failed to read file',
+      code: "file.read_error",
+      message: err?.message ?? "failed to read file",
     } satisfies ToolError;
   }
 }
@@ -53,14 +64,17 @@ function handleChat(args: any): ToolResult {
   const prompt = args?.prompt;
   const messages = Array.isArray(args?.messages) ? args.messages : [];
   const content =
-    typeof prompt === 'string' && prompt.trim().length
+    typeof prompt === "string" && prompt.trim().length
       ? prompt
-      : messages.map((m: any) => m?.content).filter(Boolean).join('\n');
+      : messages
+          .map((m: any) => m?.content)
+          .filter(Boolean)
+          .join("\n");
 
   const reply =
     content?.length > 0
       ? `Echoing (${content.length} chars): ${content}`
-      : 'Hello! I am a local chat kernel. Provide a prompt to continue.';
+      : "Hello! I am a local chat kernel. Provide a prompt to continue.";
 
   return { ok: true, data: { content: reply } } satisfies ToolOk;
 }
@@ -68,18 +82,18 @@ function handleChat(args: any): ToolResult {
 export function createDefaultToolInvoker(): ToolInvoker {
   return async (call: ToolCall, _ctx) => {
     switch (call.name) {
-      case 'echo':
+      case "echo":
         return handleEcho(call.args);
-      case 'http.get':
+      case "http.get":
         return handleHttpGet(call.args);
-      case 'file.read':
+      case "file.read":
         return handleFileRead(call.args);
-      case 'llm.chat':
+      case "llm.chat":
         return handleChat(call.args);
       default:
         return {
           ok: false,
-          code: 'tool.not_found',
+          code: "tool.not_found",
           message: `tool ${call.name} is not available`,
         } satisfies ToolError;
     }
@@ -89,12 +103,12 @@ export function createDefaultToolInvoker(): ToolInvoker {
 export function summarizeToolResult(result: ToolResult): any {
   if (result.ok) {
     const data = result.data;
-    if (typeof data === 'string') {
+    if (typeof data === "string") {
       return data.length > 160 ? `${data.slice(0, 157)}...` : data;
     }
-    if (data && typeof data === 'object' && 'content' in data) {
+    if (data && typeof data === "object" && "content" in data) {
       const text = (data as any).content;
-      if (typeof text === 'string') {
+      if (typeof text === "string") {
         return text.length > 160 ? `${text.slice(0, 157)}...` : text;
       }
     }
@@ -114,9 +128,7 @@ class ChatKernel implements AgentKernel {
   private planCount = 0;
   private actions: ActionOutcome[] = [];
 
-  constructor(
-    private readonly options: ChatKernelOptions
-  ) {}
+  constructor(private readonly options: ChatKernelOptions) {}
 
   async perceive(): Promise<void> {
     this.perceived = true;
@@ -125,15 +137,15 @@ class ChatKernel implements AgentKernel {
   async plan(): Promise<Plan> {
     this.planCount += 1;
     if (!this.perceived) {
-      throw new Error('perceive must be called before plan');
+      throw new Error("perceive must be called before plan");
     }
     return {
       revision: this.planCount,
-      reason: this.planCount === 1 ? 'initial' : 'retry',
+      reason: this.planCount === 1 ? "initial" : "retry",
       steps: [
         {
           id: `${this.options.traceId}-step-${this.planCount}`,
-          op: 'llm.chat',
+          op: "llm.chat",
           args: { prompt: this.options.message },
         },
       ],
@@ -146,7 +158,7 @@ class ChatKernel implements AgentKernel {
       {
         trace_id: this.options.traceId,
         span_id: step.id,
-      }
+      },
     );
     const outcome: ActionOutcome = { step, result };
     this.actions.push(outcome);
@@ -159,21 +171,19 @@ class ChatKernel implements AgentKernel {
     return {
       score: passed ? 1 : 0,
       passed,
-      notes: passed
-        ? ['auto-pass: chat response generated']
-        : ['tool invocation failed'],
+      notes: passed ? ["auto-pass: chat response generated"] : ["tool invocation failed"],
     } satisfies ReviewResult;
   }
 
   async renderFinal(actions: ActionOutcome[]): Promise<any> {
     const latest = actions.at(-1);
-    if (!latest) return { text: '' };
+    if (!latest) return { text: "" };
     if (latest.result.ok) {
       const data = latest.result.data;
-      if (typeof data === 'string') {
+      if (typeof data === "string") {
         return { text: data };
       }
-      if (data && typeof data === 'object' && 'content' in data) {
+      if (data && typeof data === "object" && "content" in data) {
         const text = (data as any).content;
         return { text, raw: data };
       }

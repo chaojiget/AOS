@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { randomUUID } from 'node:crypto';
-import { runLoop, type CoreEvent } from './core/agent';
-import { EventBus, wrapCoreEvent } from './runtime/events';
-import { EpisodeLogger } from './runtime/episode';
-import { replayEpisode } from './runtime/replay';
-import { createChatKernel, createDefaultToolInvoker } from './adapters/core';
+import { randomUUID } from "node:crypto";
+import { runLoop, type CoreEvent } from "./core/agent";
+import { EventBus, wrapCoreEvent } from "./runtime/events";
+import { EpisodeLogger } from "./runtime/episode";
+import { replayEpisode } from "./runtime/replay";
+import { createChatKernel, createDefaultToolInvoker } from "./adapters/core";
 
 async function runOnce(message: string) {
   const traceId = randomUUID();
@@ -23,32 +23,32 @@ async function runOnce(message: string) {
     context: { traceId, input: message },
   });
 
-  console.log('\nFinal output:', JSON.stringify(result.final, null, 2));
+  console.log("\nFinal output:", JSON.stringify(result.final, null, 2));
   console.log(`Episode saved to episodes/${traceId}.jsonl`);
 }
 
 function logEvent(event: CoreEvent) {
   const time = new Date().toISOString();
   switch (event.type) {
-    case 'progress':
+    case "progress":
       console.log(`[${time}] progress/${event.step} ${(event.pct * 100).toFixed(0)}%`);
       break;
-    case 'plan':
+    case "plan":
       console.log(`[${time}] plan revision=${event.revision} steps=${event.steps.length}`);
       break;
-    case 'tool':
+    case "tool":
       console.log(`[${time}] tool ${event.name}`, event.result);
       break;
-    case 'ask':
+    case "ask":
       console.log(`[${time}] ask ${event.question}`);
       break;
-    case 'score':
+    case "score":
       console.log(`[${time}] score ${event.value} passed=${event.passed}`);
       break;
-    case 'final':
+    case "final":
       console.log(`[${time}] final`, event.outputs);
       break;
-    case 'log':
+    case "log":
       console.log(`[${time}] ${event.level}`, event.message);
       break;
   }
@@ -66,23 +66,23 @@ async function replay(traceId: string) {
 async function main() {
   const [command, ...args] = process.argv.slice(2);
 
-  if (!command || command === 'help') {
-    console.log('Usage (after compiling to JavaScript):');
+  if (!command || command === "help") {
+    console.log("Usage (after compiling to JavaScript):");
     console.log('  node dist/cli.js run "message"');
-    console.log('  node dist/cli.js replay <trace_id>');
+    console.log("  node dist/cli.js replay <trace_id>");
     process.exit(0);
   }
 
-  if (command === 'run') {
-    const message = args.join(' ') || 'Hello from CLI';
+  if (command === "run") {
+    const message = args.join(" ") || "Hello from CLI";
     await runOnce(message);
     return;
   }
 
-  if (command === 'replay') {
+  if (command === "replay") {
     const traceId = args[0];
     if (!traceId) {
-      console.error('Trace id is required for replay.');
+      console.error("Trace id is required for replay.");
       process.exit(1);
     }
     await replay(traceId);

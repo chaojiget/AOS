@@ -18,12 +18,24 @@ const HomePage: NextPage = () => {
       <div>
         <h2>Available Scripts</h2>
         <ul>
-          <li><code>pnpm dev</code> - 启动开发服务器</li>
-          <li><code>pnpm test</code> - 运行单元测试</li>
-          <li><code>pnpm lint</code> - 运行代码检查</li>
-          <li><code>pnpm typecheck</code> - 执行类型检查</li>
-          <li><code>pnpm smoke</code> - 执行端到端冒烟测试</li>
-          <li><code>pnpm replay</code> - 重放最近任务轨迹</li>
+          <li>
+            <code>pnpm dev</code> - 启动开发服务器
+          </li>
+          <li>
+            <code>pnpm test</code> - 运行单元测试
+          </li>
+          <li>
+            <code>pnpm lint</code> - 运行代码检查
+          </li>
+          <li>
+            <code>pnpm typecheck</code> - 执行类型检查
+          </li>
+          <li>
+            <code>pnpm smoke</code> - 执行端到端冒烟测试
+          </li>
+          <li>
+            <code>pnpm replay</code> - 重放最近任务轨迹
+          </li>
         </ul>
       </div>
     </div>

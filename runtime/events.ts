@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import type { CoreEvent } from '../core/agent';
+import { randomUUID } from "node:crypto";
+import type { CoreEvent } from "../core/agent";
 
 export interface EventEnvelope<T = any> {
   id: string;
@@ -10,15 +10,13 @@ export interface EventEnvelope<T = any> {
   span_id?: string;
   parent_span_id?: string;
   topic?: string;
-  level?: 'debug' | 'info' | 'warn' | 'error';
+  level?: "debug" | "info" | "warn" | "error";
   data: T;
   ln?: number;
   byte_offset?: number;
 }
 
-export type EventSubscriber = (
-  event: EventEnvelope
-) => void | Promise<void>;
+export type EventSubscriber = (event: EventEnvelope) => void | Promise<void>;
 
 export interface EventBusOptions {
   version?: number;
@@ -56,14 +54,14 @@ export interface WrapEventOptions {
   spanId?: string;
   parentSpanId?: string;
   topic?: string;
-  level?: 'debug' | 'info' | 'warn' | 'error';
+  level?: "debug" | "info" | "warn" | "error";
   version?: number;
 }
 
 export function wrapCoreEvent(
   traceId: string,
   event: CoreEvent,
-  options: WrapEventOptions = {}
+  options: WrapEventOptions = {},
 ): EventEnvelope<CoreEvent> {
   return {
     id: randomUUID(),

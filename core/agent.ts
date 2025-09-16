@@ -1,8 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID } from "node:crypto";
 
-export type Step = 'perceive' | 'plan' | 'act' | 'review' | 'final';
+export type Step = "perceive" | "plan" | "act" | "review" | "final";
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface PlanStep<TArgs = any> {
   id: string;
@@ -51,10 +51,7 @@ export interface ToolContext {
   metadata?: Record<string, any>;
 }
 
-export type ToolInvoker = (
-  call: ToolCall,
-  ctx: ToolContext
-) => Promise<ToolResult>;
+export type ToolInvoker = (call: ToolCall, ctx: ToolContext) => Promise<ToolResult>;
 
 export interface ActionOutcome<T = any> {
   step: PlanStep;
@@ -71,20 +68,20 @@ export interface ReviewResult {
 }
 
 export type CoreEvent =
-  | { type: 'progress'; step: Step; pct: number; note?: string }
-  | { type: 'plan'; steps: PlanStep[]; revision: number; reason?: string }
+  | { type: "progress"; step: Step; pct: number; note?: string }
+  | { type: "plan"; steps: PlanStep[]; revision: number; reason?: string }
   | {
-      type: 'tool';
+      type: "tool";
       name: string;
       args: any;
       result?: any;
       cost?: number;
       latency_ms?: number;
     }
-  | { type: 'ask'; question: string; origin_step?: string }
-  | { type: 'score'; value: number; passed: boolean; notes?: string[] }
-  | { type: 'final'; outputs: any; reason?: string }
-  | { type: 'log'; level: LogLevel; message: string; detail?: any };
+  | { type: "ask"; question: string; origin_step?: string }
+  | { type: "score"; value: number; passed: boolean; notes?: string[] }
+  | { type: "final"; outputs: any; reason?: string }
+  | { type: "log"; level: LogLevel; message: string; detail?: any };
 
 export interface AgentContext {
   traceId: string;
@@ -108,7 +105,7 @@ export interface RunLoopOptions {
 export interface RunLoopResult {
   actions: ActionOutcome[];
   final?: any;
-  reason: 'completed' | 'no-plan' | 'ask' | 'max-iterations';
+  reason: "completed" | "no-plan" | "ask" | "max-iterations";
   review?: ReviewResult;
 }
 
@@ -117,14 +114,14 @@ const ensurePromise = async <T>(value: T | Promise<T>): Promise<T> => value;
 export async function runLoop(
   kernel: AgentKernel,
   emit: (event: CoreEvent) => void | Promise<void>,
-  options: RunLoopOptions = {}
+  options: RunLoopOptions = {},
 ): Promise<RunLoopResult> {
   const maxIterations = options.maxIterations ?? 3;
   const actions: ActionOutcome[] = [];
   const context = options.context ?? { traceId: randomUUID() };
 
   await ensurePromise(kernel.perceive(context));
-  await ensurePromise(emit({ type: 'progress', step: 'perceive', pct: 0.2 }));
+  await ensurePromise(emit({ type: "progress", step: "perceive", pct: 0.2 }));
 
   let iteration = 0;
   let lastReview: ReviewResult | undefined;
@@ -136,94 +133,88 @@ export async function runLoop(
     const revision = plan?.revision ?? iteration;
     await ensurePromise(
       emit({
-        type: 'plan',
+        type: "plan",
         steps,
         revision,
-        reason: plan?.reason ?? (iteration === 1 ? 'initial' : 'retry'),
-      })
+        reason: plan?.reason ?? (iteration === 1 ? "initial" : "retry"),
+      }),
     );
 
     if (!steps.length) {
       await ensurePromise(
         emit({
-          type: 'log',
-          level: 'warn',
-          message: 'plan returned no executable steps, using fallback response',
-        })
+          type: "log",
+          level: "warn",
+          message: "plan returned no executable steps, using fallback response",
+        }),
       );
 
       const fallbackStep: PlanStep = {
         id: `fallback-${iteration}`,
-        op: 'llm.chat',
-        args: { prompt: context.input ?? '' },
+        op: "llm.chat",
+        args: { prompt: context.input ?? "" },
       };
       const outcome = await kernel.act(fallbackStep);
       actions.push(outcome);
       await ensurePromise(
         emit({
-          type: 'tool',
+          type: "tool",
           name: fallbackStep.op,
           args: fallbackStep.args,
           result: outcome.result,
           cost: outcome.result.ok ? outcome.result.cost : undefined,
           latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
-        })
+        }),
       );
       const finalOutputs = await kernel.renderFinal(actions);
-      await ensurePromise(
-        emit({ type: 'final', outputs: finalOutputs, reason: 'no-plan' })
-      );
-      return { actions, final: finalOutputs, reason: 'no-plan' };
+      await ensurePromise(emit({ type: "final", outputs: finalOutputs, reason: "no-plan" }));
+      return { actions, final: finalOutputs, reason: "no-plan" };
     }
 
     for (const step of steps) {
-      await ensurePromise(
-        emit({ type: 'progress', step: 'act', pct: 0.4 })
-      );
+      await ensurePromise(emit({ type: "progress", step: "act", pct: 0.4 }));
       const outcome = await kernel.act(step);
       actions.push(outcome);
       await ensurePromise(
         emit({
-          type: 'tool',
+          type: "tool",
           name: step.op,
           args: step.args,
           result: outcome.result,
           cost: outcome.result.ok ? outcome.result.cost : undefined,
           latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
-        })
+        }),
       );
 
       if (outcome.ask) {
         await ensurePromise(
           emit({
-            type: 'ask',
+            type: "ask",
             question: outcome.ask.question,
             origin_step: outcome.ask.origin_step ?? step.id,
-          })
+          }),
         );
-        return { actions, reason: 'ask' };
+        return { actions, reason: "ask" };
       }
     }
 
     lastReview = await kernel.review(actions);
     await ensurePromise(
       emit({
-        type: 'score',
+        type: "score",
         value: lastReview.score,
         passed: lastReview.passed,
         notes: lastReview.notes,
-      })
+      }),
     );
 
     if (lastReview.passed) {
       const finalOutputs = await kernel.renderFinal(actions);
-      await ensurePromise(
-        emit({ type: 'final', outputs: finalOutputs, reason: 'completed' })
-      );
+      await ensurePromise(emit({ type: "final", outputs: finalOutputs, reason: "completed" }));
       return {
         actions,
         final: finalOutputs,
-        reason: 'completed',
+        reason: "completed",
         review: lastReview,
       };
     }
@@ -231,10 +222,10 @@ export async function runLoop(
 
   await ensurePromise(
     emit({
-      type: 'log',
-      level: 'warn',
-      message: 'max iterations reached without passing review',
-    })
+      type: "log",
+      level: "warn",
+      message: "max iterations reached without passing review",
+    }),
   );
-  return { actions, reason: 'max-iterations', review: lastReview };
+  return { actions, reason: "max-iterations", review: lastReview };
 }

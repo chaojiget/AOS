@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -77,12 +77,15 @@
     <main>
       <section class="panel">
         <h2>Chat</h2>
-        <textarea id="message" placeholder="Ask the agent for a summary or instruction..."></textarea>
-        <div style="margin-top: 1rem; display: flex; gap: 1rem; align-items: center;">
+        <textarea
+          id="message"
+          placeholder="Ask the agent for a summary or instruction..."
+        ></textarea>
+        <div style="margin-top: 1rem; display: flex; gap: 1rem; align-items: center">
           <button id="run" type="button">Run</button>
           <span id="status" class="trace-info"></span>
         </div>
-        <div style="margin-top: 1rem;">
+        <div style="margin-top: 1rem">
           <strong>Final Output</strong>
           <div id="final" class="logs"></div>
         </div>
@@ -94,36 +97,36 @@
       </section>
     </main>
     <script>
-      const runButton = document.getElementById('run');
-      const messageInput = document.getElementById('message');
-      const finalOutput = document.getElementById('final');
-      const logOutput = document.getElementById('log');
-      const traceInfo = document.getElementById('trace');
-      const status = document.getElementById('status');
+      const runButton = document.getElementById("run");
+      const messageInput = document.getElementById("message");
+      const finalOutput = document.getElementById("final");
+      const logOutput = document.getElementById("log");
+      const traceInfo = document.getElementById("trace");
+      const status = document.getElementById("status");
 
       async function runChat() {
         const prompt = messageInput.value.trim();
         runButton.disabled = true;
-        status.textContent = 'Running...';
-        finalOutput.textContent = '';
-        logOutput.textContent = '';
-        traceInfo.textContent = '';
+        status.textContent = "Running...";
+        finalOutput.textContent = "";
+        logOutput.textContent = "";
+        traceInfo.textContent = "";
 
         try {
-          const response = await fetch('/api/run', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const response = await fetch("/api/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: prompt }),
           });
 
           if (!response.ok) {
             const error = await response.json().catch(() => ({}));
-            throw new Error(error.message || 'Request failed');
+            throw new Error(error.message || "Request failed");
           }
 
           const data = await response.json();
           const traceId = data.trace_id;
-          status.textContent = 'Completed';
+          status.textContent = "Completed";
           traceInfo.textContent = `trace_id: ${traceId}`;
           finalOutput.textContent = JSON.stringify(data.result, null, 2);
 
@@ -132,19 +135,19 @@
             const episodeText = await episodeResponse.text();
             logOutput.textContent = episodeText.trim();
           } else {
-            logOutput.textContent = 'Episode not available yet.';
+            logOutput.textContent = "Episode not available yet.";
           }
         } catch (error) {
-          status.textContent = 'Failed';
+          status.textContent = "Failed";
           finalOutput.textContent = String(error.message || error);
         } finally {
           runButton.disabled = false;
         }
       }
 
-      runButton.addEventListener('click', runChat);
-      messageInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      runButton.addEventListener("click", runChat);
+      messageInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
           event.preventDefault();
           runChat();
         }

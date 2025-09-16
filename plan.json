@@ -43,14 +43,59 @@
     }
   ],
   "steps": [
-    {"id": "S1", "action": "llm", "input": {"task": "Design data structures and module interfaces for core/agent and runtime components"}, "expect": "Agreed minimal TypeScript interfaces"},
-    {"id": "S2", "action": "tool", "input": {"tool": "fs"}, "expect": "Create directories and baseline files"},
-    {"id": "S3", "action": "tool", "input": {"tool": "ts"}, "expect": "Implement run loop, event bus, episode logger, and replay"},
-    {"id": "S4", "action": "tool", "input": {"tool": "ts"}, "expect": "Implement adapters and HTTP server"},
-    {"id": "S5", "action": "tool", "input": {"tool": "html"}, "expect": "Build simple UI for chat and log display"},
-    {"id": "S6", "action": "tool", "input": {"tool": "ts"}, "expect": "Provide CLI entry supporting run and replay"},
-    {"id": "S7", "action": "tool", "input": {"tool": "ts"}, "expect": "Add lightweight tests or manual validation hooks if feasible"},
-    {"id": "S8", "action": "tool", "input": {"tool": "shell", "command": "Create or update .github/workflows/ci.yml with required configuration"}, "expect": "Workflow file reflecting requested behavior"}
+    {
+      "id": "S1",
+      "action": "llm",
+      "input": {
+        "task": "Design data structures and module interfaces for core/agent and runtime components"
+      },
+      "expect": "Agreed minimal TypeScript interfaces"
+    },
+    {
+      "id": "S2",
+      "action": "tool",
+      "input": { "tool": "fs" },
+      "expect": "Create directories and baseline files"
+    },
+    {
+      "id": "S3",
+      "action": "tool",
+      "input": { "tool": "ts" },
+      "expect": "Implement run loop, event bus, episode logger, and replay"
+    },
+    {
+      "id": "S4",
+      "action": "tool",
+      "input": { "tool": "ts" },
+      "expect": "Implement adapters and HTTP server"
+    },
+    {
+      "id": "S5",
+      "action": "tool",
+      "input": { "tool": "html" },
+      "expect": "Build simple UI for chat and log display"
+    },
+    {
+      "id": "S6",
+      "action": "tool",
+      "input": { "tool": "ts" },
+      "expect": "Provide CLI entry supporting run and replay"
+    },
+    {
+      "id": "S7",
+      "action": "tool",
+      "input": { "tool": "ts" },
+      "expect": "Add lightweight tests or manual validation hooks if feasible"
+    },
+    {
+      "id": "S8",
+      "action": "tool",
+      "input": {
+        "tool": "shell",
+        "command": "Create or update .github/workflows/ci.yml with required configuration"
+      },
+      "expect": "Workflow file reflecting requested behavior"
+    }
   ],
   "risks": [
     "Time constraints limit comprehensive test coverage",

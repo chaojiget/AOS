@@ -21,25 +21,25 @@ community include:
 
 有助于营造积极环境的行为示例包括：
 
-* Demonstrating empathy and kindness toward other people / 展现友善与同理心
-* Being respectful of differing opinions, viewpoints, and experiences / 尊重不同观点与经历
-* Giving and gracefully accepting constructive feedback / 建设性地接受反馈，并聚焦于项目目标
-* Accepting responsibility and apologizing to those affected by our mistakes,
+- Demonstrating empathy and kindness toward other people / 展现友善与同理心
+- Being respectful of differing opinions, viewpoints, and experiences / 尊重不同观点与经历
+- Giving and gracefully accepting constructive feedback / 建设性地接受反馈，并聚焦于项目目标
+- Accepting responsibility and apologizing to those affected by our mistakes,
   and learning from the experience / 承担责任并向受影响者道歉，从经验中学习
-* Focusing on what is best not just for us as individuals, but for the overall
+- Focusing on what is best not just for us as individuals, but for the overall
   community / 关注社区整体福祉
 
 Examples of unacceptable behavior include:
 
 不可接受的行为示例包括：
 
-* The use of sexualized language or imagery, and sexual attention or advances of
+- The use of sexualized language or imagery, and sexual attention or advances of
   any kind / 使用带有歧视、骚扰或暴力倾向的言语或图像
-* Trolling, insulting or derogatory comments, and personal or political attacks / 人身攻击或侮辱性评论
-* Public or private harassment / 公共或私下的骚扰
-* Publishing others' private information, such as a physical or email address,
+- Trolling, insulting or derogatory comments, and personal or political attacks / 人身攻击或侮辱性评论
+- Public or private harassment / 公共或私下的骚扰
+- Publishing others' private information, such as a physical or email address,
   without their explicit permission / 未经明确许可的敏感信息披露
-* Other conduct which could reasonably be considered inappropriate in a
+- Other conduct which could reasonably be considered inappropriate in a
   professional setting / 其他被认定为不专业或不恰当的行为
 
 ## Enforcement Responsibilities / 执行责任

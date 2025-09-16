@@ -1,6 +1,6 @@
-import { dirname, join } from 'node:path';
-import { mkdir, readFile, stat, appendFile } from 'node:fs/promises';
-import type { EventEnvelope } from './events';
+import { dirname, join } from "node:path";
+import { mkdir, readFile, stat, appendFile } from "node:fs/promises";
+import type { EventEnvelope } from "./events";
 
 export interface EpisodeLoggerOptions {
   traceId: string;
@@ -15,7 +15,7 @@ export class EpisodeLogger {
   private queue: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: EpisodeLoggerOptions) {
-    const baseDir = options.dir ?? join(process.cwd(), 'episodes');
+    const baseDir = options.dir ?? join(process.cwd(), "episodes");
     this.filePath = join(baseDir, `${options.traceId}.jsonl`);
   }
 
@@ -25,11 +25,11 @@ export class EpisodeLogger {
     try {
       const fileStat = await stat(this.filePath);
       this.byteOffset = fileStat.size;
-      const content = await readFile(this.filePath, 'utf8');
-      const lines = content.split('\n').filter(Boolean);
+      const content = await readFile(this.filePath, "utf8");
+      const lines = content.split("\n").filter(Boolean);
       this.line = lines.length;
     } catch (err: any) {
-      if (err && err.code !== 'ENOENT') {
+      if (err && err.code !== "ENOENT") {
         throw err;
       }
       this.byteOffset = 0;
@@ -44,9 +44,9 @@ export class EpisodeLogger {
       const enriched = event;
       enriched.ln = enriched.ln ?? ++this.line;
       enriched.byte_offset = enriched.byte_offset ?? this.byteOffset;
-      const payload = JSON.stringify(enriched) + '\n';
+      const payload = JSON.stringify(enriched) + "\n";
       const bufferLength = Buffer.byteLength(payload);
-      await appendFile(this.filePath, payload, 'utf8');
+      await appendFile(this.filePath, payload, "utf8");
       this.byteOffset += bufferLength;
     });
 
@@ -56,13 +56,13 @@ export class EpisodeLogger {
   async readAll(): Promise<EventEnvelope[]> {
     await this.ensureReady();
     try {
-      const content = await readFile(this.filePath, 'utf8');
+      const content = await readFile(this.filePath, "utf8");
       return content
-        .split('\n')
+        .split("\n")
         .filter(Boolean)
         .map((line) => JSON.parse(line) as EventEnvelope);
     } catch (err: any) {
-      if (err && err.code === 'ENOENT') {
+      if (err && err.code === "ENOENT") {
         return [];
       }
       throw err;
