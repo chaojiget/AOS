@@ -1,0 +1,30 @@
+{
+  "goal": "Implement minimal AgentOS kernel with chat, logging, and replay capabilities using <=10 source files.",
+  "constraints": [
+    "Follow AGENTS.md instructions and dependency whitelist",
+    "Limit implementation to specified directories and files (<=10)",
+    "Episodes must persist to disk and support replay"
+  ],
+  "budget": { "currency": "CNY", "limit": 0 },
+  "acceptance": [
+    {"id": "A1", "given": "User runs pnpm dev", "when": "Server receives POST /api/run", "then": "Chat response is generated and episode file is written"},
+    {"id": "A2", "given": "Episode exists", "when": "User runs replay command", "then": "Logged events are re-emitted in order"}
+  ],
+  "steps": [
+    {"id": "S1", "action": "llm", "input": {"task": "Design data structures and module interfaces for core/agent and runtime components"}, "expect": "Agreed minimal TypeScript interfaces"},
+    {"id": "S2", "action": "tool", "input": {"tool": "fs"}, "expect": "Create directories and baseline files"},
+    {"id": "S3", "action": "tool", "input": {"tool": "ts"}, "expect": "Implement run loop, event bus, episode logger, and replay"},
+    {"id": "S4", "action": "tool", "input": {"tool": "ts"}, "expect": "Implement adapters and HTTP server"},
+    {"id": "S5", "action": "tool", "input": {"tool": "html"}, "expect": "Build simple UI for chat and log display"},
+    {"id": "S6", "action": "tool", "input": {"tool": "ts"}, "expect": "Provide CLI entry supporting run and replay"},
+    {"id": "S7", "action": "tool", "input": {"tool": "ts"}, "expect": "Add lightweight tests or manual validation hooks if feasible"}
+  ],
+  "risks": [
+    "Time constraints limit comprehensive test coverage",
+    "File count restriction complicates separation of concerns"
+  ],
+  "rollback": [
+    "Revert to initial empty repository commit if architecture fails",
+    "Simplify run loop to sequential execution without planner updates"
+  ]
+}
