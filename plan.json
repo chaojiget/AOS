@@ -1,0 +1,75 @@
+{
+  "goal": "Set up TypeScript configuration and lint/format tooling for the Next.js/Node project.",
+  "constraints": [
+    "Follow repository guidelines in AGENTS.md and prefer pnpm for package management.",
+    "Use recommended settings for Next.js/Node when configuring TypeScript, ESLint, and Prettier.",
+    "Keep the worktree clean with committed changes only after verification."
+  ],
+  "budget": { "currency": "CNY", "limit": 0.0 },
+  "acceptance": [
+    {
+      "id": "A1",
+      "given": "the repository",
+      "when": "tsconfig.json is added",
+      "then": "it should extend Next.js recommended settings and support Node tooling."
+    },
+    {
+      "id": "A2",
+      "given": "package.json",
+      "when": "scripts are inspected",
+      "then": "lint and format scripts should be defined using ESLint and Prettier."
+    },
+    {
+      "id": "A3",
+      "given": "development setup",
+      "when": "pnpm install is run",
+      "then": "ESLint and Prettier should be installed as devDependencies without errors."
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "action": "tool",
+      "input": { "cmd": "Review existing repository structure and documentation" },
+      "expect": "Understand current setup and confirm missing configuration files."
+    },
+    {
+      "id": "S2",
+      "action": "tool",
+      "input": { "cmd": "Initialize package.json with pnpm if missing" },
+      "expect": "A baseline package.json ready for dependency installation."
+    },
+    {
+      "id": "S3",
+      "action": "tool",
+      "input": { "cmd": "Add ESLint, Prettier, and supporting configs" },
+      "expect": "Configuration files for linting and formatting exist with recommended settings."
+    },
+    {
+      "id": "S4",
+      "action": "tool",
+      "input": { "cmd": "Install required devDependencies via pnpm" },
+      "expect": "pnpm-lock.yaml reflects the installed tooling."
+    },
+    {
+      "id": "S5",
+      "action": "tool",
+      "input": { "cmd": "Update package scripts and verify configurations" },
+      "expect": "lint/format scripts defined and configs referencing correct paths."
+    },
+    {
+      "id": "S6",
+      "action": "tool",
+      "input": { "cmd": "Run lint command to validate setup" },
+      "expect": "Lint command executes successfully (even if no files to lint)."
+    }
+  ],
+  "risks": [
+    "No existing Next.js source may cause ESLint presets to expect files that do not exist yet.",
+    "pnpm may warn about missing package metadata which needs sensible defaults."
+  ],
+  "rollback": [
+    "Remove generated package.json, lockfile, and configuration files if setup fails irrecoverably.",
+    "Re-run pnpm install after adjusting configuration to resolve tooling conflicts."
+  ]
+}
