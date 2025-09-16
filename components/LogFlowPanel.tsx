@@ -122,8 +122,8 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
   }, [branch]);
 
   return (
-    <section style={{ border: "1px solid #1f2937", borderRadius: 12, padding: "1rem" }}>
-      <header style={{ marginBottom: "0.75rem" }}>
+    <section style={{ display: "grid", gap: "1rem" }}>
+      <header>
         <h2 style={{ margin: 0, fontSize: "1.1rem" }}>LogFlow</h2>
         {traceId ? (
           <p style={{ margin: 0, fontSize: "0.85rem", color: "#94a3b8" }}>
@@ -136,7 +136,17 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
         )}
       </header>
 
-      <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: "1rem",
+          alignItems: "flex-start",
+          background: "#0f172a",
+          border: "1px solid #1f2937",
+          borderRadius: 12,
+          padding: "1rem",
+        }}
+      >
         <div style={{ flex: 1 }}>
           <h3 style={{ margin: "0 0 0.5rem", fontSize: "1rem" }}>Mainline Messages</h3>
           {mainlineState.loading ? (
@@ -146,7 +156,15 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
           ) : messages.length === 0 ? (
             <p style={{ fontSize: "0.9rem", color: "#94a3b8" }}>No events recorded yet.</p>
           ) : (
-            <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 320, overflowY: "auto" }}>
+            <ul
+              style={{
+                listStyle: "none",
+                padding: 0,
+                margin: 0,
+                maxHeight: 320,
+                overflowY: "auto",
+              }}
+            >
               {messages.map((message) => {
                 const isSelected = selectedMessage?.id === message.id;
                 return (
@@ -209,7 +227,15 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
               {branch.messages.length > 0 && (
                 <div>
                   <h4 style={{ margin: "0 0 0.25rem", fontSize: "0.95rem" }}>Events</h4>
-                  <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 200, overflowY: "auto" }}>
+                  <ul
+                    style={{
+                      listStyle: "none",
+                      padding: 0,
+                      margin: 0,
+                      maxHeight: 200,
+                      overflowY: "auto",
+                    }}
+                  >
                     {branch.messages.map((msg) => (
                       <li key={msg.id} style={{ marginBottom: "0.4rem" }}>
                         <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{msg.message}</div>
