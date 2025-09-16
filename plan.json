@@ -1,0 +1,59 @@
+{
+  "goal": "Set up CI workflow to run pnpm pipelines, upload artifacts, and enforce as merge gate.",
+  "constraints": [
+    "Follow AGENTS.md instructions",
+    "Use Node.js 20 and pnpm",
+    "Workflow must upload episodes and reports artifacts"
+  ],
+  "budget": { "currency": "CNY", "limit": 0 },
+  "acceptance": [
+    {
+      "id": "A1",
+      "given": "CI workflow runs",
+      "when": "pull requests execute workflow",
+      "then": "Steps pnpm setup/typecheck/lint/test/build/smoke succeed and artifacts uploaded"
+    },
+    {
+      "id": "A2",
+      "given": "Repository merges",
+      "when": "branch protection checks",
+      "then": "CI workflow marked required"
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "action": "tool",
+      "input": {
+        "tool": "shell",
+        "command": "Inspect repository structure for workflows"
+      },
+      "expect": "Understand existing CI setup"
+    },
+    {
+      "id": "S2",
+      "action": "tool",
+      "input": {
+        "tool": "shell",
+        "command": "Create or update .github/workflows/ci.yml with required configuration"
+      },
+      "expect": "Workflow file reflecting requested behavior"
+    },
+    {
+      "id": "S3",
+      "action": "tool",
+      "input": {
+        "tool": "shell",
+        "command": "Ensure branch protection documentation updated if necessary"
+      },
+      "expect": "CI documented as merge gate"
+    }
+  ],
+  "risks": [
+    "Missing pnpm cache or install step causing workflow failure",
+    "Artifacts directories absent leading to upload errors"
+  ],
+  "rollback": [
+    "Revert workflow file if pipeline misconfigured"
+  ]
+}
