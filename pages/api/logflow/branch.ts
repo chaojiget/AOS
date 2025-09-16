@@ -5,7 +5,12 @@ import {
   readEpisodeIndexEntries,
   toLogFlowMessage,
 } from "../../../lib/logflow";
-import type { BranchOrigin, BranchResponse, LogFlowMessage } from "../../../types/logflow";
+import type {
+  BranchOrigin,
+  BranchResponse,
+  EpisodeIndexEntry,
+  LogFlowMessage,
+} from "../../../types/logflow";
 
 const METHOD = "GET";
 
@@ -60,14 +65,14 @@ export default async function handler(
 
     let originSpanId = spanParam ?? undefined;
     if (!originSpanId && originLn !== undefined) {
-      const entry = indexEntries.find((item) => item.ln === originLn);
+      const entry = indexEntries.find((item: EpisodeIndexEntry) => item.ln === originLn);
       if (entry?.span_id) {
         originSpanId = entry.span_id;
       }
     }
 
     if (originSpanId && originLn === undefined) {
-      const entry = indexEntries.find((item) => item.span_id === originSpanId);
+      const entry = indexEntries.find((item: EpisodeIndexEntry) => item.span_id === originSpanId);
       if (entry) {
         originLn = entry.ln;
       }
@@ -79,9 +84,9 @@ export default async function handler(
 
     let branchMessages: LogFlowMessage[] = [];
     if (originSpanId) {
-      branchMessages = messages.filter((msg) => msg.span_id === originSpanId);
+      branchMessages = messages.filter((msg: LogFlowMessage) => msg.span_id === originSpanId);
     } else if (originLn !== undefined) {
-      const match = messages.find((msg) => msg.ln === originLn);
+      const match = messages.find((msg: LogFlowMessage) => msg.ln === originLn);
       if (match) branchMessages = [match];
     }
 
