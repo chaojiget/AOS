@@ -1,37 +1,58 @@
 {
-  "goal": "Merged project setup with TypeScript, testing, and lint tooling for the Agent OS project.",
+  "goal": "Implement minimal AgentOS kernel with chat, logging, and replay capabilities, building on established project tooling.",
   "constraints": [
-    "Follow repository guidelines in AGENTS.md and prefer pnpm for package management.",
-    "Use recommended settings for Next.js/Node when configuring TypeScript, ESLint, and Prettier.",
-    "Keep implementation minimal while ensuring testability"
+    "Follow AGENTS.md instructions and dependency whitelist",
+    "Use established TypeScript, ESLint, and testing configuration",
+    "Limit core implementation to specified directories and files (<=10)",
+    "Episodes must persist to disk and support replay",
+    "Maintain compatibility with existing pnpm scripts"
   ],
   "budget": { "currency": "CNY", "limit": 0.0 },
   "acceptance": [
     {
       "id": "A1",
+      "given": "User runs pnpm dev",
+      "when": "Server receives POST /api/run",
+      "then": "Chat response is generated and episode file is written"
+    },
+    {
+      "id": "A2",
+      "given": "Episode exists",
+      "when": "User runs replay command",
+      "then": "Logged events are re-emitted in order"
+    },
+    {
+      "id": "A3",
       "given": "the repo",
       "when": "pnpm test runs",
       "then": "tests covering runLoop, EpisodeLogger, Replay pass"
     },
     {
-      "id": "A2",
+      "id": "A4",
       "given": "CI workflow",
       "when": "push or PR occurs",
-      "then": "pnpm test executes"
-    },
-    {
-      "id": "A3",
-      "given": "development setup",
-      "when": "pnpm install is run",
-      "then": "ESLint and Prettier should be installed as devDependencies without errors"
+      "then": "pnpm test executes successfully"
     }
   ],
+  "steps": [
+    {"id": "S1", "action": "llm", "input": {"task": "Design data structures and module interfaces for core/agent and runtime components"}, "expect": "Agreed minimal TypeScript interfaces"},
+    {"id": "S2", "action": "tool", "input": {"tool": "fs"}, "expect": "Create directories and baseline files"},
+    {"id": "S3", "action": "tool", "input": {"tool": "ts"}, "expect": "Implement run loop, event bus, episode logger, and replay"},
+    {"id": "S4", "action": "tool", "input": {"tool": "ts"}, "expect": "Implement adapters and HTTP server"},
+    {"id": "S5", "action": "tool", "input": {"tool": "html"}, "expect": "Build simple UI for chat and log display"},
+    {"id": "S6", "action": "tool", "input": {"tool": "ts"}, "expect": "Provide CLI entry supporting run and replay"},
+    {"id": "S7", "action": "tool", "input": {"tool": "ts"}, "expect": "Add lightweight tests or manual validation hooks if feasible"}
+  ],
   "risks": [
+    "Time constraints limit comprehensive test coverage",
+    "File count restriction complicates separation of concerns",
     "Implementations might deviate from future design expectations",
-    "No existing Next.js source may cause ESLint presets to expect files that do not exist yet"
+    "Integration with existing tooling may introduce complexity"
   ],
   "rollback": [
+    "Revert to initial empty repository commit if architecture fails",
+    "Simplify run loop to sequential execution without planner updates",
     "Remove new files and dependencies if approach invalid",
-    "Re-run pnpm install after adjusting configuration to resolve tooling conflicts"
+    "Re-run pnpm install after adjusting configuration to resolve conflicts"
   ]
 }
