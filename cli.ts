@@ -2,8 +2,8 @@
 import { randomUUID } from "node:crypto";
 import { runLoop, type CoreEvent } from "./core/agent.js";
 import { EventBus, wrapCoreEvent } from "./runtime/events.js";
-import { EpisodeLogger } from "./runtime/episode.js";
-import { replayEpisode } from "./runtime/replay.js";
+import { EpisodeLogger } from "./runtime/episode.ts";
+import { replayEpisode } from "./runtime/replay.ts";
 import { createChatKernel, createDefaultToolInvoker } from "./adapters/core.js";
 
 async function runOnce(message: string) {

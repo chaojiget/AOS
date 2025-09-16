@@ -2,43 +2,56 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { EpisodeLogger } from "../runtime/episode.js";
-import { replay, Replay } from "../runtime/replay.js";
+import { importTsModule } from "./helpers/loadTsModule.js";
+
+const { EpisodeLogger } = await importTsModule("../runtime/episode.ts", import.meta.url);
+const { replayEpisode } = await importTsModule("../runtime/replay.ts", import.meta.url);
+
+let counter = 0;
+function createEvent(traceId, type, data = {}) {
+  counter += 1;
+  return {
+    id: `evt-${counter}`,
+    ts: new Date(Date.UTC(2024, 0, 1, 0, 0, counter)).toISOString(),
+    type,
+    version: 1,
+    trace_id: traceId,
+    data,
+  };
+}
 
 describe("Replay", () => {
   it("streams events in the order they were recorded", async () => {
-    const baseDir = await mkdtemp(join(tmpdir(), "replay-"));
-    let tick = 0;
-    const logger = new EpisodeLogger({
-      traceId: "trace-replay",
-      baseDir,
-      clock: () => new Date(Date.UTC(2024, 0, 1, 0, 0, tick++)),
-    });
-
-    const first = await logger.log({ type: "progress", step: "act" });
-    const second = await logger.log({ type: "final", outputs: { answer: 42 } });
+    const dir = await mkdtemp(join(tmpdir(), "replay-"));
+    const traceId = "trace-replay";
+    const logger = new EpisodeLogger({ traceId, dir });
+    const first = await logger.append(createEvent(traceId, "agent.progress", { step: "act" }));
+    const second = await logger.append(
+      createEvent(traceId, "agent.final", { outputs: { answer: 42 } }),
+    );
 
     const seenTypes = [];
-    const events = await replay({
-      traceId: "trace-replay",
-      baseDir,
-      onEvent: (event) => seenTypes.push(event.type),
+    const events = await replayEpisode(traceId, {
+      dir,
+      onEvent: (event) => {
+        seenTypes.push(event.type);
+      },
     });
 
     expect(events).toHaveLength(2);
     expect(events[0].ln).toBe(first.ln);
     expect(events[1].ln).toBe(second.ln);
-    expect(seenTypes).toEqual(["progress", "final"]);
+    expect(seenTypes).toEqual(["agent.progress", "agent.final"]);
   });
 
-  it("supports the Replay class helper", async () => {
-    const baseDir = await mkdtemp(join(tmpdir(), "replay-class-"));
-    const logger = new EpisodeLogger({ traceId: "trace-class", baseDir });
-    await logger.log({ type: "progress", step: "plan" });
-    await logger.log({ type: "final", outputs: { ok: true } });
+  it("returns parsed events without an onEvent handler", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "replay-no-handler-"));
+    const traceId = "trace-no-handler";
+    const logger = new EpisodeLogger({ traceId, dir });
+    await logger.append(createEvent(traceId, "agent.plan", { steps: [] }));
+    await logger.append(createEvent(traceId, "agent.log", { message: "done" }));
 
-    const runner = new Replay({ traceId: "trace-class", baseDir });
-    const events = await runner.run();
-    expect(events.map((event) => event.type)).toEqual(["progress", "final"]);
+    const events = await replayEpisode(traceId, { dir });
+    expect(events.map((event) => event.type)).toEqual(["agent.plan", "agent.log"]);
   });
 });
