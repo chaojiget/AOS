@@ -210,7 +210,7 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
                 <div>
                   <h4 style={{ margin: "0 0 0.25rem", fontSize: "0.95rem" }}>Events</h4>
                   <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 200, overflowY: "auto" }}>
-                    {branch.messages.map((msg) => (
+                    {branch.messages.map((msg: LogFlowMessage) => (
                       <li key={msg.id} style={{ marginBottom: "0.4rem" }}>
                         <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{msg.message}</div>
                         <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
@@ -250,7 +250,7 @@ function renderBranchNode(node: BranchNode, depth = 0): JSX.Element {
         span {node.span_id} · ln {node.first_ln} – {node.last_ln}
       </div>
       <ul style={{ listStyle: "none", padding: 0, margin: "0.25rem 0 0.5rem" }}>
-        {node.events.map((evt) => (
+        {node.events.map((evt: LogFlowMessage) => (
           <li key={evt.id} style={{ marginBottom: "0.25rem" }}>
             <div style={{ fontSize: "0.85rem" }}>{evt.message}</div>
             <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
@@ -260,7 +260,7 @@ function renderBranchNode(node: BranchNode, depth = 0): JSX.Element {
           </li>
         ))}
       </ul>
-      {node.children.map((child) => renderBranchNode(child, depth + 1))}
+      {node.children.map((child: BranchNode) => renderBranchNode(child, depth + 1))}
     </div>
   );
 }
