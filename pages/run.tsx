@@ -60,10 +60,18 @@ const ChatPanel: FC<ChatPanelProps> = ({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-xl font-semibold text-slate-100">Chat</h2>
         <p className="text-xs text-slate-400 sm:text-sm">
-          Press <kbd className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[0.65rem]">Ctrl</kbd> /
-          <kbd className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[0.65rem]">⌘</kbd>
+          Press{" "}
+          <kbd className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[0.65rem]">
+            Ctrl
+          </kbd>{" "}
+          /
+          <kbd className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[0.65rem]">
+            ⌘
+          </kbd>
           <span className="px-1">+</span>
-          <kbd className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[0.65rem]">Enter</kbd>
+          <kbd className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[0.65rem]">
+            Enter
+          </kbd>
         </p>
       </div>
       <form className="flex flex-1 flex-col gap-4" onSubmit={handleSubmit}>
@@ -94,7 +102,9 @@ const ChatPanel: FC<ChatPanelProps> = ({
           <span className="text-sm text-slate-400">{status}</span>
         </div>
         <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Final Output</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
+            Final Output
+          </h3>
           <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-100">
             {finalOutput || "Results will appear here once the run completes."}
           </pre>

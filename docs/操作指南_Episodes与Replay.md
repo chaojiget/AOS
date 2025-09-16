@@ -11,18 +11,21 @@
 ## 2. 快速开始：生成示例 Episode
 
 1. 在项目根目录运行：
+
    ```bash
    pnpm smoke
    ```
 
    - 该脚本会触发最小 Plan→Execute→Review 闭环，自动生成一次示例任务。
    - 运行完成后在终端输出最近一次 `trace_id`，并写入 `episodes/<trace_id>.json` 与 `reports/<trace_id>.md`。
+
 2. 验证产物是否生成：
    ```bash
    ls episodes/
    ls reports/
    ```
 3. 打开事件轨迹，理解事件结构：
+
    ```bash
    cat episodes/<trace_id>.json | jq '.[0:5]'
    ```
@@ -33,12 +36,14 @@
 ## 3. 回放最近一次 Episode
 
 1. 执行回放命令：
+
    ```bash
    pnpm replay
    ```
 
    - 默认回放最近一次生成的 `trace_id`。
    - 回放过程中会固定 provider、temperature=0 与 seed，确保结果可重复。
+
 2. 查看回放结果：
    - 终端会打印对比：原始评分 vs. 回放评分；如有差异请排查差异原因。
    - 新的回放报告会写入 `reports/<trace_id>-replay.md`（具体命名以实现为准）。
@@ -50,6 +55,7 @@
 ## 4. 对运行结果评分
 
 - 使用 `pnpm score` 计算指标汇总：
+
   ```bash
   pnpm score
   ```
