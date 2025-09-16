@@ -2,10 +2,10 @@ import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { runLoop, type CoreEvent } from "../core/agent";
-import { EventBus, wrapCoreEvent, type EventEnvelope } from "../runtime/events";
-import { EpisodeLogger } from "../runtime/episode";
-import { createChatKernel, createDefaultToolInvoker } from "../adapters/core";
+import { runLoop, type CoreEvent } from "../core/agent.js";
+import { EventBus, wrapCoreEvent, type EventEnvelope } from "../runtime/events.js";
+import { EpisodeLogger } from "../runtime/episode.js";
+import { createChatKernel, createDefaultToolInvoker } from "../adapters/core.js";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const episodesDir = join(process.cwd(), "episodes");
@@ -54,14 +54,16 @@ async function handleRun(req: IncomingMessage, res: ServerResponse) {
   const kernel = createChatKernel({ message, traceId, toolInvoker });
 
   const events: EventEnvelope<CoreEvent>[] = [];
-  bus.subscribe((event) => {
+  bus.subscribe((event: any) => {
     events.push(event);
-    return logger.append(event).catch((err) => {
+    logger.append(event).catch((err: any) => {
       console.error("failed to append episode event", err);
     });
   });
 
-  const emit = (event: CoreEvent) => bus.publish(wrapCoreEvent(traceId, event));
+  const emit = (event: CoreEvent) => {
+    bus.publish(wrapCoreEvent(traceId, event)).catch(console.error);
+  };
   const result = await runLoop(kernel, emit, {
     context: { traceId, input: message },
   });
