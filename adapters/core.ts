@@ -10,7 +10,7 @@ import {
   PlanStep,
   ActionOutcome,
   ReviewResult,
-} from "../core/agent";
+} from "../core/agent.js";
 
 async function handleHttpGet(args: any): Promise<ToolResult> {
   const url = args?.url;
@@ -80,7 +80,7 @@ function handleChat(args: any): ToolResult {
 }
 
 export function createDefaultToolInvoker(): ToolInvoker {
-  return async (call: ToolCall, _ctx) => {
+  return async (call: ToolCall, _ctx: any) => {
     switch (call.name) {
       case "echo":
         return handleEcho(call.args);

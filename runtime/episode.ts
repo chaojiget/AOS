@@ -1,7 +1,8 @@
 import { dirname, join } from "node:path";
 import { mkdir, readFile, stat, appendFile, writeFile } from "node:fs/promises";
-import type { EventEnvelope } from "./events";
 import type { EpisodeIndexEntry } from "../types/logflow";
+import type { EventEnvelope } from "./events.js";
+
 
 export interface EpisodeLoggerOptions {
   traceId: string;

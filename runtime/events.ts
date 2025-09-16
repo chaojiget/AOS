@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { CoreEvent } from "../core/agent";
+import type { CoreEvent } from "../core/agent.js";
 
 export interface EventEnvelope<T = any> {
   id: string;

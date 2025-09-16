@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
-import { runLoop, type CoreEvent } from "./core/agent";
-import { EventBus, wrapCoreEvent } from "./runtime/events";
-import { EpisodeLogger } from "./runtime/episode";
-import { replayEpisode } from "./runtime/replay";
-import { createChatKernel, createDefaultToolInvoker } from "./adapters/core";
+import { runLoop, type CoreEvent } from "./core/agent.js";
+import { EventBus, wrapCoreEvent } from "./runtime/events.js";
+import { EpisodeLogger } from "./runtime/episode.js";
+import { replayEpisode } from "./runtime/replay.js";
+import { createChatKernel, createDefaultToolInvoker } from "./adapters/core.js";
 
 async function runOnce(message: string) {
   const traceId = randomUUID();
@@ -13,12 +13,14 @@ async function runOnce(message: string) {
   const toolInvoker = createDefaultToolInvoker();
   const kernel = createChatKernel({ message, traceId, toolInvoker });
 
-  bus.subscribe((event) => {
+  bus.subscribe((event: any) => {
     logEvent(event.data);
-    return logger.append(event);
+    logger.append(event).catch(console.error);
   });
 
-  const emit = (event: CoreEvent) => bus.publish(wrapCoreEvent(traceId, event));
+  const emit = (event: CoreEvent) => {
+    bus.publish(wrapCoreEvent(traceId, event)).catch(console.error);
+  };
   const result = await runLoop(kernel, emit, {
     context: { traceId, input: message },
   });
@@ -56,7 +58,7 @@ function logEvent(event: CoreEvent) {
 
 async function replay(traceId: string) {
   const events = await replayEpisode(traceId, {
-    onEvent: (event) => {
+    onEvent: (event: any) => {
       console.log(`${event.ts} ${event.type}`, event.data);
     },
   });
