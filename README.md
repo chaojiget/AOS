@@ -1,6 +1,18 @@
 # AOS
 
-=======
+
+Agent OS 项目。
+
+## 社区与协作
+
+* [贡献指南](CONTRIBUTING.md)：了解开发流程、代码规范与提交信息要求。
+* [行为准则](CODE_OF_CONDUCT.md)：参与社区活动时请遵循的行为守则。
+* Issue 模板：
+  * [Bug 报告](.github/ISSUE_TEMPLATE/bug_report.md)
+  * [功能需求](.github/ISSUE_TEMPLATE/feature_request.md)
+
+更多背景资料可参考 `docs/` 目录。
+
 ## 项目简介
 AOS（Agent Operating System）旨在为单体智能体提供一个可回放、可审计的最小运行内核。项目聚焦于以 TypeScript 为主的统一技术栈，通过 `perceive → plan → act → review → final` 的闭环将感知、计划、执行与评审串联，帮助开发者快速验证 Agent 的真实表现并基于日志迭代策略。
 
