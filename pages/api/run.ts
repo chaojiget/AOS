@@ -66,13 +66,15 @@ export default async function handler(
   const events: EventEnvelope<CoreEvent>[] = [];
   bus.subscribe((event) => {
     events.push(event);
-    return logger.append(event).catch((error) => {
+    void logger.append(event).catch((error) => {
       console.error("failed to append episode event", error);
     });
   });
 
   try {
-    const emit = (event: CoreEvent) => bus.publish(wrapCoreEvent(traceId, event));
+    const emit = async (event: CoreEvent) => {
+      await bus.publish(wrapCoreEvent(traceId, event));
+    };
     const result = await runLoop(kernel, emit, {
       context: { traceId, input: message },
     });
