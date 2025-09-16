@@ -46,6 +46,24 @@ pnpm smoke     # 触发最小闭环并生成 episodes + reports
 pnpm replay    # 回放最近一次运行
 ```
 
+## 环境配置
+
+项目使用兼容 OpenAI 的推理服务来驱动核心 Agent 能力。首次启动前，请根据以下步骤创建本地环境变量文件：
+
+```bash
+cp .env.example .env.local
+```
+
+然后按照实际部署情况填写下列变量：
+
+| 变量 | 说明 |
+| --- | --- |
+| `OPENAI_BASE_URL` | OpenAI 兼容服务的基础 URL，例如 `https://api.openai.com/v1`。 |
+| `OPENAI_API_KEY` | 调用服务所需的 API Key，请替换为真实凭据。 |
+| `OPENAI_MODEL` | 默认使用的模型名称，如 `gpt-4o-mini`，可按需调整。 |
+
+`.env.local` 被列入 `.gitignore`，不会提交到版本库；仅示例文件 `.env.example` 会被跟踪，用于说明所需配置。
+
 ## 目录结构
 
 当前仓库处于需求与设计沉淀阶段，核心资料位于 `docs/` 目录。随着实现推进，代码结构将逐步演化为以下骨架：
