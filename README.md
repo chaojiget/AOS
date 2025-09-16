@@ -1,5 +1,6 @@
 # AOS
 
+=======
 ## 项目简介
 AOS（Agent Operating System）旨在为单体智能体提供一个可回放、可审计的最小运行内核。项目聚焦于以 TypeScript 为主的统一技术栈，通过 `perceive → plan → act → review → final` 的闭环将感知、计划、执行与评审串联，帮助开发者快速验证 Agent 的真实表现并基于日志迭代策略。
 
