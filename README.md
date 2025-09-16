@@ -1,5 +1,6 @@
 # AOS
 
+<<<<<<< HEAD
 Agent Operating System（AOS）旨在提供一个可回放、可量化的智能体运行平台，结合微内核、插件与本地技能，实现 Plan→Execute→Review→Replay 的闭环能力。
 
 ## 快速导航
@@ -69,6 +70,12 @@ pnpm replay    # 回放最近一次运行
 
 - **当前状态**：需求草稿阶段，聚焦定义最小可行的 Agent Kernel、事件日志与回放能力。
 - **路线图与规划**：请参考《<a href="docs/需求草稿/Agent Os（aos）草稿需求·v0.md">AgentOS（AOS）最小核 · Agent Kernel v0</a>》，其中包含详细的设计原则、MVP 范围与演进计划。
+
+## 持续集成
+
+仓库使用 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 中定义的 `CI` GitHub Actions 工作流。它在 Node.js 20 上安装 pnpm 并依次运行 `pnpm setup`、`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build` 和 `pnpm smoke`。成功运行后会产生最新的 `episodes/` 和 `reports/` 目录作为可下载的工件。
+
+要将 CI 设置为合并门禁，请在 GitHub 设置中保护默认分支，并将 `CI` 工作流检查标记为合并 PR 前的必需检查。
 
 更多工作流规范、质量门禁与守护策略请阅读仓库根目录的 `AGENTS.md`。
 

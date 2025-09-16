@@ -1,10 +1,12 @@
 {
-  "goal": "Implement minimal AgentOS kernel with chat, logging, and replay capabilities, building on established project tooling.",
+  "goal": "Implement minimal AgentOS kernel with CI/CD workflow, chat, logging, and replay capabilities.",
   "constraints": [
     "Follow AGENTS.md instructions and dependency whitelist",
     "Use established TypeScript, ESLint, and testing configuration",
+    "Use Node.js 20 and pnpm",
     "Limit core implementation to specified directories and files (<=10)",
     "Episodes must persist to disk and support replay",
+    "Workflow must upload episodes and reports artifacts",
     "Maintain compatibility with existing pnpm scripts"
   ],
   "budget": { "currency": "CNY", "limit": 0.0 },
@@ -29,9 +31,15 @@
     },
     {
       "id": "A4",
-      "given": "CI workflow",
-      "when": "push or PR occurs",
-      "then": "pnpm test executes successfully"
+      "given": "CI workflow runs",
+      "when": "pull requests execute workflow",
+      "then": "Steps pnpm setup/typecheck/lint/test/build/smoke succeed and artifacts uploaded"
+    },
+    {
+      "id": "A5",
+      "given": "Repository merges",
+      "when": "branch protection checks",
+      "then": "CI workflow marked required"
     }
   ],
   "steps": [
@@ -41,18 +49,22 @@
     {"id": "S4", "action": "tool", "input": {"tool": "ts"}, "expect": "Implement adapters and HTTP server"},
     {"id": "S5", "action": "tool", "input": {"tool": "html"}, "expect": "Build simple UI for chat and log display"},
     {"id": "S6", "action": "tool", "input": {"tool": "ts"}, "expect": "Provide CLI entry supporting run and replay"},
-    {"id": "S7", "action": "tool", "input": {"tool": "ts"}, "expect": "Add lightweight tests or manual validation hooks if feasible"}
+    {"id": "S7", "action": "tool", "input": {"tool": "ts"}, "expect": "Add lightweight tests or manual validation hooks if feasible"},
+    {"id": "S8", "action": "tool", "input": {"tool": "shell", "command": "Create or update .github/workflows/ci.yml with required configuration"}, "expect": "Workflow file reflecting requested behavior"}
   ],
   "risks": [
     "Time constraints limit comprehensive test coverage",
     "File count restriction complicates separation of concerns",
     "Implementations might deviate from future design expectations",
-    "Integration with existing tooling may introduce complexity"
+    "Integration with existing tooling may introduce complexity",
+    "Missing pnpm cache or install step causing workflow failure",
+    "Artifacts directories absent leading to upload errors"
   ],
   "rollback": [
     "Revert to initial empty repository commit if architecture fails",
     "Simplify run loop to sequential execution without planner updates",
     "Remove new files and dependencies if approach invalid",
-    "Re-run pnpm install after adjusting configuration to resolve conflicts"
+    "Re-run pnpm install after adjusting configuration to resolve conflicts",
+    "Revert workflow file if pipeline misconfigured"
   ]
 }
