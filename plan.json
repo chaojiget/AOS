@@ -1,0 +1,22 @@
+{
+  "goal": "Add Vitest-based tests for runLoop, EpisodeLogger, and Replay, with CI integration.",
+  "constraints": [
+    "Use pnpm as the package manager",
+    "Follow repository instructions from AGENTS.md",
+    "Keep implementation minimal while ensuring testability"
+  ],
+  "budget": { "currency": "CNY", "limit": 0.0 },
+  "acceptance": [
+    {"id":"A1","given":"the repo","when":"pnpm test runs","then":"tests covering runLoop, EpisodeLogger, Replay pass"},
+    {"id":"A2","given":"CI workflow","when":"push or PR occurs","then":"pnpm test executes"}
+  ],
+  "steps": [
+    {"id":"S1","action":"tool","input":{"cmd":"Inspect existing repository structure"},"expect":"Understand current files and missing modules"},
+    {"id":"S2","action":"tool","input":{"cmd":"Initialize pnpm project with ESM JavaScript and local Vitest runner"},"expect":"package.json and dependencies ready"},
+    {"id":"S3","action":"tool","input":{"cmd":"Implement minimal core modules (runLoop, EpisodeLogger, Replay)"},"expect":"Core functionality available for testing"},
+    {"id":"S4","action":"tool","input":{"cmd":"Create tests/ directory with vitest specs covering required modules"},"expect":"Vitest tests in place"},
+    {"id":"S5","action":"tool","input":{"cmd":"Add CI workflow to run pnpm test"},"expect":"CI executes pnpm test"}
+  ],
+  "risks": ["Implementations might deviate from future design expectations", "CI configuration may need adjustment without existing infrastructure"],
+  "rollback": ["Remove new files and dependencies if approach invalid", "Revert CI workflow if conflicts arise"]
+}

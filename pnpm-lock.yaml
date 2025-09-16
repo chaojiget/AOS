@@ -1,0 +1,22 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    devDependencies:
+      vitest:
+        specifier: file:packages/vitest
+        version: file:packages/vitest
+
+packages:
+
+  vitest@file:packages/vitest:
+    resolution: {directory: packages/vitest, type: directory}
+
+snapshots:
+
+  vitest@file:packages/vitest: {}
