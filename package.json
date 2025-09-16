@@ -1,0 +1,19 @@
+{
+  "name": "aos",
+  "version": "0.1.0",
+  "description": "AgentOS minimal kernel",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node scripts/vitest-runner.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.5.2",
+  "devDependencies": {
+    "vitest": "file:packages/vitest"
+  }
+}
