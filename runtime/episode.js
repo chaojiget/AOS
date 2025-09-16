@@ -1,8 +1,8 @@
-import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
+import { promises as fs } from "node:fs";
+import { join } from "node:path";
 
 const { mkdir, stat, readFile, appendFile, writeFile } = fs;
-const DEFAULT_VERSION = 'v001';
+const DEFAULT_VERSION = "v001";
 
 function toISOString(clock) {
   try {
@@ -16,8 +16,8 @@ async function ensureFileExists(filePath) {
   try {
     await stat(filePath);
   } catch (error) {
-    if (error && error.code === 'ENOENT') {
-      await writeFile(filePath, '', 'utf8');
+    if (error && error.code === "ENOENT") {
+      await writeFile(filePath, "", "utf8");
     } else {
       throw error;
     }
@@ -26,14 +26,14 @@ async function ensureFileExists(filePath) {
 
 async function loadExistingState(filePath) {
   try {
-    const text = await readFile(filePath, 'utf8');
+    const text = await readFile(filePath, "utf8");
     if (!text) {
       return { line: 0, offset: 0 };
     }
-    const lines = text.split('\n').filter(Boolean);
+    const lines = text.split("\n").filter(Boolean);
     return { line: lines.length, offset: Buffer.byteLength(text) };
   } catch (error) {
-    if (error && error.code === 'ENOENT') {
+    if (error && error.code === "ENOENT") {
       return { line: 0, offset: 0 };
     }
     throw error;
@@ -42,10 +42,10 @@ async function loadExistingState(filePath) {
 
 async function readManifest(manifestPath) {
   try {
-    const text = await readFile(manifestPath, 'utf8');
+    const text = await readFile(manifestPath, "utf8");
     return JSON.parse(text);
   } catch (error) {
-    if (error && error.code === 'ENOENT') {
+    if (error && error.code === "ENOENT") {
       return null;
     }
     throw error;
@@ -54,22 +54,27 @@ async function readManifest(manifestPath) {
 
 async function writeManifest(manifestPath, manifest) {
   const data = JSON.stringify(manifest, null, 2);
-  await writeFile(manifestPath, `${data}\n`, 'utf8');
+  await writeFile(manifestPath, `${data}\n`, "utf8");
 }
 
 export class EpisodeLogger {
   constructor(options = {}) {
-    const { traceId, version = DEFAULT_VERSION, baseDir = join(process.cwd(), 'episodes'), clock } = options;
+    const {
+      traceId,
+      version = DEFAULT_VERSION,
+      baseDir = join(process.cwd(), "episodes"),
+      clock,
+    } = options;
     if (!traceId) {
-      throw new Error('EpisodeLogger requires a traceId');
+      throw new Error("EpisodeLogger requires a traceId");
     }
     this.traceId = traceId;
     this.version = version;
     this.baseDir = baseDir;
     this.clock = clock;
     this.dir = join(this.baseDir, this.traceId, this.version);
-    this.filePath = join(this.dir, 'events.jsonl');
-    this.manifestPath = join(this.baseDir, this.traceId, 'manifest.json');
+    this.filePath = join(this.dir, "events.jsonl");
+    this.manifestPath = join(this.baseDir, this.traceId, "manifest.json");
     this.line = 0;
     this.offset = 0;
     this.ready = false;
@@ -125,7 +130,7 @@ export class EpisodeLogger {
       byte_offset: this.offset,
     };
     const line = `${JSON.stringify(record)}\n`;
-    await appendFile(this.filePath, line, 'utf8');
+    await appendFile(this.filePath, line, "utf8");
     this.line += 1;
     this.offset += Buffer.byteLength(line);
     await this.#updateManifest(record);

@@ -16,14 +16,14 @@ function createSuite(name, parent = null) {
 
 function ensureRoot() {
   if (!STATE.root) {
-    STATE.root = createSuite('root');
+    STATE.root = createSuite("root");
     STATE.stack = [STATE.root];
   }
   return STATE.root;
 }
 
 export function resetSuites() {
-  STATE.root = createSuite('root');
+  STATE.root = createSuite("root");
   STATE.stack = [STATE.root];
 }
 
@@ -33,8 +33,8 @@ function currentSuite() {
 }
 
 export function describe(name, handler) {
-  if (typeof name !== 'string') {
-    throw new TypeError('describe name must be a string');
+  if (typeof name !== "string") {
+    throw new TypeError("describe name must be a string");
   }
   const parent = currentSuite();
   const suite = createSuite(name, parent);
@@ -42,8 +42,8 @@ export function describe(name, handler) {
   STATE.stack.push(suite);
   try {
     const result = handler?.();
-    if (result && typeof result.then === 'function') {
-      throw new Error('Asynchronous describe blocks are not supported in this lightweight runner');
+    if (result && typeof result.then === "function") {
+      throw new Error("Asynchronous describe blocks are not supported in this lightweight runner");
     }
   } finally {
     STATE.stack.pop();
@@ -51,11 +51,11 @@ export function describe(name, handler) {
 }
 
 function registerTest(name, fn) {
-  if (typeof name !== 'string') {
-    throw new TypeError('test name must be a string');
+  if (typeof name !== "string") {
+    throw new TypeError("test name must be a string");
   }
-  if (typeof fn !== 'function') {
-    throw new TypeError('test fn must be a function');
+  if (typeof fn !== "function") {
+    throw new TypeError("test fn must be a function");
   }
   const suite = currentSuite();
   suite.tests.push({ name, fn });
@@ -68,21 +68,21 @@ export function it(name, fn) {
 export const test = it;
 
 export function beforeEach(fn) {
-  if (typeof fn !== 'function') {
-    throw new TypeError('beforeEach hook must be a function');
+  if (typeof fn !== "function") {
+    throw new TypeError("beforeEach hook must be a function");
   }
   currentSuite().beforeEach.push(fn);
 }
 
 export function afterEach(fn) {
-  if (typeof fn !== 'function') {
-    throw new TypeError('afterEach hook must be a function');
+  if (typeof fn !== "function") {
+    throw new TypeError("afterEach hook must be a function");
   }
   currentSuite().afterEach.push(fn);
 }
 
 function isObject(value) {
-  return value !== null && typeof value === 'object';
+  return value !== null && typeof value === "object";
 }
 
 function deepEqual(a, b) {
@@ -119,7 +119,7 @@ function deepEqual(a, b) {
 }
 
 function format(value) {
-  if (typeof value === 'string') return `"${value}"`;
+  if (typeof value === "string") return `"${value}"`;
   try {
     return JSON.stringify(value);
   } catch {
@@ -137,46 +137,64 @@ function makeMatchers(received, negate = false) {
 
   return {
     toBe(expected) {
-      ensure(Object.is(received, expected), `Expected ${format(received)} ${negate ? 'not ' : ''}to be ${format(expected)}`);
+      ensure(
+        Object.is(received, expected),
+        `Expected ${format(received)} ${negate ? "not " : ""}to be ${format(expected)}`,
+      );
     },
     toEqual(expected) {
-      ensure(deepEqual(received, expected), `Expected ${format(received)} ${negate ? 'not ' : ''}to equal ${format(expected)}`);
+      ensure(
+        deepEqual(received, expected),
+        `Expected ${format(received)} ${negate ? "not " : ""}to equal ${format(expected)}`,
+      );
     },
     toStrictEqual(expected) {
       this.toEqual(expected);
     },
     toBeTruthy() {
-      ensure(Boolean(received), `Expected ${format(received)} ${negate ? 'to be falsy' : 'to be truthy'}`);
+      ensure(
+        Boolean(received),
+        `Expected ${format(received)} ${negate ? "to be falsy" : "to be truthy"}`,
+      );
     },
     toBeFalsy() {
-      ensure(!received, `Expected ${format(received)} ${negate ? 'to be truthy' : 'to be falsy'}`);
+      ensure(!received, `Expected ${format(received)} ${negate ? "to be truthy" : "to be falsy"}`);
     },
     toHaveLength(expected) {
-      if (received == null || typeof received.length !== 'number') {
+      if (received == null || typeof received.length !== "number") {
         throw new Error(`Received value does not have a length: ${format(received)}`);
       }
-      ensure(received.length === expected, `Expected length ${expected}, received ${received.length}`);
+      ensure(
+        received.length === expected,
+        `Expected length ${expected}, received ${received.length}`,
+      );
     },
     toContainEqual(expected) {
       if (!Array.isArray(received)) {
         throw new Error(`Expected an array but received ${format(received)}`);
       }
       const found = received.some((item) => deepEqual(item, expected));
-      ensure(found, `Expected array ${negate ? 'not ' : ''}to contain ${format(expected)}`);
+      ensure(found, `Expected array ${negate ? "not " : ""}to contain ${format(expected)}`);
     },
     toMatchObject(expected) {
       if (!isObject(received) || !isObject(expected)) {
-        throw new Error('toMatchObject expects plain objects');
+        throw new Error("toMatchObject expects plain objects");
       }
       const keys = Object.keys(expected);
       const matches = keys.every((key) => deepEqual(received[key], expected[key]));
-      ensure(matches, `Expected ${format(received)} ${negate ? 'not ' : ''}to match object ${format(expected)}`);
+      ensure(
+        matches,
+        `Expected ${format(received)} ${negate ? "not " : ""}to match object ${format(expected)}`,
+      );
     },
     toBeInstanceOf(expected) {
-      if (typeof expected !== 'function') {
-        throw new Error('toBeInstanceOf expects a constructor');
+      if (typeof expected !== "function") {
+        throw new Error("toBeInstanceOf expects a constructor");
       }
-      ensure(received instanceof expected, `Expected value to ${negate ? 'not ' : ''}be instance of ${expected.name || 'provided constructor'}`);
+      ensure(
+        received instanceof expected,
+        `Expected value to ${negate ? "not " : ""}be instance of ${expected.name || "provided constructor"}`,
+      );
     },
     get not() {
       return makeMatchers(received, !negate);
@@ -186,7 +204,7 @@ function makeMatchers(received, negate = false) {
 
 export function expect(received) {
   const matchers = makeMatchers(received);
-  Object.defineProperty(matchers, 'not', {
+  Object.defineProperty(matchers, "not", {
     get() {
       return makeMatchers(received, true);
     },

@@ -7,9 +7,24 @@
   ],
   "budget": { "currency": "CNY", "limit": 0.0 },
   "acceptance": [
-    {"id":"A1","given":"the repo","when":"pnpm test runs","then":"tests covering runLoop, EpisodeLogger, Replay pass"},
-    {"id":"A2","given":"CI workflow","when":"push or PR occurs","then":"pnpm test executes"},
-    {"id":"A3","given":"development setup","when":"pnpm install is run","then":"ESLint and Prettier should be installed as devDependencies without errors"}
+    {
+      "id": "A1",
+      "given": "the repo",
+      "when": "pnpm test runs",
+      "then": "tests covering runLoop, EpisodeLogger, Replay pass"
+    },
+    {
+      "id": "A2",
+      "given": "CI workflow",
+      "when": "push or PR occurs",
+      "then": "pnpm test executes"
+    },
+    {
+      "id": "A3",
+      "given": "development setup",
+      "when": "pnpm install is run",
+      "then": "ESLint and Prettier should be installed as devDependencies without errors"
+    }
   ],
   "risks": [
     "Implementations might deviate from future design expectations",

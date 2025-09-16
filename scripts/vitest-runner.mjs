@@ -1,7 +1,7 @@
-import { readdir, stat } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { runSuites, resetSuites } from 'vitest';
+import { readdir, stat } from "node:fs/promises";
+import { resolve, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { runSuites, resetSuites } from "vitest";
 
 const TEST_FILE_PATTERN = /\.(test|spec)\.[cm]?js$/i;
 
@@ -11,7 +11,7 @@ async function collectFiles(dir) {
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch (error) {
-    if (error && error.code === 'ENOENT') {
+    if (error && error.code === "ENOENT") {
       return results;
     }
     throw error;
@@ -31,19 +31,19 @@ async function collectFiles(dir) {
 
 function formatChain(chain, testName) {
   const labels = chain
-    .filter((suite) => suite.name && suite.name !== 'root')
+    .filter((suite) => suite.name && suite.name !== "root")
     .map((suite) => suite.name);
   if (testName) labels.push(testName);
-  return labels.join(' > ');
+  return labels.join(" > ");
 }
 
 async function run() {
-  const testsDir = resolve(process.cwd(), 'tests');
+  const testsDir = resolve(process.cwd(), "tests");
   try {
     await stat(testsDir);
   } catch (error) {
-    if (error && error.code === 'ENOENT') {
-      console.warn('No tests directory found.');
+    if (error && error.code === "ENOENT") {
+      console.warn("No tests directory found.");
       return;
     }
     throw error;
@@ -51,7 +51,7 @@ async function run() {
 
   const files = await collectFiles(testsDir);
   if (files.length === 0) {
-    console.warn('No test files discovered.');
+    console.warn("No test files discovered.");
     return;
   }
 
@@ -76,13 +76,15 @@ async function run() {
   };
 
   const summary = await runSuites(reporter);
-  console.log(`\nTotal: ${summary.tests}, Passed: ${summary.passed}, Failed: ${summary.failed}, Duration: ${summary.duration} ms`);
+  console.log(
+    `\nTotal: ${summary.tests}, Passed: ${summary.passed}, Failed: ${summary.failed}, Duration: ${summary.duration} ms`,
+  );
   if (summary.failed > 0) {
     process.exitCode = 1;
   }
 }
 
 run().catch((error) => {
-  console.error('Vitest runner failed:', error);
+  console.error("Vitest runner failed:", error);
   process.exitCode = 1;
 });

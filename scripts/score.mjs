@@ -1,1 +1,1 @@
-console.log('Score placeholder - implement metrics aggregation.');
+console.log("Score placeholder - implement metrics aggregation.");

@@ -25,11 +25,11 @@
 
 ## 代码规范
 
-* 使用 TypeScript/JavaScript 代码时遵循现有 ESLint、Prettier 和 TypeScript 配置。
-* 保持模块职责清晰，优先编写小而易测试的函数。
-* 文档使用 Markdown，标题从一级开始逐级递进。
-* 提交前确保本地通过静态检查与测试。
-* 若引入新的依赖或脚本，请更新相关文档（如 README、AGENTS.md 等）。
+- 使用 TypeScript/JavaScript 代码时遵循现有 ESLint、Prettier 和 TypeScript 配置。
+- 保持模块职责清晰，优先编写小而易测试的函数。
+- 文档使用 Markdown，标题从一级开始逐级递进。
+- 提交前确保本地通过静态检查与测试。
+- 若引入新的依赖或脚本，请更新相关文档（如 README、AGENTS.md 等）。
 
 ## 提交信息格式
 
@@ -41,9 +41,9 @@
 <body>
 ```
 
-* **type**：例如 `feat`、`fix`、`docs`、`chore`、`refactor`、`test` 等。
-* **subject**：使用祈使句，简短直接地说明本次改动。
-* **body**（可选）：补充改动细节、背景或影响范围。
-* 如涉及 issue，请在 body 中引用（例如 `Refs #123`）。
+- **type**：例如 `feat`、`fix`、`docs`、`chore`、`refactor`、`test` 等。
+- **subject**：使用祈使句，简短直接地说明本次改动。
+- **body**（可选）：补充改动细节、背景或影响范围。
+- 如涉及 issue，请在 body 中引用（例如 `Refs #123`）。
 
 感谢所有贡献者的努力！

@@ -1,12 +1,12 @@
-import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
+import { promises as fs } from "node:fs";
+import { join } from "node:path";
 
 const { readFile, stat } = fs;
-const DEFAULT_VERSION = 'v001';
+const DEFAULT_VERSION = "v001";
 
 function sortEvents(events) {
   return events.slice().sort((a, b) => {
-    if (typeof a.ln === 'number' && typeof b.ln === 'number') {
+    if (typeof a.ln === "number" && typeof b.ln === "number") {
       return a.ln - b.ln;
     }
     if (a.ts && b.ts) {
@@ -20,17 +20,17 @@ async function readEvents(filePath) {
   try {
     await stat(filePath);
   } catch (error) {
-    if (error && error.code === 'ENOENT') {
+    if (error && error.code === "ENOENT") {
       throw new Error(`Episode file not found: ${filePath}`);
     }
     throw error;
   }
-  const content = await readFile(filePath, 'utf8');
+  const content = await readFile(filePath, "utf8");
   if (!content.trim()) {
     return [];
   }
   return content
-    .split('\n')
+    .split("\n")
     .filter(Boolean)
     .map((line) => {
       try {
@@ -43,14 +43,18 @@ async function readEvents(filePath) {
 
 export class Replay {
   constructor(options = {}) {
-    const { traceId, version = DEFAULT_VERSION, baseDir = join(process.cwd(), 'episodes') } = options;
+    const {
+      traceId,
+      version = DEFAULT_VERSION,
+      baseDir = join(process.cwd(), "episodes"),
+    } = options;
     if (!traceId) {
-      throw new Error('Replay requires a traceId');
+      throw new Error("Replay requires a traceId");
     }
     this.traceId = traceId;
     this.version = version;
     this.baseDir = baseDir;
-    this.filePath = join(this.baseDir, this.traceId, this.version, 'events.jsonl');
+    this.filePath = join(this.baseDir, this.traceId, this.version, "events.jsonl");
   }
 
   async load() {
@@ -60,7 +64,7 @@ export class Replay {
 
   async run(onEvent) {
     const events = await this.load();
-    if (typeof onEvent === 'function') {
+    if (typeof onEvent === "function") {
       for (let index = 0; index < events.length; index += 1) {
         await onEvent(events[index], index);
       }

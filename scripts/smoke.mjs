@@ -1,1 +1,1 @@
-console.log('Smoke test placeholder - implement workflow simulation.');
+console.log("Smoke test placeholder - implement workflow simulation.");
