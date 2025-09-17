@@ -11,6 +11,14 @@ interface ChatSendResponse {
   trace_id: string;
   msg_id: string;
   result: unknown;
+  reason: "completed" | "no-plan" | "ask" | "max-iterations";
+  review?: unknown;
+  message: null | {
+    msg_id: string;
+    ts: string;
+    text?: string;
+    error?: string;
+  };
   events: Array<{
     ts: string;
     type: string;
@@ -25,6 +33,13 @@ type RequestMessage = { role: string; content: string };
 type ChatSendError = { error: string; message: string };
 
 type ParsedBody = Record<string, unknown>;
+
+type AssistantMessagePayload = {
+  msg_id: string;
+  ts: string;
+  text?: string;
+  error?: string;
+};
 
 function parseRequestBody(req: NextApiRequest): ParsedBody {
   const { body } = req;
@@ -85,6 +100,79 @@ function normaliseReplyTo(raw: unknown): string | null {
     return trimmed ? trimmed : null;
   }
   return null;
+}
+
+type RunReason = "completed" | "no-plan" | "ask" | "max-iterations";
+
+function normaliseAssistantMessage(
+  finalOutput: unknown,
+  reason: RunReason,
+  review: unknown,
+): AssistantMessagePayload | null {
+  const base: AssistantMessagePayload = {
+    msg_id: randomUUID(),
+    ts: new Date().toISOString(),
+  };
+
+  if (finalOutput == null) {
+    if (reason === "completed") {
+      return null;
+    }
+
+    const reviewNotes = Array.isArray((review as any)?.notes)
+      ? ((review as any).notes as unknown[]).filter((note): note is string => typeof note === "string")
+      : [];
+    const noteSummary = reviewNotes.join(" · ");
+    const message = noteSummary || `run ended with reason: ${reason}`;
+    return { ...base, error: message };
+  }
+
+  if (typeof finalOutput === "string") {
+    const text = finalOutput.trim();
+    if (!text) {
+      return { ...base, text: "" };
+    }
+    return { ...base, text };
+  }
+
+  if (typeof finalOutput === "object") {
+    const record = finalOutput as Record<string, unknown>;
+    const msgId = typeof record.msg_id === "string" && record.msg_id.trim()
+      ? record.msg_id.trim()
+      : base.msg_id;
+    const ts = typeof record.ts === "string" && record.ts.trim() ? record.ts : base.ts;
+
+    const textValue = typeof record.text === "string" ? record.text : undefined;
+    const errorValue = record.error;
+    const errorText =
+      typeof errorValue === "string"
+        ? errorValue
+        : errorValue && typeof errorValue === "object"
+          ? typeof (errorValue as any).message === "string"
+            ? (errorValue as any).message
+            : JSON.stringify(errorValue)
+          : undefined;
+
+    if (textValue || errorText) {
+      return {
+        msg_id: msgId,
+        ts,
+        ...(textValue ? { text: textValue } : {}),
+        ...(errorText ? { error: errorText } : {}),
+      };
+    }
+
+    return {
+      msg_id: msgId,
+      ts,
+      text: JSON.stringify(finalOutput),
+    };
+  }
+
+  return {
+    ...base,
+    text: String(finalOutput),
+  };
 }
 
 export default async function handler(
@@ -161,10 +249,15 @@ export default async function handler(
       context: { traceId, input: text, metadata: { history } },
     });
 
+    const assistantMessage = normaliseAssistantMessage(result.final, result.reason, result.review);
+
     res.status(200).json({
       trace_id: traceId,
       msg_id: msgId,
       result: result.final,
+      reason: result.reason,
+      review: result.review,
+      message: assistantMessage,
       events: events.map((evt: EventEnvelope) => ({
         ts: evt.ts,
         type: evt.type,
