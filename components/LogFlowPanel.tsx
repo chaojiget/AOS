@@ -408,7 +408,10 @@ function renderBranchNode(node: BranchNode, depth = 0): JSX.Element {
   );
 }
 
-function flattenBranchNodes(node: BranchNode, depth = 0): Array<{ node: BranchNode; depth: number }> {
+function flattenBranchNodes(
+  node: BranchNode,
+  depth = 0,
+): Array<{ node: BranchNode; depth: number }> {
   const current = [{ node, depth }];
   const children = node.children.flatMap((child) => flattenBranchNodes(child, depth + 1));
   return [...current, ...children];

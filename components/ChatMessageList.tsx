@@ -146,7 +146,7 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
                     <span>{formatTimestamp(message.ts)}</span>
                     <span>
                       {message.status === "error"
-                        ? message.error ?? "Delivery failed"
+                        ? (message.error ?? "Delivery failed")
                         : message.status === "pending"
                           ? "Pending"
                           : message.status === "done"
@@ -157,7 +157,9 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
                     {typeof message.latencyMs === "number" ? (
                       <span>latency: {message.latencyMs.toFixed(0)} ms</span>
                     ) : null}
-                    {typeof message.cost === "number" ? <span>cost: {message.cost.toFixed(4)}</span> : null}
+                    {typeof message.cost === "number" ? (
+                      <span>cost: {message.cost.toFixed(4)}</span>
+                    ) : null}
                   </footer>
                 </article>
               ))}

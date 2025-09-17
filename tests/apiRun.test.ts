@@ -196,9 +196,7 @@ describe("POST /api/run", () => {
       expect(indexLines.length).toBe(updatedEvents.length);
 
       const lineNumbers = updatedEvents.map((event) => event.ln);
-      expect(lineNumbers).toEqual(
-        [...lineNumbers].sort((a, b) => (a ?? 0) - (b ?? 0)),
-      );
+      expect(lineNumbers).toEqual([...lineNumbers].sort((a, b) => (a ?? 0) - (b ?? 0)));
       const finalEvents = updatedEvents.filter((event) => event.type === "agent.final");
       expect(finalEvents.length >= 1).toBe(true);
       const lastFinal = finalEvents.at(-1);
@@ -223,4 +221,3 @@ describe("POST /api/run", () => {
     }
   });
 });
-

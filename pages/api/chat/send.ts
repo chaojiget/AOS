@@ -20,8 +20,6 @@ interface ChatSendResponse {
   }>;
 }
 
-const episodesDir = process.env.AOS_EPISODES_DIR ?? join(process.cwd(), "episodes");
-
 type RequestMessage = { role: string; content: string };
 
 type ChatSendError = { error: string; message: string };
@@ -119,6 +117,8 @@ export default async function handler(
   const traceId = providedTraceId ?? randomUUID();
   const msgId = randomUUID();
   const replyTo = normaliseReplyTo(payload.reply_to ?? (payload as any).replyTo);
+
+  const episodesDir = process.env.AOS_EPISODES_DIR ?? join(process.cwd(), "episodes");
 
   const bus = new EventBus();
   const logger = new EpisodeLogger({ traceId, dir: episodesDir });

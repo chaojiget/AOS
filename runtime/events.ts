@@ -60,7 +60,8 @@ export function wrapCoreEvent(
   options: WrapEventOptions = {},
 ): EventEnvelope<CoreEvent> {
   const level =
-    options.level ?? (event.type === "log" ? (event.level as WrapEventOptions["level"]) : undefined);
+    options.level ??
+    (event.type === "log" ? (event.level as WrapEventOptions["level"]) : undefined);
   return {
     id: randomUUID(),
     ts: new Date().toISOString(),

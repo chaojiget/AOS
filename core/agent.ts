@@ -140,10 +140,7 @@ export async function runLoop(
 
   await ensurePromise(kernel.perceive(context));
   await ensurePromise(
-    emit(
-      { type: "progress", step: "perceive", pct: 0.2 },
-      { spanId: traceSpanId },
-    ),
+    emit({ type: "progress", step: "perceive", pct: 0.2 }, { spanId: traceSpanId }),
   );
 
   let iteration = 0;
@@ -201,10 +198,7 @@ export async function runLoop(
       );
       const finalOutputs = await kernel.renderFinal(actions);
       await ensurePromise(
-        emit(
-          { type: "final", outputs: finalOutputs, reason: "no-plan" },
-          { spanId: traceSpanId },
-        ),
+        emit({ type: "final", outputs: finalOutputs, reason: "no-plan" }, { spanId: traceSpanId }),
       );
       return { actions, final: finalOutputs, reason: "no-plan" };
     }

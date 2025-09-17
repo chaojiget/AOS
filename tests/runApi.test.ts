@@ -41,23 +41,24 @@ describe("POST /api/run", () => {
       OPENAI_MODEL: "gpt-mock",
     };
 
-    const fetchMock = async () => ({
-      ok: true,
-      status: 200,
-      headers: new Headers(),
-      json: async () => ({
-        id: "chatcmpl-test",
-        choices: [
-          {
-            message: { content: "Sure, I can help with that." },
-            finish_reason: "stop",
-          },
-        ],
-        model: "gpt-mock",
-        usage: {},
-      }),
-      text: async () => "",
-    } as Response);
+    const fetchMock = async () =>
+      ({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({
+          id: "chatcmpl-test",
+          choices: [
+            {
+              message: { content: "Sure, I can help with that." },
+              finish_reason: "stop",
+            },
+          ],
+          model: "gpt-mock",
+          usage: {},
+        }),
+        text: async () => "",
+      }) as Response;
 
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 

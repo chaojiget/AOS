@@ -136,9 +136,6 @@ describe("buildBranchTree", () => {
     expect(tree?.children.map((child) => child.span_id)).toEqual(["step-a", "step-b"]);
     const stepANode = tree?.children.find((child) => child.span_id === "step-a");
     expect(stepANode?.events).toHaveLength(2);
-    expect(stepANode?.events.map((evt) => evt.type)).toEqual([
-      "agent.progress",
-      "agent.tool",
-    ]);
+    expect(stepANode?.events.map((evt) => evt.type)).toEqual(["agent.progress", "agent.tool"]);
   });
 });

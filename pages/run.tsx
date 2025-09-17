@@ -171,7 +171,10 @@ const RunPage: NextPage = () => {
         | null;
 
       if (!response.ok || !payload) {
-        const message = typeof (payload as any)?.message === "string" ? (payload as any).message : "Request failed";
+        const message =
+          typeof (payload as any)?.message === "string"
+            ? (payload as any).message
+            : "Request failed";
         throw new Error(message);
       }
 

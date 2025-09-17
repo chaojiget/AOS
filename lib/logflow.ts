@@ -4,7 +4,15 @@ import type { EventEnvelope } from "../runtime/events";
 import { readEpisodeIndex } from "../runtime/episode";
 import type { BranchNode, EpisodeIndexEntry, LogFlowMessage } from "../types/logflow";
 
-const DEFAULT_EPISODE_DIR = join(process.cwd(), "episodes");
+function resolveEpisodeDir(dir?: string): string {
+  if (dir) {
+    return dir;
+  }
+  if (process.env.AOS_EPISODES_DIR) {
+    return process.env.AOS_EPISODES_DIR;
+  }
+  return join(process.cwd(), "episodes");
+}
 
 async function readJsonlFile<T>(filePath: string): Promise<T[]> {
   const content = await readFile(filePath, "utf8");
@@ -17,20 +25,19 @@ async function readJsonlFile<T>(filePath: string): Promise<T[]> {
     .map((line) => JSON.parse(line) as T);
 }
 
-export async function readEpisodeEvents(
-  traceId: string,
-  dir: string = DEFAULT_EPISODE_DIR,
-): Promise<EventEnvelope[]> {
-  const filePath = join(dir, `${traceId}.jsonl`);
+export async function readEpisodeEvents(traceId: string, dir?: string): Promise<EventEnvelope[]> {
+  const baseDir = resolveEpisodeDir(dir);
+  const filePath = join(baseDir, `${traceId}.jsonl`);
   const events = await readJsonlFile<EventEnvelope>(filePath);
   return events.sort((a, b) => (a.ln ?? 0) - (b.ln ?? 0));
 }
 
 export async function readEpisodeIndexEntries(
   traceId: string,
-  dir: string = DEFAULT_EPISODE_DIR,
+  dir?: string,
 ): Promise<EpisodeIndexEntry[]> {
-  return readEpisodeIndex(traceId, dir);
+  const baseDir = resolveEpisodeDir(dir);
+  return readEpisodeIndex(traceId, baseDir);
 }
 
 function summarizeEvent(event: EventEnvelope): string {
@@ -108,17 +115,14 @@ export function buildBranchTree(
     node.last_ln = Math.max(node.last_ln, message.ln);
 
     if (message.parent_span_id && !nodes.has(message.parent_span_id)) {
-      nodes.set(
-        message.parent_span_id,
-        {
-          span_id: message.parent_span_id,
-          parent_span_id: undefined,
-          first_ln: message.ln,
-          last_ln: message.ln,
-          events: [],
-          children: [],
-        } satisfies MutableBranchNode,
-      );
+      nodes.set(message.parent_span_id, {
+        span_id: message.parent_span_id,
+        parent_span_id: undefined,
+        first_ln: message.ln,
+        last_ln: message.ln,
+        events: [],
+        children: [],
+      } satisfies MutableBranchNode);
     }
   }
 
@@ -160,11 +164,15 @@ export function buildBranchTree(
     const children = node.children.map(toBranch);
     const firstLn = children.reduce(
       (min, child) => Math.min(min, child.first_ln),
-      node.events.length ? Math.min(...node.events.map((evt) => evt.ln), node.first_ln) : node.first_ln,
+      node.events.length
+        ? Math.min(...node.events.map((evt) => evt.ln), node.first_ln)
+        : node.first_ln,
     );
     const lastLn = children.reduce(
       (max, child) => Math.max(max, child.last_ln),
-      node.events.length ? Math.max(...node.events.map((evt) => evt.ln), node.last_ln) : node.last_ln,
+      node.events.length
+        ? Math.max(...node.events.map((evt) => evt.ln), node.last_ln)
+        : node.last_ln,
     );
     return {
       span_id: node.span_id,

@@ -34,9 +34,7 @@ describe("ChatMessageList", () => {
       },
     ];
 
-    const html = renderToStaticMarkup(
-      <ChatMessageList messages={messages} isRunning />,
-    );
+    const html = renderToStaticMarkup(<ChatMessageList messages={messages} isRunning />);
 
     expect(html.includes('data-group-role="user"')).toBe(true);
     expect(html.includes('data-group-role="assistant"')).toBe(true);

@@ -133,7 +133,10 @@ describe("POST /api/chat/send", () => {
       reply_to: null,
     });
 
-    const indexContent = await readFile(join(episodesDir, `${responseTraceId}.index.jsonl`), "utf8");
+    const indexContent = await readFile(
+      join(episodesDir, `${responseTraceId}.index.jsonl`),
+      "utf8",
+    );
     expect(indexContent.trim().length > 0).toBe(true);
   });
 

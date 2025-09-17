@@ -53,7 +53,7 @@ const HomePage: NextPage = () => {
   const draftInput = useMemo(() => input.trim(), [input]);
 
   const handleSaveConversation = useCallback(() => {
-    const entries = chatHistory.map((message) => ({
+    const entries: Array<Record<string, unknown>> = chatHistory.map((message) => ({
       role: message.role,
       text: message.content,
       timestamp: message.ts,
@@ -152,8 +152,11 @@ const HomePage: NextPage = () => {
       setTraceId(resolvedTraceId);
       setFinalOutput(data.result ?? data.final ?? data.output ?? data.message ?? null);
 
-      const computedLatency = data.metrics?.latency_ms ??
-        (typeof performance !== "undefined" ? Math.round(performance.now() - startedAt) : Date.now() - startedAt);
+      const computedLatency =
+        data.metrics?.latency_ms ??
+        (typeof performance !== "undefined"
+          ? Math.round(performance.now() - startedAt)
+          : Date.now() - startedAt);
       const computedCost = data.metrics?.cost ?? null;
       setLatencyMs(typeof computedLatency === "number" ? computedLatency : null);
       setCost(typeof computedCost === "number" ? computedCost : null);
@@ -463,13 +466,17 @@ const HomePage: NextPage = () => {
                   }}
                 >
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>
+                    <span
+                      style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}
+                    >
                       trace_id
                     </span>
                     <span style={{ fontSize: "0.9rem" }}>{traceId ?? "-"}</span>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>
+                    <span
+                      style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}
+                    >
                       latency
                     </span>
                     <span style={{ fontSize: "0.9rem" }}>
@@ -477,7 +484,9 @@ const HomePage: NextPage = () => {
                     </span>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>
+                    <span
+                      style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}
+                    >
                       cost
                     </span>
                     <span style={{ fontSize: "0.9rem" }}>
