@@ -15,6 +15,8 @@ interface RunResponse {
 
 const episodesDir = join(process.cwd(), "episodes");
 
+type RequestMessage = { role: string; content: string };
+
 function parseRequestBody(req: NextApiRequest): Record<string, unknown> {
   const { body } = req;
   if (body == null || body === "") {
@@ -34,6 +36,20 @@ function parseRequestBody(req: NextApiRequest): Record<string, unknown> {
   }
 
   return {};
+}
+
+function normaliseHistory(raw: unknown): RequestMessage[] {
+  if (!Array.isArray(raw)) return [];
+  const history: RequestMessage[] = [];
+  for (const entry of raw) {
+    if (entry && typeof entry === "object" && typeof (entry as any).role === "string") {
+      const content = (entry as any).content;
+      if (typeof content === "string") {
+        history.push({ role: (entry as any).role, content });
+      }
+    }
+  }
+  return history;
 }
 
 export default async function handler(
@@ -56,24 +72,25 @@ export default async function handler(
 
   const messageRaw = payload.message ?? payload.input ?? "";
   const message = typeof messageRaw === "string" ? messageRaw : "";
+  const history = normaliseHistory(payload.messages);
   const traceId = randomUUID();
 
   const bus = new EventBus();
   const logger = new EpisodeLogger({ traceId, dir: episodesDir });
   const toolInvoker = createDefaultToolInvoker();
-  const kernel = createChatKernel({ message, traceId, toolInvoker });
+  const kernel = createChatKernel({ message, traceId, toolInvoker, history });
 
   const events: EventEnvelope<CoreEvent>[] = [];
   bus.subscribe((event: EventEnvelope<CoreEvent>) => {
     events.push(event);
-    logger.append(event).catch((error: unknown) => {
+    void logger.append(event).catch((error: unknown) => {
       console.error("failed to append episode event", error);
     });
   });
 
   try {
-    const emit = (event: CoreEvent) => {
-      return bus.publish(wrapCoreEvent(traceId, event)).then(() => {});
+    const emit = async (event: CoreEvent): Promise<void> => {
+      await bus.publish(wrapCoreEvent(traceId, event));
     };
     const result = await runLoop(kernel, emit, {
       context: { traceId, input: message },
@@ -82,7 +99,7 @@ export default async function handler(
     res.status(200).json({
       trace_id: traceId,
       result: result.final,
-      events: events.map((evt) => ({
+      events: events.map((evt: EventEnvelope<CoreEvent>) => ({
         ts: evt.ts,
         type: evt.type,
         data: evt.data,

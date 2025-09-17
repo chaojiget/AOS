@@ -1,9 +1,12 @@
 import { readdir, stat } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { register } from "node:module";
 import { runSuites, resetSuites } from "vitest";
 
-const TEST_FILE_PATTERN = /\.(test|spec)\.[cm]?js$/i;
+register("./ts-loader.mjs", import.meta.url);
+
+const TEST_FILE_PATTERN = /\.(test|spec)\.[cm]?[jt]sx?$/i;
 
 async function collectFiles(dir) {
   const results = [];

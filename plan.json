@@ -1,115 +1,80 @@
 {
-  "goal": "Implement minimal AgentOS kernel with CI/CD workflow, chat, logging, and replay capabilities.",
+  "goal": "Merge selected remote branches into main, validate with required checks, and produce commit.",
   "constraints": [
-    "Follow AGENTS.md instructions and dependency whitelist",
-    "Use established TypeScript, ESLint, and testing configuration",
-    "Use Node.js 20 and pnpm",
-    "Limit core implementation to specified directories and files (<=10)",
-    "Episodes must persist to disk and support replay",
-    "Workflow must upload episodes and reports artifacts",
-    "Maintain compatibility with existing pnpm scripts"
+    "Follow AGENTS.md guardrails including tool and directory restrictions",
+    "Operate offline; avoid network-dependent commands beyond existing refs",
+    "Use pnpm scripts for setup, linting, tests, and smoke checks",
+    "Preserve git history; do not rewrite existing commits",
+    "Ensure merge maintains episodes/reports directories as required"
   ],
   "budget": { "currency": "CNY", "limit": 0.0 },
   "acceptance": [
     {
       "id": "A1",
-      "given": "User runs pnpm dev",
-      "when": "Server receives POST /api/run",
-      "then": "Chat response is generated and episode file is written"
+      "given": "local main branch tracks remote",
+      "when": "merge plan completes",
+      "then": "main contains the selected remote branch commits without unresolved conflicts"
     },
     {
       "id": "A2",
-      "given": "Episode exists",
-      "when": "User runs replay command",
-      "then": "Logged events are re-emitted in order"
+      "given": "repository root",
+      "when": "pnpm typecheck && pnpm lint && pnpm test && pnpm smoke run",
+      "then": "all commands exit successfully"
     },
     {
       "id": "A3",
-      "given": "the repo",
-      "when": "pnpm test runs",
-      "then": "tests covering runLoop, EpisodeLogger, Replay pass"
-    },
-    {
-      "id": "A4",
-      "given": "CI workflow runs",
-      "when": "pull requests execute workflow",
-      "then": "Steps pnpm setup/typecheck/lint/test/build/smoke succeed and artifacts uploaded"
-    },
-    {
-      "id": "A5",
-      "given": "Repository merges",
-      "when": "branch protection checks",
-      "then": "CI workflow marked required"
+      "given": "post-merge repository",
+      "when": "git status --short executes",
+      "then": "working tree is clean with recorded merge commit"
     }
   ],
   "steps": [
     {
       "id": "S1",
-      "action": "llm",
+      "action": "fs",
       "input": {
-        "task": "Design data structures and module interfaces for core/agent and runtime components"
+        "task": "Inspect git status and remote branches to confirm merge targets"
       },
-      "expect": "Agreed minimal TypeScript interfaces"
+      "expect": "Selected branch list and recorded divergence notes"
     },
     {
       "id": "S2",
       "action": "tool",
-      "input": { "tool": "fs" },
-      "expect": "Create directories and baseline files"
+      "input": {
+        "tool": "git",
+        "command": "git merge --no-commit --no-ff origin/main"
+      },
+      "expect": "Merge applied in working tree or conflicts surfaced for resolution"
     },
     {
       "id": "S3",
       "action": "tool",
-      "input": { "tool": "ts" },
-      "expect": "Implement run loop, event bus, episode logger, and replay"
+      "input": {
+        "tool": "shell",
+        "command": "pnpm typecheck && pnpm lint && pnpm test && pnpm smoke"
+      },
+      "expect": "All validations succeed"
     },
     {
       "id": "S4",
       "action": "tool",
-      "input": { "tool": "ts" },
-      "expect": "Implement adapters and HTTP server"
-    },
-    {
-      "id": "S5",
-      "action": "tool",
-      "input": { "tool": "html" },
-      "expect": "Build simple UI for chat and log display"
-    },
-    {
-      "id": "S6",
-      "action": "tool",
-      "input": { "tool": "ts" },
-      "expect": "Provide CLI entry supporting run and replay"
-    },
-    {
-      "id": "S7",
-      "action": "tool",
-      "input": { "tool": "ts" },
-      "expect": "Add lightweight tests or manual validation hooks if feasible"
-    },
-    {
-      "id": "S8",
-      "action": "tool",
       "input": {
-        "tool": "shell",
-        "command": "Create or update .github/workflows/ci.yml with required configuration"
+        "tool": "git",
+        "command": "git commit -m 'merge: integrate remote updates into main'"
       },
-      "expect": "Workflow file reflecting requested behavior"
+      "expect": "Merge finalized in repository history"
     }
   ],
   "risks": [
-    "Time constraints limit comprehensive test coverage",
-    "File count restriction complicates separation of concerns",
-    "Implementations might deviate from future design expectations",
-    "Integration with existing tooling may introduce complexity",
-    "Missing pnpm cache or install step causing workflow failure",
-    "Artifacts directories absent leading to upload errors"
+    "Merge conflicts requiring manual resolution",
+    "Existing local commit diverges causing complex history",
+    "Tests or smoke check failing post-merge",
+    "Long-running pnpm smoke command increasing cycle time"
   ],
   "rollback": [
-    "Revert to initial empty repository commit if architecture fails",
-    "Simplify run loop to sequential execution without planner updates",
-    "Remove new files and dependencies if approach invalid",
-    "Re-run pnpm install after adjusting configuration to resolve conflicts",
-    "Revert workflow file if pipeline misconfigured"
+    "Use git merge --abort if conflicts cannot be resolved",
+    "Reset to previous HEAD via git reset --hard HEAD^ if merge commit committed inadvertently",
+    "Re-run pnpm setup if dependencies drift",
+    "Restore plan.json from git if plan adjustments incorrect"
   ]
 }

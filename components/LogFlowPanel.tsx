@@ -24,6 +24,7 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
   const [branchState, setBranchState] = useState<RequestState>(initialRequestState);
   const [branch, setBranch] = useState<BranchResponse | null>(null);
   const latestSelectionRef = useRef<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!traceId) {
@@ -121,6 +122,37 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
     return branch.tree;
   }, [branch]);
 
+  const selectedPayload = useMemo(() => {
+    if (!selectedMessage) return null;
+    try {
+      return JSON.stringify(selectedMessage.data, null, 2);
+    } catch {
+      return typeof selectedMessage.data === "string"
+        ? selectedMessage.data
+        : String(selectedMessage.data);
+    }
+  }, [selectedMessage]);
+
+  useEffect(() => {
+    setCopied(false);
+  }, [selectedPayload]);
+
+  const handleCopyPayload = useCallback(() => {
+    if (!selectedPayload) return;
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      return;
+    }
+    navigator.clipboard
+      .writeText(selectedPayload)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        setCopied(false);
+      });
+  }, [selectedPayload]);
+
   return (
     <section style={{ border: "1px solid #1f2937", borderRadius: 12, padding: "1rem" }}>
       <header style={{ marginBottom: "0.75rem" }}>
@@ -136,7 +168,7 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
         )}
       </header>
 
-      <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
+      <div style={{ display: "flex", gap: "1rem", alignItems: "stretch", flexWrap: "wrap" }}>
         <div style={{ flex: 1 }}>
           <h3 style={{ margin: "0 0 0.5rem", fontSize: "1rem" }}>Mainline Messages</h3>
           {mainlineState.loading ? (
@@ -146,7 +178,15 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
           ) : messages.length === 0 ? (
             <p style={{ fontSize: "0.9rem", color: "#94a3b8" }}>No events recorded yet.</p>
           ) : (
-            <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 320, overflowY: "auto" }}>
+            <ul
+              style={{
+                listStyle: "none",
+                padding: 0,
+                margin: 0,
+                maxHeight: 320,
+                overflowY: "auto",
+              }}
+            >
               {messages.map((message) => {
                 const isSelected = selectedMessage?.id === message.id;
                 return (
@@ -180,7 +220,7 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
           )}
         </div>
 
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 320, display: "grid", gap: "1rem" }}>
           <h3 style={{ margin: "0 0 0.5rem", fontSize: "1rem" }}>Branch Detail</h3>
           {selectedMessage ? (
             <div style={{ marginBottom: "0.75rem", fontSize: "0.85rem", color: "#94a3b8" }}>
@@ -209,8 +249,16 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
               {branch.messages.length > 0 && (
                 <div>
                   <h4 style={{ margin: "0 0 0.25rem", fontSize: "0.95rem" }}>Events</h4>
-                  <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 200, overflowY: "auto" }}>
-                    {branch.messages.map((msg) => (
+                  <ul
+                    style={{
+                      listStyle: "none",
+                      padding: 0,
+                      margin: 0,
+                      maxHeight: 200,
+                      overflowY: "auto",
+                    }}
+                  >
+                    {branch.messages.map((msg: LogFlowMessage) => (
                       <li key={msg.id} style={{ marginBottom: "0.4rem" }}>
                         <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{msg.message}</div>
                         <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
@@ -237,6 +285,46 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
               )}
             </div>
           ) : null}
+
+          {selectedPayload && (
+            <div>
+              <div
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+              >
+                <h4 style={{ margin: "0 0 0.25rem", fontSize: "0.95rem" }}>Event Payload</h4>
+                <button
+                  type="button"
+                  onClick={handleCopyPayload}
+                  style={{
+                    padding: "0.25rem 0.75rem",
+                    borderRadius: 999,
+                    border: "1px solid #38bdf8",
+                    background: "transparent",
+                    color: "#38bdf8",
+                    fontSize: "0.8rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {copied ? "Copied" : "Copy JSON"}
+                </button>
+              </div>
+              <pre
+                style={{
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  background: "#0f172a",
+                  borderRadius: 8,
+                  padding: "0.75rem",
+                  border: "1px solid #1f2937",
+                  maxHeight: 220,
+                  overflowY: "auto",
+                  fontSize: "0.8rem",
+                }}
+              >
+                {selectedPayload}
+              </pre>
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -250,7 +338,7 @@ function renderBranchNode(node: BranchNode, depth = 0): JSX.Element {
         span {node.span_id} · ln {node.first_ln} – {node.last_ln}
       </div>
       <ul style={{ listStyle: "none", padding: 0, margin: "0.25rem 0 0.5rem" }}>
-        {node.events.map((evt) => (
+        {node.events.map((evt: LogFlowMessage) => (
           <li key={evt.id} style={{ marginBottom: "0.25rem" }}>
             <div style={{ fontSize: "0.85rem" }}>{evt.message}</div>
             <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
@@ -260,7 +348,7 @@ function renderBranchNode(node: BranchNode, depth = 0): JSX.Element {
           </li>
         ))}
       </ul>
-      {node.children.map((child) => renderBranchNode(child, depth + 1))}
+      {node.children.map((child: BranchNode) => renderBranchNode(child, depth + 1))}
     </div>
   );
 }

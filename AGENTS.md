@@ -1,3 +1,5 @@
+# 使用中文交互
+
 # AGENTS.md — AOS 项目给 AI 编码代理的操作手册（标准版 v0.1）
 
 > 读者：AI 编码代理（Claude Code / Cursor / Roo Code / Windsurf / Copilot Chat 等）与协作者人类。
@@ -474,3 +476,105 @@ jobs:
 - **金丝雀**：5% 流量或 100 次任务；观察 72h 或达样本阈值。
 - **晋升**：`Utility = α·Quality + δ·Satisfaction − β·Cost − γ·Latency` 改善且置信通过 → Promote。
 - **回滚**：指标退化或异常率 > 基线 2×；一键回滚到上个稳定版本，保留失败 `episodes` 供复盘。
+
+---
+
+## 24. Intake（多角度需求引导 + DoR 准入关）
+
+### 24.1 多角度需求问法（按模块拷贝即可）
+
+1. **业务价值**：本次需求的战略目标、关键指标、优先级？若成功上线会带来哪些量化收益？
+2. **用户 & JTBD**：目标人群是谁、当前痛点是什么、期望完成的工作（Jobs-to-be-done）是哪些？
+3. **范围（MoSCoW）**：Must/Should/Could/Won’t 的边界如何划分？是否存在阶段性交付？
+4. **数据 & 集成**：需要哪些数据源、上下游系统、接口契约、脱敏策略？是否新增存储或 ETL？
+5. **体验 / 性能 / a11y**：关键交互、性能目标（如 TTI、p95）、可访问性要求、兼容性矩阵？
+6. **非功能**：可观测性、可维护性、弹性伸缩、日志留存、审计要求？
+7. **安全 & 合规**：数据分类分级、权限模型、合规或隐私条款、第三方评估？
+8. **风险 & 红线**：潜在失败模式、灾备方案、兜底机制、是否触发 Guardian 审批？
+9. **预算 / SLA / 治理**：成本上限、SLA/SLI、容量规划、是否需要成本回收或限流策略？
+10. **发布 & 回滚**：上线窗口、灰度比例、回滚标准、监控看板、人工值守要求？
+11. **验收 & 度量**：接受标准、验收人、度量方式（定量/定性）、上线后观测口径？
+
+> 提示：以上问题应在 `pnpm intake` 与需求评审时逐项触达，可根据实际场景增删。
+
+### 24.2 DoR（Definition of Ready）核对表
+
+需求进入 Plan/实现前，必须满足以下条件，否则自动停机并生成改进建议：
+
+- ✅ 目标业务价值已量化，优先级被 PO/TL 确认。
+- ✅ 关键用户画像、JTBD、成功判定标准明确。
+- ✅ Must 范围 + 非功能需求 + 风险清单均已落档。
+- ✅ 数据、接口、权限、脱敏策略与预算 / SLA 已评审通过。
+- ✅ 至少 3 条验收标准（Given/When/Then），并约定验收角色。
+- ✅ 具备回滚/兜底方案与发布计划。
+- ✅ 提供测试数据或生成/脱敏方案。
+
+> 未满足任一条目：`pnpm intake`、Issue 模板与 Guardian 均会拒绝进入 Plan 阶段。
+
+### 24.3 SRS 模板与 Schema
+
+- 模板：`docs/SRS.template.yaml`（交互式命令会输出到 `docs/SRS.yaml`）。
+- Schema：`docs/srs.schema.json`，用于机器校验（AJV/自定义脚本均可）。
+- 关键段落：
+
+```yaml
+meta:
+  id: feature-xyz
+  title: 功能标题
+  owner: 团队/责任人
+  stakeholders:
+    - name: PO
+      role: product
+      contact: mailto:po@example.com
+value:
+  business_goal: >-
+    用一句话量化本次需求想要提升的指标或收益。
+  user_jobs:
+    - persona: 调度员
+      job: 快速定位 agent 失败的原因
+  metrics:
+    north_star: 成功率
+    guardrails:
+      - cost_per_task <= 2 CNY
+scope:
+  must:
+    - 用户可查看两类日志：Mainline 与 Branch
+  should:
+    - ……
+  wont:
+    - 首版不做多租户
+non_functional:
+  availability: 99.5%
+  latency:
+    p95: 3s
+risk_register:
+  - id: R1
+    description: 外部 LLM 超时
+    mitigation: 回退本地模型
+acceptance:
+  - id: A1
+    given: ……
+    when: ……
+    then: ……
+release:
+  plan: 金丝雀 5% → 全量
+  rollback: 回滚到上一版本镜像
+```
+
+### 24.4 工具化落地
+
+- `.github/ISSUE_TEMPLATE/feature_request.yml`：提交 Feature Issue 时即填写多角度问题与 DoR 条件，未达标无法提交。
+- `pnpm intake`：交互式问答 → 生成/更新 `docs/SRS.yaml` → 按 `docs/srs.schema.json` 校验 → 输出 DoR 通过/失败原因。
+- 交付产出：命令会在控制台打印缺失项，同时以 JSON 格式写入 `reports/intake-summary.json`（供 Guardian 审计）。
+
+### 24.5 红线 / 停机条件
+
+以下任一触发即刻中断流水线，需补全后方可继续：
+
+- 未生成或缺失 `docs/SRS.yaml`；
+- 验收条目 < 3 条或缺少 G/W/T 结构；
+- 无测试数据、脱敏方案或权限审批；
+- 未声明预算/SLA/权限模型；
+- 命中合规/安全红线（含 PII 泄漏、跨境传输未审批等）。
+
+> Guardian 需记录放行决策与补救计划；若无法满足红线，请终止迭代并上报。

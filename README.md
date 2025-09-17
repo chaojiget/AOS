@@ -1,6 +1,5 @@
 # AOS
 
-<<<<<<< HEAD
 Agent Operating System（AOS）旨在提供一个可回放、可量化的智能体运行平台，结合微内核、插件与本地技能，实现 Plan→Execute→Review→Replay 的闭环能力。
 
 ## 快速导航
@@ -44,7 +43,27 @@ pnpm typecheck # 执行 TypeScript 类型检查
 pnpm test      # 运行单元测试
 pnpm smoke     # 触发最小闭环并生成 episodes + reports
 pnpm replay    # 回放最近一次运行
+pnpm intake    # 交互式需求澄清，生成 docs/SRS.yaml 并校验 DoR
 ```
+
+## 环境配置
+
+项目使用兼容 OpenAI 的推理服务来驱动核心 Agent 能力。首次启动前，请根据以下步骤创建本地环境变量文件：
+
+```bash
+cp .env.example .env.local
+```
+
+然后按照实际部署情况填写下列变量：
+
+| 变量 | 说明 |
+| --- | --- |
+| `OPENAI_BASE_URL` | OpenAI 兼容服务的基础 URL，例如 `https://api.openai.com/v1`。 |
+| `OPENAI_API_KEY` | 调用服务所需的 API Key，请替换为真实凭据。 |
+| `OPENAI_MODEL` | 默认使用的模型名称，如 `gpt-4o-mini`，可按需调整。 |
+| `OPENAI_ORG` | （可选）部分供应商要求的组织或项目标识，用于路由请求。 |
+
+`.env.local` 被列入 `.gitignore`，不会提交到版本库；仅示例文件 `.env.example` 会被跟踪，用于说明所需配置。
 
 ## 目录结构
 

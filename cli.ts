@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
-import { runLoop, type CoreEvent } from "./core/agent.js";
-import { EventBus, wrapCoreEvent } from "./runtime/events.js";
-import { EpisodeLogger } from "./runtime/episode.js";
-import { replayEpisode } from "./runtime/replay.js";
-import { createChatKernel, createDefaultToolInvoker } from "./adapters/core.js";
+import { runLoop, type CoreEvent } from "./core/agent";
+import { EventBus, wrapCoreEvent } from "./runtime/events";
+import { EpisodeLogger } from "./runtime/episode";
+import { replayEpisode } from "./runtime/replay";
+import { createChatKernel, createDefaultToolInvoker } from "./adapters/core";
 
 async function runOnce(message: string) {
   const traceId = randomUUID();
   const bus = new EventBus();
   const logger = new EpisodeLogger({ traceId });
   const toolInvoker = createDefaultToolInvoker();
-  const kernel = createChatKernel({ message, traceId, toolInvoker });
+  const kernel = createChatKernel({ message, traceId, toolInvoker, history: [] });
 
   bus.subscribe((event: any) => {
     logEvent(event.data);

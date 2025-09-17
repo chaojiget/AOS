@@ -10,7 +10,8 @@ import {
   PlanStep,
   ActionOutcome,
   ReviewResult,
-} from "../core/agent.js";
+} from "../core/agent";
+import { buildChatCompletionsUrl, loadLLMConfig } from "../config/llm";
 
 async function handleHttpGet(args: any): Promise<ToolResult> {
   const url = args?.url;
@@ -60,23 +61,121 @@ function handleEcho(args: any): ToolResult {
   return { ok: true, data: args } satisfies ToolOk;
 }
 
-function handleChat(args: any): ToolResult {
-  const prompt = args?.prompt;
-  const messages = Array.isArray(args?.messages) ? args.messages : [];
-  const content =
-    typeof prompt === "string" && prompt.trim().length
-      ? prompt
-      : messages
-          .map((m: any) => m?.content)
-          .filter(Boolean)
-          .join("\n");
+type ChatMessage = { role: string; content: string };
 
-  const reply =
-    content?.length > 0
-      ? `Echoing (${content.length} chars): ${content}`
-      : "Hello! I am a local chat kernel. Provide a prompt to continue.";
+function normaliseMessages(args: any): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  if (Array.isArray(args?.messages)) {
+    for (const item of args.messages) {
+      if (item && typeof item.role === "string" && typeof item.content === "string") {
+        messages.push({ role: item.role, content: item.content });
+      }
+    }
+  }
 
-  return { ok: true, data: { content: reply } } satisfies ToolOk;
+  const prompt = typeof args?.prompt === "string" ? args.prompt.trim() : "";
+  if (prompt) {
+    messages.push({ role: "user", content: prompt });
+  }
+
+  return messages;
+}
+
+async function handleChat(args: any): Promise<ToolResult> {
+  let config;
+  try {
+    config = loadLLMConfig();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown configuration error";
+    return {
+      ok: false,
+      code: "llm.config_error",
+      message,
+    } satisfies ToolError;
+  }
+
+  const messages = normaliseMessages(args);
+  if (messages.length === 0) {
+    return {
+      ok: false,
+      code: "llm.invalid_args",
+      message: "prompt or messages must be provided",
+    } satisfies ToolError;
+  }
+
+  const url = buildChatCompletionsUrl(config);
+  const temperature = typeof args?.temperature === "number" ? args.temperature : 0;
+  const maxTokens = typeof args?.max_tokens === "number" ? args.max_tokens : undefined;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+        ...(config.organization ? { "OpenAI-Organization": config.organization } : {}),
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+        temperature,
+        ...(maxTokens ? { max_tokens: maxTokens } : {}),
+      }),
+    });
+
+    if (!response.ok) {
+      let detail: unknown;
+      try {
+        detail = await response.json();
+      } catch {
+        detail = await response.text();
+      }
+
+      const message =
+        typeof (detail as any)?.error?.message === "string"
+          ? (detail as any).error.message
+          : typeof detail === "string"
+            ? detail
+            : `request failed (${response.status})`;
+
+      return {
+        ok: false,
+        code: "llm.http_error",
+        message,
+        retryable: response.status >= 500,
+      } satisfies ToolError;
+    }
+
+    const payload = (await response.json()) as {
+      id?: string;
+      choices?: Array<{ message?: ChatMessage; finish_reason?: string }>;
+      model?: string;
+      usage?: Record<string, unknown>;
+    };
+
+    const choice = payload.choices?.[0];
+    const content = choice?.message?.content ?? "";
+
+    return {
+      ok: true,
+      data: {
+        id: payload.id,
+        model: payload.model ?? config.model,
+        content,
+        choices: payload.choices,
+        usage: payload.usage,
+        finish_reason: choice?.finish_reason,
+      },
+    } satisfies ToolOk;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return {
+      ok: false,
+      code: "llm.network_error",
+      message,
+      retryable: true,
+    } satisfies ToolError;
+  }
 }
 
 export function createDefaultToolInvoker(): ToolInvoker {
@@ -121,14 +220,18 @@ interface ChatKernelOptions {
   message: string;
   traceId: string;
   toolInvoker: ToolInvoker;
+  history?: ChatMessage[];
 }
 
 class ChatKernel implements AgentKernel {
   private perceived = false;
   private planCount = 0;
   private actions: ActionOutcome[] = [];
+  private readonly history: ChatMessage[];
 
-  constructor(private readonly options: ChatKernelOptions) {}
+  constructor(private readonly options: ChatKernelOptions) {
+    this.history = Array.isArray(options.history) ? [...options.history] : [];
+  }
 
   async perceive(): Promise<void> {
     this.perceived = true;
@@ -139,6 +242,13 @@ class ChatKernel implements AgentKernel {
     if (!this.perceived) {
       throw new Error("perceive must be called before plan");
     }
+    const combinedHistory = [
+      ...this.history,
+      ...(this.options.message
+        ? [{ role: "user", content: this.options.message } satisfies ChatMessage]
+        : []),
+    ];
+
     return {
       revision: this.planCount,
       reason: this.planCount === 1 ? "initial" : "retry",
@@ -146,7 +256,7 @@ class ChatKernel implements AgentKernel {
         {
           id: `${this.options.traceId}-step-${this.planCount}`,
           op: "llm.chat",
-          args: { prompt: this.options.message },
+          args: { messages: combinedHistory },
         },
       ],
     } satisfies Plan;

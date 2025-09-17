@@ -20,7 +20,8 @@
     "test:ui": "playwright test",
     "smoke": "node scripts/smoke.mjs",
     "replay": "node scripts/replay.mjs",
-    "score": "node scripts/score.mjs"
+    "score": "node scripts/score.mjs",
+    "intake": "node scripts/intake.mjs"
   },
   "keywords": [],
   "author": "",
