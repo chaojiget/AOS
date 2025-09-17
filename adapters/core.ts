@@ -220,14 +220,18 @@ interface ChatKernelOptions {
   message: string;
   traceId: string;
   toolInvoker: ToolInvoker;
+  history?: ChatMessage[];
 }
 
 class ChatKernel implements AgentKernel {
   private perceived = false;
   private planCount = 0;
   private actions: ActionOutcome[] = [];
+  private readonly history: ChatMessage[];
 
-  constructor(private readonly options: ChatKernelOptions) {}
+  constructor(private readonly options: ChatKernelOptions) {
+    this.history = Array.isArray(options.history) ? [...options.history] : [];
+  }
 
   async perceive(): Promise<void> {
     this.perceived = true;
@@ -238,6 +242,13 @@ class ChatKernel implements AgentKernel {
     if (!this.perceived) {
       throw new Error("perceive must be called before plan");
     }
+    const combinedHistory = [
+      ...this.history,
+      ...(this.options.message
+        ? [{ role: "user", content: this.options.message } satisfies ChatMessage]
+        : []),
+    ];
+
     return {
       revision: this.planCount,
       reason: this.planCount === 1 ? "initial" : "retry",
@@ -245,7 +256,7 @@ class ChatKernel implements AgentKernel {
         {
           id: `${this.options.traceId}-step-${this.planCount}`,
           op: "llm.chat",
-          args: { prompt: this.options.message },
+          args: { messages: combinedHistory },
         },
       ],
     } satisfies Plan;

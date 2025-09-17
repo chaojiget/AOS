@@ -11,6 +11,7 @@ const COMPILER_OPTIONS = {
   esModuleInterop: true,
   skipLibCheck: true,
   sourceMap: false,
+  jsx: ts.JsxEmit.ReactJSX,
 };
 
 async function fileExists(url) {
