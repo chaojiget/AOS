@@ -83,6 +83,13 @@ export type CoreEvent =
   | { type: "final"; outputs: any; reason?: string }
   | { type: "log"; level: LogLevel; message: string; detail?: any };
 
+export interface EventMetadata {
+  spanId?: string;
+  parentSpanId?: string;
+  topic?: string;
+  level?: LogLevel;
+}
+
 export interface AgentContext {
   traceId: string;
   input?: any;
@@ -113,7 +120,7 @@ const ensurePromise = async <T>(value: T | Promise<T>): Promise<T> => value;
 
 export async function runLoop(
   kernel: AgentKernel,
-  emit: (event: CoreEvent) => void | Promise<void>,
+  emit: (event: CoreEvent, meta?: EventMetadata) => void | Promise<void>,
   options: RunLoopOptions = {},
 ): Promise<RunLoopResult> {
   const maxIterations = options.maxIterations ?? 3;
@@ -131,13 +138,17 @@ export async function runLoop(
     const plan = await kernel.plan();
     const steps = plan?.steps ?? [];
     const revision = plan?.revision ?? iteration;
+    const planSpanId = `plan-${iteration}-${revision}`;
     await ensurePromise(
-      emit({
-        type: "plan",
-        steps,
-        revision,
-        reason: plan?.reason ?? (iteration === 1 ? "initial" : "retry"),
-      }),
+      emit(
+        {
+          type: "plan",
+          steps,
+          revision,
+          reason: plan?.reason ?? (iteration === 1 ? "initial" : "retry"),
+        },
+        { spanId: planSpanId },
+      ),
     );
 
     if (!steps.length) {
@@ -157,14 +168,17 @@ export async function runLoop(
       const outcome = await kernel.act(fallbackStep);
       actions.push(outcome);
       await ensurePromise(
-        emit({
-          type: "tool",
-          name: fallbackStep.op,
-          args: fallbackStep.args,
-          result: outcome.result,
-          cost: outcome.result.ok ? outcome.result.cost : undefined,
-          latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
-        }),
+        emit(
+          {
+            type: "tool",
+            name: fallbackStep.op,
+            args: fallbackStep.args,
+            result: outcome.result,
+            cost: outcome.result.ok ? outcome.result.cost : undefined,
+            latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
+          },
+          { spanId: fallbackStep.id },
+        ),
       );
       const finalOutputs = await kernel.renderFinal(actions);
       await ensurePromise(emit({ type: "final", outputs: finalOutputs, reason: "no-plan" }));
@@ -172,27 +186,38 @@ export async function runLoop(
     }
 
     for (const step of steps) {
-      await ensurePromise(emit({ type: "progress", step: "act", pct: 0.4 }));
+      await ensurePromise(
+        emit(
+          { type: "progress", step: "act", pct: 0.4 },
+          { spanId: step.id, parentSpanId: planSpanId },
+        ),
+      );
       const outcome = await kernel.act(step);
       actions.push(outcome);
       await ensurePromise(
-        emit({
-          type: "tool",
-          name: step.op,
-          args: step.args,
-          result: outcome.result,
-          cost: outcome.result.ok ? outcome.result.cost : undefined,
-          latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
-        }),
+        emit(
+          {
+            type: "tool",
+            name: step.op,
+            args: step.args,
+            result: outcome.result,
+            cost: outcome.result.ok ? outcome.result.cost : undefined,
+            latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
+          },
+          { spanId: step.id, parentSpanId: planSpanId },
+        ),
       );
 
       if (outcome.ask) {
         await ensurePromise(
-          emit({
-            type: "ask",
-            question: outcome.ask.question,
-            origin_step: outcome.ask.origin_step ?? step.id,
-          }),
+          emit(
+            {
+              type: "ask",
+              question: outcome.ask.question,
+              origin_step: outcome.ask.origin_step ?? step.id,
+            },
+            { spanId: step.id, parentSpanId: planSpanId },
+          ),
         );
         return { actions, reason: "ask" };
       }

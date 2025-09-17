@@ -25,6 +25,10 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
   const [branch, setBranch] = useState<BranchResponse | null>(null);
   const latestSelectionRef = useRef<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const branchCards = useMemo(() => {
+    if (!branch?.tree) return [];
+    return flattenBranchNodes(branch.tree);
+  }, [branch]);
 
   useEffect(() => {
     if (!traceId) {
@@ -242,9 +246,55 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
             <p style={{ fontSize: "0.9rem", color: "#f87171" }}>{branchState.error}</p>
           ) : branch ? (
             <div style={{ display: "grid", gap: "0.75rem" }}>
-              <div style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
-                Origin: {branch.origin.span_id ? `span ${branch.origin.span_id}` : "message"}
-                {branch.origin.ln !== undefined ? ` · ln ${branch.origin.ln}` : ""}
+              <div>
+                <div style={{ fontSize: "0.85rem", color: "#94a3b8", marginBottom: "0.5rem" }}>
+                  Origin: {branch.origin.span_id ? `span ${branch.origin.span_id}` : "message"}
+                  {branch.origin.ln !== undefined ? ` · ln ${branch.origin.ln}` : ""}
+                </div>
+                {branchCards.length > 0 ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "0.75rem",
+                    }}
+                  >
+                    {branchCards.map(({ node, depth }) => (
+                      <div
+                        key={`${node.span_id}-${depth}`}
+                        style={{
+                          flex: "1 1 180px",
+                          minWidth: 160,
+                          border: "1px solid #1f2937",
+                          borderRadius: 10,
+                          background: "#0f172a",
+                          padding: "0.75rem",
+                          boxShadow: depth
+                            ? "inset 0 0 0 1px rgba(56, 189, 248, 0.15)"
+                            : "inset 0 0 0 1px rgba(148, 163, 184, 0.2)",
+                        }}
+                      >
+                        <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                          {depth === 0 ? "Root span" : `Depth ${depth}`}
+                        </div>
+                        <div style={{ fontWeight: 600 }}>{node.span_id}</div>
+                        <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                          Parent: {node.parent_span_id ?? "—"}
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                          Lines {node.first_ln} – {node.last_ln}
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                          Events {node.events.length}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
+                    No span hierarchy available for this selection.
+                  </p>
+                )}
               </div>
               {branch.messages.length > 0 && (
                 <div>
@@ -351,6 +401,12 @@ function renderBranchNode(node: BranchNode, depth = 0): JSX.Element {
       {node.children.map((child: BranchNode) => renderBranchNode(child, depth + 1))}
     </div>
   );
+}
+
+function flattenBranchNodes(node: BranchNode, depth = 0): Array<{ node: BranchNode; depth: number }> {
+  const current = [{ node, depth }];
+  const children = node.children.flatMap((child) => flattenBranchNodes(child, depth + 1));
+  return [...current, ...children];
 }
 
 export default LogFlowPanel;

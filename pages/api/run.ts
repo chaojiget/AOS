@@ -3,14 +3,20 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 import { createChatKernel, createDefaultToolInvoker } from "../../adapters/core";
-import { runLoop, type CoreEvent } from "../../core/agent";
+import { runLoop, type CoreEvent, type EventMetadata } from "../../core/agent";
 import { EpisodeLogger } from "../../runtime/episode";
 import { EventBus, wrapCoreEvent, type EventEnvelope } from "../../runtime/events";
 
 interface RunResponse {
   trace_id: string;
   result: unknown;
-  events: Array<{ ts: string; type: string; data: CoreEvent }>;
+  events: Array<{
+    ts: string;
+    type: string;
+    span_id?: string;
+    parent_span_id?: string;
+    data: CoreEvent;
+  }>;
 }
 
 const episodesDir = join(process.cwd(), "episodes");
@@ -89,8 +95,8 @@ export default async function handler(
   });
 
   try {
-    const emit = async (event: CoreEvent): Promise<void> => {
-      await bus.publish(wrapCoreEvent(traceId, event));
+    const emit = async (event: CoreEvent, meta?: EventMetadata): Promise<void> => {
+      await bus.publish(wrapCoreEvent(traceId, event, meta));
     };
     const result = await runLoop(kernel, emit, {
       context: { traceId, input: message },
@@ -102,6 +108,8 @@ export default async function handler(
       events: events.map((evt: EventEnvelope<CoreEvent>) => ({
         ts: evt.ts,
         type: evt.type,
+        span_id: evt.span_id,
+        parent_span_id: evt.parent_span_id,
         data: evt.data,
       })),
     });

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
-import { runLoop, type CoreEvent } from "./core/agent";
+import { runLoop, type CoreEvent, type EventMetadata } from "./core/agent";
 import { EventBus, wrapCoreEvent } from "./runtime/events";
 import { EpisodeLogger } from "./runtime/episode";
 import { replayEpisode } from "./runtime/replay";
@@ -18,8 +18,8 @@ async function runOnce(message: string) {
     logger.append(event).catch(console.error);
   });
 
-  const emit = (event: CoreEvent) => {
-    bus.publish(wrapCoreEvent(traceId, event)).catch(console.error);
+  const emit = (event: CoreEvent, meta?: EventMetadata) => {
+    bus.publish(wrapCoreEvent(traceId, event, meta)).catch(console.error);
   };
   const result = await runLoop(kernel, emit, {
     context: { traceId, input: message },
