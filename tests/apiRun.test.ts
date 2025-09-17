@@ -129,6 +129,24 @@ describe("POST /api/run", () => {
             choices: [{ message: { content: "second reply" }, finish_reason: "stop" }],
           }),
         },
+        {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: "call-3",
+            model: "gpt-test",
+            choices: [{ message: { content: "third reply" }, finish_reason: "stop" }],
+          }),
+        },
+        {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: "call-4",
+            model: "gpt-test",
+            choices: [{ message: { content: "fourth reply" }, finish_reason: "stop" }],
+          }),
+        },
       ];
       let fetchCalls = 0;
       (globalThis as any).fetch = async () => {
@@ -154,7 +172,7 @@ describe("POST /api/run", () => {
       expect(first.status).toBe(200);
       expect(typeof first.body?.trace_id).toBe("string");
       const traceId = first.body.trace_id as string;
-      expect(fetchCalls).toBe(1);
+      expect(fetchCalls).toBe(2);
 
       const episodePath = join(tmpDir, "episodes", `${traceId}.jsonl`);
       const indexPath = join(tmpDir, "episodes", `${traceId}.index.jsonl`);
@@ -181,7 +199,7 @@ describe("POST /api/run", () => {
       });
       expect(second.status).toBe(200);
       expect(second.body?.trace_id).toBe(traceId);
-      expect(fetchCalls).toBe(2);
+      expect(fetchCalls).toBe(4);
 
       await readFileWithRetry(episodePath);
       const updatedEvents = await readEventsWithRetry(

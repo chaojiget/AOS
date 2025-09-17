@@ -232,6 +232,8 @@ class ChatKernel implements AgentKernel {
   private planCount = 0;
   private actions: ActionOutcome[] = [];
   private readonly history: ChatMessage[];
+  private readonly plannerInstruction =
+    "你是一名善于拆解任务的规划助手，需要把复杂目标分解为一系列可以调用工具或 MCP 能力的步骤。";
 
   constructor(private readonly options: ChatKernelOptions) {
     const baseHistory = Array.isArray(options.history)
@@ -265,39 +267,115 @@ class ChatKernel implements AgentKernel {
         : []),
     ];
 
-    return {
-      revision: this.planCount,
-      reason: this.planCount === 1 ? "initial" : "retry",
+    const revision = this.planCount;
+    const defaultPlan: Plan = {
+      revision,
+      reason: revision === 1 ? "initial" : "retry",
       steps: [
         {
-          id: `${this.options.traceId}-step-${this.planCount}`,
+          id: `${this.options.traceId}-step-${revision}`,
           op: "llm.chat",
           args: { messages: combinedHistory },
         },
       ],
     } satisfies Plan;
+
+    const planMessages = this.buildPlanningMessages();
+    let plannerResult: ToolResult | undefined;
+    try {
+      plannerResult = await this.options.toolInvoker(
+        { name: "llm.chat", args: { messages: planMessages, temperature: 0 } },
+        { trace_id: this.options.traceId, span_id: `plan-${revision}` },
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        ...defaultPlan,
+        notes: [`plan invocation failed: ${message}`],
+      } satisfies Plan;
+    }
+
+    if (!plannerResult.ok) {
+      return {
+        ...defaultPlan,
+        notes: [`plan invocation error: ${plannerResult.message}`],
+      } satisfies Plan;
+    }
+
+    const parsed = this.parsePlanResult(plannerResult.data, revision);
+    if (!parsed.steps.length) {
+      return {
+        ...defaultPlan,
+        notes: parsed.notes?.length
+          ? [...(defaultPlan.notes ?? []), ...parsed.notes]
+          : defaultPlan.notes,
+      } satisfies Plan;
+    }
+
+    return {
+      revision,
+      reason: parsed.reason ?? (revision === 1 ? "initial" : "retry"),
+      notes: parsed.notes,
+      steps: parsed.steps,
+    } satisfies Plan;
   }
 
   async act(step: PlanStep): Promise<ActionOutcome> {
-    const result = await this.options.toolInvoker(
-      { name: step.op, args: step.args },
-      {
-        trace_id: this.options.traceId,
-        span_id: step.id,
-      },
-    );
+    if (this.isAskStep(step)) {
+      const ask = this.buildAsk(step);
+      const outcome: ActionOutcome = { step, result: { ok: true, data: null }, ask };
+      this.actions.push(outcome);
+      return outcome;
+    }
+
+    const call = this.resolveToolCall(step);
+    let result: ToolResult;
+    try {
+      if (!call) {
+        result = {
+          ok: false,
+          code: "tool.unsupported",
+          message: `unsupported operation: ${step.op}`,
+        } satisfies ToolError;
+      } else {
+        result = await this.options.toolInvoker(call, {
+          trace_id: this.options.traceId,
+          span_id: step.id,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      result = {
+        ok: false,
+        code: "tool.invoke_error",
+        message,
+      } satisfies ToolError;
+    }
+
     const outcome: ActionOutcome = { step, result };
     this.actions.push(outcome);
     return outcome;
   }
 
   async review(actions: ActionOutcome[]): Promise<ReviewResult> {
-    const latest = actions.at(-1);
-    const passed = Boolean(latest?.result.ok);
+    const executed = actions.length ? actions : this.actions;
+    const failures = executed.filter((item) => !item.result.ok);
+    if (failures.length) {
+      const lastFailure = failures.at(-1)!;
+      const message =
+        (lastFailure.result as ToolError).message ?? (lastFailure.result as ToolError).code;
+      return {
+        score: Math.max(0, executed.length - failures.length),
+        passed: false,
+        notes: [`${lastFailure.step.op} failed: ${message}`],
+      } satisfies ReviewResult;
+    }
+
+    const latest = executed.at(-1);
     return {
-      score: passed ? 1 : 0,
-      passed,
-      notes: passed ? ["auto-pass: chat response generated"] : ["tool invocation failed"],
+      score: executed.length,
+      passed: true,
+      notes: latest ? [`${latest.step.op} succeeded`] : undefined,
     } satisfies ReviewResult;
   }
 
@@ -316,6 +394,132 @@ class ChatKernel implements AgentKernel {
       return { text: JSON.stringify(data), raw: data };
     }
     return { error: latest.result };
+  }
+
+  private buildPlanningMessages(): ChatMessage[] {
+    const conversation = this.history
+      .filter((msg) => !(msg.role === DEFAULT_SYSTEM_PROMPT.role && msg.content === DEFAULT_SYSTEM_PROMPT.content))
+      .map((msg) => {
+        const speaker = msg.role === "user" ? "用户" : msg.role === "assistant" ? "助手" : msg.role;
+        return `${speaker}: ${msg.content}`;
+      })
+      .join("\n");
+
+    const latestDemand = this.options.message?.trim() ?? "";
+    const promptSections = [
+      conversation ? `以下是最近的对话上下文：\n${conversation}` : null,
+      latestDemand ? `当前用户需求：${latestDemand}` : null,
+      "请针对需求生成一个结构化的执行计划，列出 1-5 个步骤。每个步骤包含 id、op、args、description 字段。",
+      "支持的 op 可以是 llm.chat、mcp-core.*、mcp-memory.* 或其他注册工具。输出必须是 JSON 对象或数组，必要时可包含 reason、notes。",
+    ].filter(Boolean);
+
+    return [
+      DEFAULT_SYSTEM_PROMPT,
+      { role: "system", content: this.plannerInstruction },
+      { role: "user", content: promptSections.join("\n\n") },
+    ];
+  }
+
+  private parsePlanResult(
+    data: any,
+    revision: number,
+  ): { steps: PlanStep[]; reason?: string; notes?: string[] } {
+    const parsed = this.extractPlanPayload(data);
+    if (!parsed) {
+      return { steps: [] };
+    }
+
+    const stepsInput = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.steps)
+        ? parsed.steps
+        : [];
+    const reason = typeof parsed?.reason === "string" ? parsed.reason : undefined;
+    const notes = Array.isArray(parsed?.notes)
+      ? parsed.notes.filter((item) => typeof item === "string")
+      : undefined;
+
+    const steps: PlanStep[] = [];
+    for (const [index, item] of stepsInput.entries()) {
+      if (!item || typeof item !== "object") continue;
+      const op = typeof (item as any).op === "string" ? (item as any).op.trim() : "";
+      if (!op) continue;
+      const idRaw = (item as any).id;
+      const id =
+        typeof idRaw === "string" && idRaw.trim()
+          ? idRaw.trim()
+          : `${this.options.traceId}-step-${revision}-${index + 1}`;
+      const args = (item as any).args ?? {};
+      const description = typeof (item as any).description === "string" ? (item as any).description : undefined;
+      steps.push({ id, op, args, description });
+    }
+
+    return { steps, reason, notes };
+  }
+
+  private extractPlanPayload(data: any): any {
+    if (!data) return null;
+    if (Array.isArray(data)) return data;
+    if (typeof data === "object") {
+      if (Array.isArray((data as any).steps)) {
+        return data;
+      }
+      if (typeof (data as any).content === "string") {
+        return this.tryParseJson((data as any).content);
+      }
+    }
+    if (typeof data === "string") {
+      return this.tryParseJson(data);
+    }
+    return null;
+  }
+
+  private tryParseJson(text: string): any {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+    const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const jsonText = fenceMatch ? fenceMatch[1] : trimmed;
+    try {
+      return JSON.parse(jsonText);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  private isAskStep(step: PlanStep): boolean {
+    return step.op === "agent.ask" || step.op === "ask" || step.op === "agent.request_clarification";
+  }
+
+  private buildAsk(step: PlanStep): { question: string; origin_step: string; detail?: any } {
+    const args = step.args ?? {};
+    const question =
+      typeof (args as any)?.question === "string"
+        ? (args as any).question
+        : this.options.message ?? "需要更多信息";
+    const detail = (args as any)?.detail;
+    return { question, origin_step: step.id, detail };
+  }
+
+  private resolveToolCall(step: PlanStep): ToolCall | null {
+    if (!step.op) {
+      return null;
+    }
+    const args = step.args ?? {};
+    if (step.op.startsWith("mcp-")) {
+      const segments = step.op.split(".");
+      const server = segments.shift();
+      const tool = segments.join(".");
+      if (server && tool) {
+        if (args && typeof args === "object" && "server" in (args as any) && "tool" in (args as any)) {
+          return { name: "mcp.invoke", args } satisfies ToolCall;
+        }
+        return {
+          name: "mcp.invoke",
+          args: { server, tool, params: args },
+        } satisfies ToolCall;
+      }
+    }
+    return { name: step.op, args } satisfies ToolCall;
   }
 }
 

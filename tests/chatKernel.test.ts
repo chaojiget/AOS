@@ -24,6 +24,9 @@ describe("createChatKernel", () => {
 
     await kernel.perceive({ traceId: "trace-test" });
     const plan = await kernel.plan();
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0]?.name).toBe("llm.chat");
+    expect(invocations[0]?.args?.messages?.[0]).toEqual(DEFAULT_SYSTEM_PROMPT);
     expect(Boolean(plan)).toBe(true);
 
     const nonNullPlan = plan!;
@@ -39,8 +42,8 @@ describe("createChatKernel", () => {
     });
 
     const outcome = await kernel.act(step);
-    expect(invocations).toHaveLength(1);
-    expect(invocations[0]).toMatchObject({
+    expect(invocations).toHaveLength(2);
+    expect(invocations[1]).toMatchObject({
       name: "llm.chat",
       args: step.args,
     });

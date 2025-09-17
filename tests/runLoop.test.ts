@@ -9,6 +9,7 @@ import {
   type CoreEvent,
   type EmitSpanOptions,
 } from "../core/agent";
+import { createChatKernel } from "../adapters/core";
 
 type EmittedEntry = { event: CoreEvent; span?: EmitSpanOptions };
 
@@ -161,6 +162,85 @@ describe("runLoop", () => {
     expect(result.reason).toBe("ask");
     const askEvent = emitted.find((item) => item.event.type === "ask");
     expect(askEvent?.span).toEqual({ spanId: "ask-step", parentSpanId: "plan-1" });
+  });
+
+  it("executes ChatKernel multi-step plan and stops when clarification is required", async () => {
+    const emitted: EmittedEntry[] = [];
+    const calls: Array<{ name: string; args: any }> = [];
+    const planPayload = {
+      reason: "analysis",
+      notes: ["multi-step"],
+      steps: [
+        {
+          id: "memory-1",
+          op: "mcp-memory.get",
+          args: { namespace: "default", key: "summary" },
+          description: "读取缓存上下文",
+        },
+        {
+          id: "clarify",
+          op: "agent.ask",
+          args: { question: "请提供目标文件路径" },
+        },
+        {
+          id: "final-llm",
+          op: "llm.chat",
+          args: { prompt: "summarize" },
+        },
+      ],
+    };
+
+    let plannerCallCount = 0;
+    const kernel = createChatKernel({
+      message: "请概括文件并告诉我需要澄清什么",
+      traceId: "trace-chat-kernel",
+      toolInvoker: async (call) => {
+        calls.push({ name: call.name, args: call.args });
+        if (call.name === "llm.chat") {
+          plannerCallCount += 1;
+          if (plannerCallCount === 1) {
+            return { ok: true, data: { content: JSON.stringify(planPayload) } } satisfies ToolResult;
+          }
+          return { ok: true, data: { content: "ignored" } } satisfies ToolResult;
+        }
+        if (call.name === "mcp.invoke") {
+          return {
+            ok: true,
+            data: { server: call.args.server, tool: call.args.tool, value: "context" },
+          } satisfies ToolResult;
+        }
+        return { ok: false, code: "unexpected", message: `unexpected tool: ${call.name}` } satisfies ToolResult;
+      },
+    });
+
+    const result = await runLoop(
+      kernel,
+      (event: CoreEvent, span?: EmitSpanOptions) => {
+        emitted.push({ event, span });
+      },
+      { context: { traceId: "trace-chat-kernel", input: "概括一下" } },
+    );
+
+    expect(result.reason).toBe("ask");
+    expect(result.actions).toHaveLength(2);
+    expect(result.actions[0]?.step.id).toBe("memory-1");
+    expect(result.actions[0]?.result.ok).toBe(true);
+    expect(result.actions[1]?.step.id).toBe("clarify");
+    expect(result.actions[1]?.ask?.origin_step).toBe("clarify");
+    expect(result.actions[1]?.ask?.question != null).toBe(true);
+    expect((result.actions[1]?.ask?.question ?? "").includes("目标文件")).toBe(true);
+
+    expect(calls[0]?.name).toBe("llm.chat");
+    expect(calls[1]?.name).toBe("mcp.invoke");
+    expect(calls[1]?.args).toMatchObject({
+      server: "mcp-memory",
+      tool: "get",
+      params: { namespace: "default", key: "summary" },
+    });
+
+    const askEvent = emitted.find((item) => item.event.type === "ask");
+    expect(askEvent?.span).toEqual({ spanId: "clarify", parentSpanId: "plan-1" });
+    expect(emitted.some((item) => item.event.type === "score")).toBe(false);
   });
 
   it("terminates when a tool returns a non-retryable error", async () => {
