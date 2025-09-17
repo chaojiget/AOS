@@ -24,6 +24,7 @@ export default function Document() {
             `,
           }}
         />
+<<<<<<< HEAD
         <Script
           id="tailwind-runtime"
           src="https://cdn.tailwindcss.com?plugins=typography"

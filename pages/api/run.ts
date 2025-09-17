@@ -66,14 +66,9 @@ export default async function handler(
   const events: EventEnvelope<CoreEvent>[] = [];
   bus.subscribe((event: EventEnvelope<CoreEvent>) => {
     events.push(event);
-    return logger
-      .append(event)
-      .then(() => {
-        return undefined;
-      })
-      .catch((error: unknown) => {
-        console.error("failed to append episode event", error);
-      });
+    void logger.append(event).catch((error: unknown) => {
+      console.error("failed to append episode event", error);
+    });
   });
 
   try {
