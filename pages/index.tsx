@@ -48,6 +48,52 @@ const HomePage: NextPage = () => {
   const [activeTab, setActiveTab] = useState<"chat" | "logflow">("chat");
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [cost, setCost] = useState<number | null>(null);
+  const [finalOutput, setFinalOutput] = useState<any>(null);
+
+  const draftInput = useMemo(() => input.trim(), [input]);
+
+  const handleSaveConversation = useCallback(() => {
+    const entries = chatHistory.map((message) => ({
+      role: message.role,
+      text: message.content,
+      timestamp: message.ts,
+      ...(message.msgId ? { msg_id: message.msgId } : {}),
+      ...(message.traceId ? { trace_id: message.traceId } : {}),
+      ...(message.status ? { status: message.status } : {}),
+      ...(typeof message.latencyMs === "number" ? { latency_ms: message.latencyMs } : {}),
+      ...(typeof message.cost === "number" ? { cost: message.cost } : {}),
+      ...(message.error ? { error: message.error } : {}),
+    }));
+
+    if (draftInput) {
+      entries.push({
+        role: "user",
+        text: draftInput,
+        timestamp: new Date().toISOString(),
+        draft: true,
+      });
+    }
+
+    if (entries.length === 0) {
+      return;
+    }
+
+    const blob = new Blob([JSON.stringify(entries, null, 2)], {
+      type: "application/json",
+    });
+    const idPart = traceId ? `-${traceId}` : `-${Date.now()}`;
+    const filename = `conversation${idPart}.json`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 0);
+  }, [chatHistory, draftInput, traceId]);
 
   const handleRun = useCallback(async () => {
     if (isRunning) return;
@@ -75,6 +121,7 @@ const HomePage: NextPage = () => {
     setLatestResponse(null);
     setLatencyMs(null);
     setCost(null);
+    setFinalOutput(null);
     setInput("");
     const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     try {
@@ -103,6 +150,7 @@ const HomePage: NextPage = () => {
       setLatestResponse(data);
       const resolvedTraceId = data.trace_id ?? data.message?.trace_id ?? previousTraceId ?? traceId;
       setTraceId(resolvedTraceId);
+      setFinalOutput(data.result ?? data.final ?? data.output ?? data.message ?? null);
 
       const computedLatency = data.metrics?.latency_ms ??
         (typeof performance !== "undefined" ? Math.round(performance.now() - startedAt) : Date.now() - startedAt);
@@ -159,6 +207,7 @@ const HomePage: NextPage = () => {
     } catch (err: any) {
       const errorMessage = err?.message ?? "Failed to run agent";
       setRunError(errorMessage);
+      setFinalOutput(null);
       setChatHistory((history) => {
         const updated = history.map((message) =>
           message.id === localId
@@ -275,10 +324,100 @@ const HomePage: NextPage = () => {
               gap: "1.5rem",
             }}
           >
-            <div>
-              <h3 style={{ margin: "0 0 0.75rem" }}>Conversation</h3>
+            <div
+              style={{
+                display: "grid",
+                gap: "1rem",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "0.75rem",
+                }}
+              >
+                <h3 style={{ margin: 0 }}>Conversation</h3>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "0.75rem",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {traceId ? (
+                    <span style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
+                      此对话已写入 episodes/{traceId}.jsonl ·{" "}
+                      <a href={`/api/episodes/${traceId}`} style={{ color: "#38bdf8" }}>
+                        下载 JSONL
+                      </a>
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={handleSaveConversation}
+                    disabled={!chatHistory.length && !draftInput}
+                    style={{
+                      padding: "0.6rem 1.25rem",
+                      borderRadius: 999,
+                      border: "1px solid #38bdf8",
+                      background: "transparent",
+                      color: "#38bdf8",
+                      fontWeight: 600,
+                      cursor: !chatHistory.length && !draftInput ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    保存对话
+                  </button>
+                </div>
+              </div>
               <ChatMessageList messages={chatHistory} isRunning={isRunning} />
+              {draftInput ? (
+                <div
+                  style={{
+                    background: "#0f172a",
+                    border: "1px dashed #334155",
+                    borderRadius: 8,
+                    padding: "0.75rem 1rem",
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  <div style={{ color: "#94a3b8", fontSize: "0.8rem", marginBottom: "0.25rem" }}>
+                    draft input
+                  </div>
+                  <div>{draftInput}</div>
+                </div>
+              ) : null}
+              {finalOutput ? (
+                <div
+                  style={{
+                    borderTop: "1px solid #1f2937",
+                    paddingTop: "0.75rem",
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  <div style={{ color: "#94a3b8", fontSize: "0.8rem", marginBottom: "0.25rem" }}>
+                    Latest final output snapshot
+                  </div>
+                  <pre
+                    style={{
+                      margin: 0,
+                      background: "#111827",
+                      padding: "0.75rem",
+                      borderRadius: 6,
+                      overflowX: "auto",
+                    }}
+                  >
+                    {JSON.stringify(finalOutput, null, 2)}
+                  </pre>
+                </div>
+              ) : null}
             </div>
+
             <form onSubmit={handleSubmit} style={{ display: "grid", gap: "1rem" }}>
               <label htmlFor="prompt" style={{ fontWeight: 600 }}>
                 Chat Input
