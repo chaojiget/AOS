@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { CoreEvent } from "../core/agent";
+import type { CoreEvent, EventMetadata } from "../core/agent";
 
 export interface EventEnvelope<T = any> {
   id: string;
@@ -50,11 +50,7 @@ export class EventBus {
   }
 }
 
-export interface WrapEventOptions {
-  spanId?: string;
-  parentSpanId?: string;
-  topic?: string;
-  level?: "debug" | "info" | "warn" | "error";
+export interface WrapEventOptions extends EventMetadata {
   version?: number;
 }
 
@@ -63,6 +59,8 @@ export function wrapCoreEvent(
   event: CoreEvent,
   options: WrapEventOptions = {},
 ): EventEnvelope<CoreEvent> {
+  const level =
+    options.level ?? (event.type === "log" ? (event.level as WrapEventOptions["level"]) : undefined);
   return {
     id: randomUUID(),
     ts: new Date().toISOString(),
@@ -72,7 +70,7 @@ export function wrapCoreEvent(
     span_id: options.spanId,
     parent_span_id: options.parentSpanId,
     topic: options.topic,
-    level: options.level,
+    level,
     data: event,
   };
 }

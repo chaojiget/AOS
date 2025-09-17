@@ -106,6 +106,20 @@ export function buildBranchTree(
     node.events.push(message);
     node.first_ln = Math.min(node.first_ln, message.ln);
     node.last_ln = Math.max(node.last_ln, message.ln);
+
+    if (message.parent_span_id && !nodes.has(message.parent_span_id)) {
+      nodes.set(
+        message.parent_span_id,
+        {
+          span_id: message.parent_span_id,
+          parent_span_id: undefined,
+          first_ln: message.ln,
+          last_ln: message.ln,
+          events: [],
+          children: [],
+        } satisfies MutableBranchNode,
+      );
+    }
   }
 
   if (!nodes.size || !nodes.has(originSpanId)) {
@@ -121,6 +135,8 @@ export function buildBranchTree(
     const parent = nodes.get(node.parent_span_id);
     if (parent && !parent.children.includes(node)) {
       parent.children.push(node);
+      parent.first_ln = Math.min(parent.first_ln, node.first_ln);
+      parent.last_ln = Math.max(parent.last_ln, node.last_ln);
     }
   }
 
@@ -141,13 +157,22 @@ export function buildBranchTree(
       } satisfies BranchNode;
     }
     visited.add(node.span_id);
+    const children = node.children.map(toBranch);
+    const firstLn = children.reduce(
+      (min, child) => Math.min(min, child.first_ln),
+      node.events.length ? Math.min(...node.events.map((evt) => evt.ln), node.first_ln) : node.first_ln,
+    );
+    const lastLn = children.reduce(
+      (max, child) => Math.max(max, child.last_ln),
+      node.events.length ? Math.max(...node.events.map((evt) => evt.ln), node.last_ln) : node.last_ln,
+    );
     return {
       span_id: node.span_id,
       parent_span_id: node.parent_span_id,
-      first_ln: node.first_ln,
-      last_ln: node.last_ln,
+      first_ln: firstLn,
+      last_ln: lastLn,
       events: node.events,
-      children: node.children.map(toBranch),
+      children,
     } satisfies BranchNode;
   };
 
