@@ -23,6 +23,7 @@ const HomePage: NextPage = () => {
     if (!prompt) return;
 
     const previousHistory = chatHistory;
+    const previousTraceId = traceId;
     const userMessage: ChatMessage = { role: "user", content: prompt };
     const nextHistory = [...previousHistory, userMessage];
 
@@ -32,10 +33,14 @@ const HomePage: NextPage = () => {
     setTraceId(undefined);
     setLatestResponse(null);
     try {
-      const response = await fetch("/api/run", {
+      const response = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: prompt, messages: previousHistory }),
+        body: JSON.stringify({
+          text: prompt,
+          messages: previousHistory,
+          ...(previousTraceId ? { trace_id: previousTraceId } : {}),
+        }),
       });
       const data = await response.json().catch(() => null);
       if (!response.ok || !data) {
@@ -58,7 +63,7 @@ const HomePage: NextPage = () => {
     } finally {
       setIsRunning(false);
     }
-  }, [input, isRunning, chatHistory]);
+  }, [input, isRunning, chatHistory, traceId]);
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
     (event) => {

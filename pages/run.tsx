@@ -3,8 +3,9 @@ import Head from "next/head";
 import type { FC, FormEvent } from "react";
 import { useCallback, useState } from "react";
 
-interface RunResponse {
+interface ChatSendResponse {
   trace_id: string;
+  msg_id: string;
   result?: unknown;
 }
 
@@ -158,19 +159,23 @@ const RunPage: NextPage = () => {
     setIsLogLoading(false);
 
     try {
-      const response = await fetch("/api/run", {
+      const response = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: prompt }),
+        body: JSON.stringify({ text: prompt }),
       });
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => undefined);
-        const message = typeof error?.message === "string" ? error.message : "Request failed";
+      const payload = (await response.json().catch(() => null)) as
+        | ChatSendResponse
+        | { message?: string }
+        | null;
+
+      if (!response.ok || !payload) {
+        const message = typeof (payload as any)?.message === "string" ? (payload as any).message : "Request failed";
         throw new Error(message);
       }
 
-      const data = (await response.json()) as RunResponse;
+      const data = payload as ChatSendResponse;
       setStatus("Completed");
       setTraceId(data.trace_id);
       setFinalOutput(formatResult(data.result));
