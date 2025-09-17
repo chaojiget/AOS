@@ -13,6 +13,7 @@ import {
 } from "../core/agent";
 import type { ChatMessage } from "../types/chat";
 import { buildChatCompletionsUrl, loadLLMConfig } from "../config/llm";
+import { createMCPClient, type MCPClient } from "./mcp";
 
 export const DEFAULT_SYSTEM_PROMPT = {
   role: "system",
@@ -183,24 +184,78 @@ async function handleChat(args: any): Promise<ToolResult> {
 }
 
 export function createDefaultToolInvoker(): ToolInvoker {
-  return async (call: ToolCall, _ctx: any) => {
-    switch (call.name) {
-      case "echo":
-        return handleEcho(call.args);
-      case "http.get":
-        return handleHttpGet(call.args);
-      case "file.read":
-        return handleFileRead(call.args);
-      case "llm.chat":
-        return handleChat(call.args);
-      default:
-        return {
-          ok: false,
-          code: "tool.not_found",
-          message: `tool ${call.name} is not available`,
-        } satisfies ToolError;
+  const mcpClientPromise: Promise<MCPClient | null> = createMCPClient()
+    .then((client) => client)
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`failed to initialise MCP client: ${message}`);
+      return null;
+    });
+
+  return async (call: ToolCall, ctx: any) => {
+    const client = await mcpClientPromise;
+    if (client?.isAvailable()) {
+      const route = resolveMcpRoute(client, call.name);
+      if (route) {
+        const result = await client.invoke(route.serverId, route.toolName, call.args, {
+          traceId: ctx?.trace_id,
+        });
+        if (result.ok || !isToolNotFoundError(result)) {
+          return result;
+        }
+      }
     }
+
+    return invokeLocalTool(call);
   };
+}
+
+async function invokeLocalTool(call: ToolCall): Promise<ToolResult> {
+  switch (call.name) {
+    case "echo":
+      return handleEcho(call.args);
+    case "http.get":
+      return handleHttpGet(call.args);
+    case "file.read":
+      return handleFileRead(call.args);
+    case "llm.chat":
+      return handleChat(call.args);
+    default:
+      return {
+        ok: false,
+        code: "tool.not_found",
+        message: `tool ${call.name} is not available`,
+      } satisfies ToolError;
+  }
+}
+
+function resolveMcpRoute(client: MCPClient, toolName: string):
+  | { serverId: string; toolName: string }
+  | null {
+  const trimmed = toolName.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const firstDot = trimmed.indexOf(".");
+  if (firstDot > 0) {
+    const serverId = trimmed.slice(0, firstDot);
+    const innerTool = trimmed.slice(firstDot + 1);
+    if (innerTool && client.hasServer(serverId)) {
+      return { serverId, toolName: innerTool };
+    }
+  }
+  const defaultServer = client.getDefaultServer();
+  if (defaultServer) {
+    return { serverId: defaultServer, toolName: trimmed };
+  }
+  return null;
+}
+
+function isToolNotFoundError(result: ToolResult): boolean {
+  if (result.ok) {
+    return false;
+  }
+  return result.code === "tool.not_found" || result.code === "mcp.tool_not_found";
 }
 
 export function summarizeToolResult(result: ToolResult): any {

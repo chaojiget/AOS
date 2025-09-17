@@ -9,6 +9,7 @@ import {
 describe("loadLLMConfig", () => {
   it("falls back to the default chinese model when OPENAI_MODEL is missing", () => {
     const env = {
+      NODE_ENV: "test",
       OPENAI_API_KEY: "key-123",
     } as NodeJS.ProcessEnv;
 
@@ -17,7 +18,7 @@ describe("loadLLMConfig", () => {
   });
 
   it("throws a chinese error message when api key is missing", () => {
-    const env = {} as NodeJS.ProcessEnv;
+    const env = { NODE_ENV: "test" } as NodeJS.ProcessEnv;
     try {
       loadLLMConfig({ env });
       throw new Error("expected loadLLMConfig to throw");
@@ -29,6 +30,7 @@ describe("loadLLMConfig", () => {
 
   it("uses the provided model when available", () => {
     const env = {
+      NODE_ENV: "test",
       OPENAI_API_KEY: "key-abc",
       OPENAI_MODEL: "custom-zh-model",
     } as NodeJS.ProcessEnv;
