@@ -1,29 +1,28 @@
 {
-  "goal": "Integrate all remote branches into local main with resolved conflicts and validated build.",
+  "goal": "Remove binary visual snapshot while keeping chat UI styling improvements validated via deterministic layout tokens.",
   "constraints": [
-    "Operate under AGENTS.md guardrails and repository policies",
-    "Avoid network-dependent commands beyond existing FETCH_HEAD data",
-    "Use pnpm scripts for validation commands",
-    "Preserve git history; no rebases or history rewrites",
-    "Ensure working tree clean before finalizing"
+    "Follow repository guardrails defined in AGENTS.md",
+    "Use pnpm scripts for quality checks",
+    "Avoid introducing binary artifacts into the repository",
+    "Keep working tree clean before completion"
   ],
   "budget": { "currency": "CNY", "limit": 0.0 },
   "acceptance": [
     {
       "id": "A1",
-      "given": "set of remote branches",
-      "when": "task completes",
-      "then": "main contains commits from every remote branch without unresolved conflicts"
+      "given": "updated test suite",
+      "when": "pnpm test:ui is executed",
+      "then": "visual regression coverage relies on text-based snapshots and passes without binary assets"
     },
     {
       "id": "A2",
-      "given": "post-merge repository",
-      "when": "pnpm typecheck && pnpm lint && pnpm test && pnpm smoke execute",
-      "then": "all validations succeed"
+      "given": "repository state",
+      "when": "pnpm typecheck && pnpm lint && pnpm test run",
+      "then": "all checks succeed"
     },
     {
       "id": "A3",
-      "given": "finalized state",
+      "given": "final git status",
       "when": "git status --short",
       "then": "working tree clean"
     }
@@ -31,47 +30,37 @@
   "steps": [
     {
       "id": "S1",
-      "action": "shell",
+      "action": "code",
       "input": {
-        "command": "git branch -r | grep -v 'origin/HEAD' | tr -d ' '"
+        "files": ["tests/ui/chat-page.pw.ts"],
+        "description": "Replace screenshot assertion with deterministic style snapshot logic"
       },
-      "expect": "Ordered list of remote branches for integration"
+      "expect": "Playwright test captures design tokens in text form"
     },
     {
       "id": "S2",
-      "action": "shell",
+      "action": "code",
       "input": {
-        "command": "for b in ...; do git merge --no-ff origin/$b; done"
+        "files": ["tests/ui/__snapshots__"],
+        "description": "Remove binary snapshot and add textual JSON snapshot"
       },
-      "expect": "All merges applied with conflicts resolved"
+      "expect": "Snapshot directory contains only text files"
     },
     {
       "id": "S3",
       "action": "shell",
       "input": {
-        "command": "pnpm typecheck && pnpm lint && pnpm test && pnpm smoke"
+        "command": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:ui"
       },
-      "expect": "Validation suite passes"
-    },
-    {
-      "id": "S4",
-      "action": "git",
-      "input": {
-        "command": "git commit" 
-      },
-      "expect": "Final merge state recorded"
+      "expect": "All checks pass"
     }
   ],
   "risks": [
-    "Numerous merge conflicts across multiple branches",
-    "Potential redundant or conflicting feature changes",
-    "Long validation runtime",
-    "Repository size or complexity causing smoke test failures"
+    "Computed style values may vary across environments causing flaky snapshots",
+    "Removing binary snapshot could reduce coverage if not capturing enough tokens"
   ],
   "rollback": [
-    "git merge --abort for unresolved merges",
-    "git reset --hard to last clean commit",
-    "Re-run pnpm setup if dependencies diverge",
-    "Document conflicts that cannot be resolved for manual follow-up"
+    "Revert to previous commit if new snapshot approach fails",
+    "Adjust computed style selection to minimize variability"
   ]
 }
