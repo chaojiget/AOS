@@ -73,7 +73,8 @@ export default async function handler(
   const messageRaw = payload.message ?? payload.input ?? "";
   const message = typeof messageRaw === "string" ? messageRaw : "";
   const history = normaliseHistory(payload.messages);
-  const traceId = randomUUID();
+  const traceIdInput = typeof payload.trace_id === "string" ? payload.trace_id.trim() : undefined;
+  const traceId = traceIdInput && traceIdInput.length > 0 ? traceIdInput : randomUUID();
 
   const bus = new EventBus();
   const logger = new EpisodeLogger({ traceId, dir: episodesDir });
