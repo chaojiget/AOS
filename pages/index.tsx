@@ -2,6 +2,20 @@ import { FormEventHandler, useCallback, useMemo, useState } from "react";
 import type { NextPage } from "next";
 import ChatMessageList, { type ChatHistoryMessage } from "../components/ChatMessageList";
 import LogFlowPanel from "../components/LogFlowPanel";
+import {
+  badgeClass,
+  headerSurfaceClass,
+  headingClass,
+  insetSurfaceClass,
+  labelClass,
+  outlineButtonClass,
+  pageContainerClass,
+  panelSurfaceClass,
+  pillGroupClass,
+  primaryButtonClass,
+  shellClass,
+  subtleTextClass,
+} from "../lib/theme";
 
 interface ChatSendResponse {
   trace_id?: string;
@@ -255,40 +269,37 @@ const HomePage: NextPage = () => {
     [],
   );
 
+  const statusText = runError
+    ? runError
+    : isRunning
+      ? "Running agent"
+      : chatHistory.length > 0
+        ? "Ready"
+        : "Idle";
+
+  const statusTone = runError ? "text-orange-300" : isRunning ? "text-sky-200" : "text-slate-200";
+
+  const disableSave = !chatHistory.length && !draftInput;
+
   return (
-    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0" }}>
-      <header
-        style={{
-          padding: "1.5rem 2rem",
-          background: "#1e293b",
-          boxShadow: "0 1px 12px rgba(0,0,0,0.4)",
-        }}
-      >
-        <h1 style={{ margin: 0 }}>AgentOS · Chat + LogFlow</h1>
-        <p style={{ margin: "0.25rem 0 0", fontSize: "0.95rem", color: "#94a3b8" }}>
-          Submit a prompt to run the local agent, inspect timeline events, and explore task
-          branches.
-        </p>
+    <div className={shellClass} data-testid="chat-shell">
+      <header className={`${headerSurfaceClass} px-6 py-8 sm:px-8`} data-testid="chat-header">
+        <div className="mx-auto w-full max-w-6xl space-y-3">
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-50">
+            AgentOS · Chat + LogFlow
+          </h1>
+          <p className={`${subtleTextClass} max-w-3xl text-sm sm:text-base`}>
+            Submit a prompt to run the local agent, inspect timeline events, and explore task
+            branches.
+          </p>
+        </div>
       </header>
 
-      <main
-        style={{
-          maxWidth: 1100,
-          margin: "0 auto",
-          padding: "2rem",
-          display: "grid",
-          gap: "1.5rem",
-        }}
-      >
+      <main className={`${pageContainerClass} space-y-8`} data-testid="chat-main">
         <nav
           aria-label="Primary"
-          style={{
-            display: "flex",
-            gap: "0.5rem",
-            background: "#1e293b",
-            borderRadius: 12,
-            padding: "0.5rem",
-          }}
+          className={`${pillGroupClass} mx-auto max-w-md`}
+          data-testid="chat-nav"
         >
           {tabItems.map((tab) => {
             const selected = activeTab === tab.id;
@@ -298,17 +309,11 @@ const HomePage: NextPage = () => {
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
                 aria-pressed={selected}
-                style={{
-                  flex: 1,
-                  padding: "0.75rem 1rem",
-                  borderRadius: 10,
-                  border: "none",
-                  background: selected ? "#38bdf8" : "transparent",
-                  color: selected ? "#0f172a" : "#e2e8f0",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  transition: "background 0.2s ease",
-                }}
+                className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${
+                  selected
+                    ? "bg-sky-400 text-slate-950 shadow-[0_12px_30px_rgba(56,189,248,0.35)]"
+                    : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
+                }`}
               >
                 {tab.label}
               </button>
@@ -317,45 +322,33 @@ const HomePage: NextPage = () => {
         </nav>
 
         {activeTab === "chat" ? (
-          <section
-            style={{
-              background: "#1e293b",
-              borderRadius: 12,
-              padding: "1.5rem",
-              boxShadow: "inset 0 0 0 1px rgba(148,163,184,0.15)",
-              display: "grid",
-              gap: "1.5rem",
-            }}
+          <div
+            className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]"
+            data-testid="chat-layout"
           >
-            <div
-              style={{
-                display: "grid",
-                gap: "1rem",
-              }}
+            <section
+              aria-labelledby="conversation-title"
+              className={`${panelSurfaceClass} space-y-6 p-6 sm:p-8`}
+              data-testid="conversation-panel"
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: "0.75rem",
-                }}
-              >
-                <h3 style={{ margin: 0 }}>Conversation</h3>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "0.75rem",
-                    alignItems: "center",
-                    justifyContent: "flex-end",
-                    flexWrap: "wrap",
-                  }}
-                >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-2">
+                  <h3 id="conversation-title" className={headingClass}>
+                    Conversation
+                  </h3>
+                  <p className={`${subtleTextClass} text-xs sm:text-sm`}>
+                    Review exchanged messages, drafts, and final outputs for the current run.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-3 text-xs sm:text-sm">
                   {traceId ? (
-                    <span style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
-                      此对话已写入 episodes/{traceId}.jsonl ·{" "}
-                      <a href={`/api/episodes/${traceId}`} style={{ color: "#38bdf8" }}>
+                    <span className="flex items-center gap-2 truncate text-sky-200">
+                      <span className={`${badgeClass} bg-sky-500/10 text-sky-100`}>episodes</span>
+                      <span className="truncate text-slate-200">episodes/{traceId}.jsonl</span>
+                      <a
+                        className="text-sky-300 underline decoration-dotted underline-offset-4 transition hover:text-sky-100"
+                        href={`/api/episodes/${traceId}`}
+                      >
                         下载 JSONL
                       </a>
                     </span>
@@ -363,194 +356,128 @@ const HomePage: NextPage = () => {
                   <button
                     type="button"
                     onClick={handleSaveConversation}
-                    disabled={!chatHistory.length && !draftInput}
-                    style={{
-                      padding: "0.6rem 1.25rem",
-                      borderRadius: 999,
-                      border: "1px solid #38bdf8",
-                      background: "transparent",
-                      color: "#38bdf8",
-                      fontWeight: 600,
-                      cursor: !chatHistory.length && !draftInput ? "not-allowed" : "pointer",
-                    }}
+                    disabled={disableSave}
+                    className={`${outlineButtonClass} whitespace-nowrap`}
                   >
                     保存对话
                   </button>
                 </div>
               </div>
+
               <ChatMessageList messages={chatHistory} isRunning={isRunning} />
+
               {draftInput ? (
                 <div
-                  style={{
-                    background: "#0f172a",
-                    border: "1px dashed #334155",
-                    borderRadius: 8,
-                    padding: "0.75rem 1rem",
-                    fontSize: "0.9rem",
-                  }}
+                  className={`${insetSurfaceClass} border-dashed border-slate-700/60 bg-slate-950/40 p-4`}
                 >
-                  <div style={{ color: "#94a3b8", fontSize: "0.8rem", marginBottom: "0.25rem" }}>
-                    draft input
-                  </div>
-                  <div>{draftInput}</div>
+                  <div className={`${labelClass} text-slate-400`}>Draft input</div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-200">{draftInput}</p>
                 </div>
               ) : null}
+
               {finalOutput ? (
-                <div
-                  style={{
-                    borderTop: "1px solid #1f2937",
-                    paddingTop: "0.75rem",
-                    fontSize: "0.9rem",
-                  }}
-                >
-                  <div style={{ color: "#94a3b8", fontSize: "0.8rem", marginBottom: "0.25rem" }}>
-                    Latest final output snapshot
-                  </div>
-                  <pre
-                    style={{
-                      margin: 0,
-                      background: "#111827",
-                      padding: "0.75rem",
-                      borderRadius: 6,
-                      overflowX: "auto",
-                    }}
-                  >
+                <div className="space-y-3">
+                  <div className={`${labelClass} text-slate-400`}>Latest final output snapshot</div>
+                  <pre className="max-h-72 overflow-auto rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 text-xs leading-relaxed text-slate-200">
                     {JSON.stringify(finalOutput, null, 2)}
                   </pre>
                 </div>
               ) : null}
-            </div>
 
-            <form onSubmit={handleSubmit} style={{ display: "grid", gap: "1rem" }}>
-              <label htmlFor="prompt" style={{ fontWeight: 600 }}>
-                Chat Input
-              </label>
-              <textarea
-                id="prompt"
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                    event.preventDefault();
-                    void handleRun();
-                  }
-                }}
-                placeholder="Ask the agent for a summary or instruction..."
-                style={{
-                  width: "100%",
-                  minHeight: 140,
-                  padding: "1rem",
-                  borderRadius: 8,
-                  border: "1px solid #334155",
-                  background: "#0f172a",
-                  color: "inherit",
-                  fontSize: "1rem",
-                }}
-              />
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.75rem",
-                }}
-              >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                    gap: "0.75rem",
-                    padding: "0.75rem 1rem",
-                    borderRadius: 10,
-                    background: "#0f172a",
-                    border: "1px solid #1f2937",
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <label htmlFor="prompt" className={`${labelClass} text-slate-300`}>
+                  Chat input
+                </label>
+                <textarea
+                  id="prompt"
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                      event.preventDefault();
+                      void handleRun();
+                    }
                   }}
-                >
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span
-                      style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}
-                    >
-                      trace_id
-                    </span>
-                    <span style={{ fontSize: "0.9rem" }}>{traceId ?? "-"}</span>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span
-                      style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}
-                    >
-                      latency
-                    </span>
-                    <span style={{ fontSize: "0.9rem" }}>
-                      {typeof latencyMs === "number" ? `${latencyMs.toFixed(0)} ms` : "-"}
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span
-                      style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}
-                    >
-                      cost
-                    </span>
-                    <span style={{ fontSize: "0.9rem" }}>
-                      {typeof cost === "number" ? cost.toFixed(4) : "-"}
-                    </span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+                  placeholder="Ask the agent for a summary or instruction..."
+                  className={`${insetSurfaceClass} min-h-[9rem] w-full resize-y border-slate-800/70 bg-slate-950/70 p-4 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400`}
+                />
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <button
                     type="submit"
                     disabled={isRunning}
-                    style={{
-                      padding: "0.75rem 1.5rem",
-                      borderRadius: 999,
-                      border: "none",
-                      background: isRunning ? "#475569" : "#38bdf8",
-                      color: "#0f172a",
-                      fontWeight: 600,
-                      cursor: isRunning ? "not-allowed" : "pointer",
-                    }}
+                    className={`${primaryButtonClass} w-full sm:w-auto`}
                   >
                     {isRunning ? "Running…" : "Run"}
                   </button>
-                  <span style={{ fontSize: "0.9rem", color: "#94a3b8" }}>
-                    {runError
-                      ? runError
-                      : isRunning
-                        ? "Running agent"
-                        : chatHistory.length > 0
-                          ? "Ready"
-                          : "Idle"}
+                  <span className={`${subtleTextClass} text-sm`}>{statusText}</span>
+                </div>
+              </form>
+            </section>
+
+            <div className="grid gap-6" data-testid="sidebar-panels">
+              <section
+                aria-labelledby="run-stats-title"
+                className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
+                data-testid="run-stats-panel"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <h3 id="run-stats-title" className={headingClass}>
+                    Run stats
+                  </h3>
+                  <span className={`${badgeClass} ${statusTone} bg-transparent normal-case`}>
+                    {statusText}
                   </span>
                 </div>
-              </div>
-            </form>
-            <details
-              style={{
-                background: "#0f172a",
-                borderRadius: 8,
-                border: "1px solid #1f2937",
-                padding: "1rem",
-              }}
-            >
-              <summary style={{ cursor: "pointer", fontWeight: 600 }}>Latest raw response</summary>
-              <pre
-                style={{
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  marginTop: "0.75rem",
-                }}
+                <dl className="grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-2">
+                    <dt className={`${labelClass} text-slate-400`}>Trace ID</dt>
+                    <dd className="font-mono text-sm text-slate-200">{traceId ?? "–"}</dd>
+                  </div>
+                  <div className="space-y-2">
+                    <dt className={`${labelClass} text-slate-400`}>Latency</dt>
+                    <dd className="text-sm text-slate-200">
+                      {typeof latencyMs === "number" ? `${latencyMs.toFixed(0)} ms` : "–"}
+                    </dd>
+                  </div>
+                  <div className="space-y-2">
+                    <dt className={`${labelClass} text-slate-400`}>Cost</dt>
+                    <dd className="text-sm text-slate-200">
+                      {typeof cost === "number" ? cost.toFixed(4) : "–"}
+                    </dd>
+                  </div>
+                </dl>
+                {runError ? (
+                  <p className="rounded-2xl border border-orange-500/50 bg-orange-500/10 px-4 py-3 text-sm text-orange-200">
+                    {runError}
+                  </p>
+                ) : (
+                  <p className={`${subtleTextClass} text-xs`}>
+                    Status updates as new events stream in from the agent runtime.
+                  </p>
+                )}
+              </section>
+
+              <section
+                aria-labelledby="raw-response-title"
+                className={`${panelSurfaceClass} space-y-4 p-6 sm:p-7`}
+                data-testid="raw-response-panel"
               >
-                {latestResponse ? JSON.stringify(latestResponse, null, 2) : "No response yet."}
-              </pre>
-            </details>
-          </section>
+                <div className="flex items-center justify-between gap-3">
+                  <h3 id="raw-response-title" className={headingClass}>
+                    Latest raw response
+                  </h3>
+                  {latestResponse ? (
+                    <span className={`${badgeClass} bg-sky-500/10 text-sky-100`}>updated</span>
+                  ) : null}
+                </div>
+                <pre className="max-h-[28rem] overflow-auto rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 text-xs leading-relaxed text-slate-200">
+                  {latestResponse ? JSON.stringify(latestResponse, null, 2) : "No response yet."}
+                </pre>
+              </section>
+            </div>
+          </div>
         ) : (
-          <section
-            style={{
-              background: "#1e293b",
-              borderRadius: 12,
-              padding: "1.5rem",
-              boxShadow: "inset 0 0 0 1px rgba(148,163,184,0.15)",
-            }}
-          >
+          <section className={`${panelSurfaceClass} p-6 sm:p-8`}>
             <LogFlowPanel traceId={traceId} />
           </section>
         )}

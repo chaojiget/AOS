@@ -32,6 +32,7 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@tsconfig/next": "^2.0.1",
     "@types/node": "^20.14.2",
     "@types/react": "^18.2.66",

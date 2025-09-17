@@ -43,8 +43,8 @@ describe("ChatMessageList", () => {
     expect(html.includes("Hello")).toBe(true);
     expect(html.includes("Hi, how can I help?")).toBe(true);
     expect(html.includes("Tell me a joke.")).toBe(true);
-    expect(html.includes("latency: 1200 ms")).toBe(true);
-    expect(html.includes("cost: 0.0042")).toBe(true);
+    expect(html.includes("latency · 1200 ms")).toBe(true);
+    expect(html.includes("cost · 0.0042")).toBe(true);
     expect(html.includes('data-role="status"')).toBe(true);
   });
 });
