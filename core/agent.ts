@@ -81,7 +81,15 @@ export type CoreEvent =
   | { type: "ask"; question: string; origin_step?: string }
   | { type: "score"; value: number; passed: boolean; notes?: string[] }
   | { type: "final"; outputs: any; reason?: string }
-  | { type: "log"; level: LogLevel; message: string; detail?: any };
+  | { type: "log"; level: LogLevel; message: string; detail?: any }
+  | {
+      type: "chat.msg";
+      msg_id: string;
+      role: string;
+      text: string;
+      trace_id: string;
+      reply_to?: string;
+    };
 
 export interface EventMetadata {
   spanId?: string;
