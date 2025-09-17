@@ -14,6 +14,11 @@ import {
 import type { ChatMessage } from "../types/chat";
 import { buildChatCompletionsUrl, loadLLMConfig } from "../config/llm";
 
+export const DEFAULT_SYSTEM_PROMPT = {
+  role: "system",
+  content: "你是一位中文助手，请始终使用简体中文回答。",
+} satisfies ChatMessage;
+
 async function handleHttpGet(args: any): Promise<ToolResult> {
   const url = args?.url;
   if (!url) {
@@ -229,9 +234,19 @@ class ChatKernel implements AgentKernel {
   private readonly history: ChatMessage[];
 
   constructor(private readonly options: ChatKernelOptions) {
-    this.history = Array.isArray(options.history)
+    const baseHistory = Array.isArray(options.history)
       ? options.history.map((msg) => ({ role: msg.role, content: msg.content }))
       : [];
+
+    const filteredHistory = baseHistory.filter(
+      (msg) =>
+        !(
+          msg.role === DEFAULT_SYSTEM_PROMPT.role &&
+          msg.content === DEFAULT_SYSTEM_PROMPT.content
+        ),
+    );
+
+    this.history = [DEFAULT_SYSTEM_PROMPT, ...filteredHistory];
   }
 
   async perceive(): Promise<void> {

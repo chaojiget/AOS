@@ -93,7 +93,9 @@ export default async function handler(
 ) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    res.status(405).json({ error: "method_not_allowed", message: "only POST is allowed" });
+    res
+      .status(405)
+      .json({ error: "method_not_allowed", message: "仅支持 POST 请求" });
     return;
   }
 
@@ -101,7 +103,9 @@ export default async function handler(
   try {
     payload = parseRequestBody(req);
   } catch {
-    res.status(400).json({ error: "invalid_json", message: "request body must be valid json" });
+    res
+      .status(400)
+      .json({ error: "invalid_json", message: "请求体必须是合法的 JSON" });
     return;
   }
 
@@ -109,7 +113,7 @@ export default async function handler(
   const text = normaliseText(payload.text ?? payload.message ?? payload.input);
 
   if (!text.trim()) {
-    res.status(400).json({ error: "invalid_input", message: "text is required" });
+    res.status(400).json({ error: "invalid_input", message: "必须提供文本内容" });
     return;
   }
 
@@ -176,6 +180,8 @@ export default async function handler(
   } catch (err) {
     console.error("chat send request failed", err);
     const message = err instanceof Error ? err.message : "unknown error";
-    res.status(500).json({ error: "internal_error", message });
+    res
+      .status(500)
+      .json({ error: "internal_error", message: `服务器内部错误：${message}` });
   }
 }

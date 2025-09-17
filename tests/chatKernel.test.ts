@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createChatKernel } from "../adapters/core";
+import { DEFAULT_SYSTEM_PROMPT, createChatKernel } from "../adapters/core";
 import type { ToolInvoker } from "../core/agent";
 
 describe("createChatKernel", () => {
@@ -31,7 +31,11 @@ describe("createChatKernel", () => {
 
     const step = nonNullPlan.steps[0];
     expect(step.args).toEqual({
-      messages: [...history, { role: "user", content: "what's next?" }],
+      messages: [
+        DEFAULT_SYSTEM_PROMPT,
+        ...history,
+        { role: "user", content: "what's next?" },
+      ],
     });
 
     const outcome = await kernel.act(step);
@@ -41,5 +45,31 @@ describe("createChatKernel", () => {
       args: step.args,
     });
     expect(outcome.result.ok).toBe(true);
+  });
+  it("does not duplicate the system prompt when planning multiple times", async () => {
+    const toolInvoker: ToolInvoker = async () => ({
+      ok: true,
+      data: { content: "ack" },
+    });
+
+    const kernel = createChatKernel({
+      message: "第一轮", 
+      traceId: "trace-dup", 
+      toolInvoker,
+    });
+
+    await kernel.perceive({ traceId: "trace-dup" });
+    const firstPlan = await kernel.plan();
+    const secondPlan = await kernel.plan();
+
+    const extractMessages = (plan: any) => plan.steps[0]?.args?.messages ?? [];
+
+    const firstMessages = extractMessages(firstPlan);
+    const secondMessages = extractMessages(secondPlan);
+
+    expect(firstMessages.filter((msg: any) => msg.role === "system")).toHaveLength(1);
+    expect(secondMessages.filter((msg: any) => msg.role === "system")).toHaveLength(1);
+    expect(firstMessages[0]).toEqual(DEFAULT_SYSTEM_PROMPT);
+    expect(secondMessages[0]).toEqual(DEFAULT_SYSTEM_PROMPT);
   });
 });
