@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 import { createChatKernel, createDefaultToolInvoker } from "../../adapters/core";
+import type { ChatMessage } from "../../types/chat";
 import { runLoop, type CoreEvent } from "../../core/agent";
 import { EpisodeLogger } from "../../runtime/episode";
 import { EventBus, wrapCoreEvent, type EventEnvelope } from "../../runtime/events";
@@ -56,12 +57,20 @@ export default async function handler(
 
   const messageRaw = payload.message ?? payload.input ?? "";
   const message = typeof messageRaw === "string" ? messageRaw : "";
+  const history: ChatMessage[] = Array.isArray(payload.messages)
+    ? (payload.messages as Array<any>).reduce<ChatMessage[]>((acc, item) => {
+        if (item && typeof item.role === "string" && typeof item.content === "string") {
+          acc.push({ role: item.role, content: item.content });
+        }
+        return acc;
+      }, [])
+    : [];
   const traceId = randomUUID();
 
   const bus = new EventBus();
   const logger = new EpisodeLogger({ traceId, dir: episodesDir });
   const toolInvoker = createDefaultToolInvoker();
-  const kernel = createChatKernel({ message, traceId, toolInvoker });
+  const kernel = createChatKernel({ message, traceId, toolInvoker, history });
 
   const events: EventEnvelope<CoreEvent>[] = [];
   bus.subscribe((event: EventEnvelope<CoreEvent>) => {

@@ -1,6 +1,7 @@
 import { FormEventHandler, useCallback, useMemo, useState } from "react";
 import type { NextPage } from "next";
 import LogFlowPanel from "../components/LogFlowPanel";
+import type { ChatMessage } from "../types/chat";
 
 const HomePage: NextPage = () => {
   const [input, setInput] = useState("");
@@ -9,19 +10,27 @@ const HomePage: NextPage = () => {
   const [finalOutput, setFinalOutput] = useState<any>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "logflow">("chat");
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
 
   const handleRun = useCallback(async () => {
     if (isRunning) return;
     const prompt = input.trim();
+    if (!prompt) {
+      setRunError("Please enter a message before running.");
+      return;
+    }
     setIsRunning(true);
     setRunError(null);
     setTraceId(undefined);
     setFinalOutput(null);
+    const previousHistory = chatHistory;
+    const nextHistory = [...previousHistory, { role: "user", content: prompt }];
+    setChatHistory(nextHistory);
     try {
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: prompt }),
+        body: JSON.stringify({ message: prompt, messages: previousHistory }),
       });
       const data = await response.json().catch(() => null);
       if (!response.ok || !data) {
@@ -29,12 +38,24 @@ const HomePage: NextPage = () => {
       }
       setTraceId(data.trace_id);
       setFinalOutput(data.result);
+      const assistantReplyRaw = data?.result?.text ?? data?.result?.content ?? data?.result;
+      let assistantReplyText = "";
+      if (typeof assistantReplyRaw === "string") {
+        assistantReplyText = assistantReplyRaw;
+      } else if (assistantReplyRaw) {
+        assistantReplyText = JSON.stringify(assistantReplyRaw, null, 2);
+      }
+      const replyContent = assistantReplyText.trim() || "(no response)";
+      setChatHistory([...nextHistory, { role: "assistant", content: replyContent }]);
     } catch (err: any) {
-      setRunError(err?.message ?? "Failed to run agent");
+      const message = err?.message ?? "Failed to run agent";
+      setRunError(message);
+      setChatHistory([...nextHistory, { role: "system", content: message }]);
     } finally {
       setIsRunning(false);
+      setInput("");
     }
-  }, [input, isRunning]);
+  }, [chatHistory, input, isRunning]);
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
     (event) => {
@@ -178,21 +199,98 @@ const HomePage: NextPage = () => {
               </div>
             </form>
 
-            <div>
-              <h3 style={{ margin: "0 0 0.5rem" }}>Final Output</h3>
-              <pre
-                style={{
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  background: "#0f172a",
-                  borderRadius: 8,
-                  padding: "1rem",
-                  border: "1px solid #1f2937",
-                  minHeight: 120,
-                }}
-              >
-                {finalOutput ? JSON.stringify(finalOutput, null, 2) : "No output yet."}
-              </pre>
+            <div style={{ display: "grid", gap: "1.5rem" }}>
+              <div>
+                <h3 style={{ margin: "0 0 0.5rem" }}>Conversation</h3>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.75rem",
+                    maxHeight: 360,
+                    overflowY: "auto",
+                    background: "#0f172a",
+                    borderRadius: 8,
+                    padding: "1rem",
+                    border: "1px solid #1f2937",
+                  }}
+                >
+                  {chatHistory.length === 0 ? (
+                    <p style={{ margin: 0, color: "#94a3b8", fontSize: "0.95rem" }}>
+                      No messages yet. Start the conversation above.
+                    </p>
+                  ) : (
+                    chatHistory.map((message, index) => {
+                      const isUser = message.role === "user";
+                      const isAssistant = message.role === "assistant";
+                      const alignSelf = isUser ? "flex-end" : "flex-start";
+                      const color = isUser ? "#0f172a" : "#e2e8f0";
+                      let background = "#f97316";
+                      if (isUser) {
+                        background = "#38bdf8";
+                      } else if (isAssistant) {
+                        background = "#1f2937";
+                      }
+                      let label = "System";
+                      if (isUser) {
+                        label = "You";
+                      } else if (isAssistant) {
+                        label = "Agent";
+                      }
+                      return (
+                        <div
+                          key={`${message.role}-${index}`}
+                          style={{
+                            alignSelf,
+                            maxWidth: "80%",
+                            background,
+                            color,
+                            borderRadius: 12,
+                            padding: "0.75rem 1rem",
+                            boxShadow: "0 4px 12px rgba(15, 23, 42, 0.35)",
+                            border: isAssistant ? "1px solid #334155" : "none",
+                          }}
+                        >
+                          <div
+                            style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "0.35rem" }}
+                          >
+                            {label}
+                          </div>
+                          <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                            {message.content}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h3 style={{ margin: "0 0 0.5rem" }}>Final Output</h3>
+                <pre
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    background: "#0f172a",
+                    borderRadius: 8,
+                    padding: "1rem",
+                    border: "1px solid #1f2937",
+                    minHeight: 120,
+                  }}
+                >
+                  {(() => {
+                    if (!finalOutput) return "No output yet.";
+                    const payload = finalOutput.raw ?? finalOutput;
+                    if (typeof payload === "string") return payload;
+                    try {
+                      return JSON.stringify(payload, null, 2);
+                    } catch (err) {
+                      return String(payload);
+                    }
+                  })()}
+                </pre>
+              </div>
             </div>
           </section>
         ) : (
