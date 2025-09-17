@@ -64,13 +64,11 @@ export default async function handler(
   const kernel = createChatKernel({ message, traceId, toolInvoker });
 
   const events: EventEnvelope<CoreEvent>[] = [];
-  bus.subscribe(async (event: EventEnvelope<CoreEvent>) => {
+  bus.subscribe((event: EventEnvelope<CoreEvent>) => {
     events.push(event);
-    try {
-      await logger.append(event);
-    } catch (error: unknown) {
+    void logger.append(event).catch((error: unknown) => {
       console.error("failed to append episode event", error);
-    }
+    });
   });
 
   try {
