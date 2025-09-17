@@ -23,10 +23,8 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
   const [selectedMessage, setSelectedMessage] = useState<LogFlowMessage | null>(null);
   const [branchState, setBranchState] = useState<RequestState>(initialRequestState);
   const [branch, setBranch] = useState<BranchResponse | null>(null);
-  const [isDataExpanded, setIsDataExpanded] = useState(false);
-  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const latestSelectionRef = useRef<string | null>(null);
-  const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!traceId) {
@@ -124,110 +122,40 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
     return branch.tree;
   }, [branch]);
 
-  const formattedSelectedData = useMemo(() => {
+  const selectedPayload = useMemo(() => {
     if (!selectedMessage) return null;
-    const { data } = selectedMessage;
-    if (data === undefined) {
-      return null;
-    }
-
-    const safeStringify = (value: unknown): string => {
-      const seen = new WeakSet<object>();
-      return JSON.stringify(
-        value,
-        (_key, val) => {
-          if (typeof val === "bigint") {
-            return val.toString();
-          }
-          if (typeof val === "object" && val !== null) {
-            if (seen.has(val)) {
-              return "[Circular]";
-            }
-            seen.add(val);
-          }
-          return val;
-        },
-        2,
-      );
-    };
-
     try {
-      if (typeof data === "string") {
-        const trimmed = data.trim();
-        if (!trimmed) {
-          return '""';
-        }
-        try {
-          return safeStringify(JSON.parse(trimmed));
-        } catch {
-          return safeStringify(data);
-        }
-      }
-      return safeStringify(data);
+      return JSON.stringify(selectedMessage.data, null, 2);
     } catch {
-      if (typeof data === "string") {
-        return data;
-      }
-      return String(data);
+      return typeof selectedMessage.data === "string"
+        ? selectedMessage.data
+        : String(selectedMessage.data);
     }
   }, [selectedMessage]);
 
   useEffect(() => {
-    if (copyResetTimeoutRef.current) {
-      clearTimeout(copyResetTimeoutRef.current);
-      copyResetTimeoutRef.current = null;
-    }
-    setCopyStatus("idle");
-    setIsDataExpanded(Boolean(formattedSelectedData));
-  }, [formattedSelectedData]);
+    setCopied(false);
+  }, [selectedPayload]);
 
-  useEffect(() => {
-    return () => {
-      if (copyResetTimeoutRef.current) {
-        clearTimeout(copyResetTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const toggleDataExpanded = useCallback(() => {
-    setIsDataExpanded((prev) => !prev);
-  }, []);
-
-  const handleCopyData = useCallback(() => {
-    if (!formattedSelectedData) {
+  const handleCopyPayload = useCallback(() => {
+    if (!selectedPayload) return;
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
       return;
     }
-    const scheduleReset = () => {
-      if (copyResetTimeoutRef.current) {
-        clearTimeout(copyResetTimeoutRef.current);
-      }
-      copyResetTimeoutRef.current = setTimeout(() => {
-        setCopyStatus("idle");
-        copyResetTimeoutRef.current = null;
-      }, 1500);
-    };
-
-    if (typeof navigator === "undefined" || !navigator.clipboard) {
-      setCopyStatus("error");
-      scheduleReset();
-      return;
-    }
-
     navigator.clipboard
-      .writeText(formattedSelectedData)
+      .writeText(selectedPayload)
       .then(() => {
-        setCopyStatus("copied");
-        scheduleReset();
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
       })
       .catch(() => {
-        setCopyStatus("error");
-        scheduleReset();
+        setCopied(false);
       });
-  }, [formattedSelectedData]);
+  }, [selectedPayload]);
 
   return (
-    <section style={{ display: "grid", gap: "1rem" }}>
-      <header>
+    <section style={{ border: "1px solid #1f2937", borderRadius: 12, padding: "1rem" }}>
+      <header style={{ marginBottom: "0.75rem" }}>
         <h2 style={{ margin: 0, fontSize: "1.1rem" }}>LogFlow</h2>
         {traceId ? (
           <p style={{ margin: 0, fontSize: "0.85rem", color: "#94a3b8" }}>
@@ -240,17 +168,7 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
         )}
       </header>
 
-      <div
-        style={{
-          display: "flex",
-          gap: "1rem",
-          alignItems: "flex-start",
-          background: "#0f172a",
-          border: "1px solid #1f2937",
-          borderRadius: 12,
-          padding: "1rem",
-        }}
-      >
+      <div style={{ display: "flex", gap: "1rem", alignItems: "stretch", flexWrap: "wrap" }}>
         <div style={{ flex: 1 }}>
           <h3 style={{ margin: "0 0 0.5rem", fontSize: "1rem" }}>Mainline Messages</h3>
           {mainlineState.loading ? (
@@ -302,116 +220,15 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
           )}
         </div>
 
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 320, display: "grid", gap: "1rem" }}>
           <h3 style={{ margin: "0 0 0.5rem", fontSize: "1rem" }}>Branch Detail</h3>
           {selectedMessage ? (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.75rem",
-                marginBottom: "0.75rem",
-              }}
-            >
-              <div style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
-                <div>
-                  Selected message ln {selectedMessage.ln}
-                  {selectedMessage.span_id ? ` (span ${selectedMessage.span_id})` : ""}
-                </div>
-                <div>Type: {selectedMessage.type}</div>
+            <div style={{ marginBottom: "0.75rem", fontSize: "0.85rem", color: "#94a3b8" }}>
+              <div>
+                Selected message ln {selectedMessage.ln}
+                {selectedMessage.span_id ? ` (span ${selectedMessage.span_id})` : ""}
               </div>
-              {formattedSelectedData ? (
-                <div
-                  style={{
-                    border: "1px solid #1f2937",
-                    borderRadius: 8,
-                    background: "#0f172a",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "0.5rem",
-                      padding: "0.5rem 0.75rem",
-                      borderBottom: isDataExpanded ? "1px solid #1f2937" : undefined,
-                    }}
-                  >
-                    <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>Event Data</span>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      {copyStatus === "copied" ? (
-                        <span style={{ fontSize: "0.75rem", color: "#34d399" }}>Copied!</span>
-                      ) : copyStatus === "error" ? (
-                        <span style={{ fontSize: "0.75rem", color: "#f87171" }}>Copy failed</span>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={toggleDataExpanded}
-                        style={{
-                          borderRadius: 6,
-                          border: "1px solid",
-                          borderColor: isDataExpanded ? "#38bdf8" : "#1f2937",
-                          background: isDataExpanded ? "rgba(56, 189, 248, 0.12)" : "#1f2937",
-                          color: "#e2e8f0",
-                          padding: "0.35rem 0.6rem",
-                          fontSize: "0.75rem",
-                          cursor: "pointer",
-                        }}
-                      >
-                        {isDataExpanded ? "Collapse" : "Expand"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCopyData}
-                        disabled={!formattedSelectedData}
-                        style={{
-                          borderRadius: 6,
-                          border: "1px solid #1f2937",
-                          background: "#1f2937",
-                          color: "#e2e8f0",
-                          padding: "0.35rem 0.6rem",
-                          fontSize: "0.75rem",
-                          cursor: formattedSelectedData ? "pointer" : "not-allowed",
-                          opacity: formattedSelectedData ? 1 : 0.6,
-                        }}
-                      >
-                        Copy JSON
-                      </button>
-                    </div>
-                  </div>
-                  {isDataExpanded ? (
-                    <pre
-                      style={{
-                        margin: 0,
-                        padding: "0.75rem",
-                        fontSize: "0.75rem",
-                        lineHeight: 1.5,
-                        maxHeight: 240,
-                        overflow: "auto",
-                        color: "#e2e8f0",
-                        fontFamily:
-                          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                        whiteSpace: "pre",
-                      }}
-                    >
-                      {formattedSelectedData}
-                    </pre>
-                  ) : null}
-                </div>
-              ) : (
-                <p style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
-                  Selected event has no data payload.
-                </p>
-              )}
+              <div>Type: {selectedMessage.type}</div>
             </div>
           ) : (
             <p style={{ fontSize: "0.9rem", color: "#94a3b8" }}>
@@ -468,6 +285,46 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
               )}
             </div>
           ) : null}
+
+          {selectedPayload && (
+            <div>
+              <div
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+              >
+                <h4 style={{ margin: "0 0 0.25rem", fontSize: "0.95rem" }}>Event Payload</h4>
+                <button
+                  type="button"
+                  onClick={handleCopyPayload}
+                  style={{
+                    padding: "0.25rem 0.75rem",
+                    borderRadius: 999,
+                    border: "1px solid #38bdf8",
+                    background: "transparent",
+                    color: "#38bdf8",
+                    fontSize: "0.8rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {copied ? "Copied" : "Copy JSON"}
+                </button>
+              </div>
+              <pre
+                style={{
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  background: "#0f172a",
+                  borderRadius: 8,
+                  padding: "0.75rem",
+                  border: "1px solid #1f2937",
+                  maxHeight: 220,
+                  overflowY: "auto",
+                  fontSize: "0.8rem",
+                }}
+              >
+                {selectedPayload}
+              </pre>
+            </div>
+          )}
         </div>
       </div>
     </section>

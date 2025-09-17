@@ -1,0 +1,74 @@
+# SRS 模板示例：可拷贝后由 pnpm intake 自动生成 docs/SRS.yaml
+meta:
+  id: feature-xyz
+  title: 功能标题
+  owner: 团队/责任人
+  stakeholders:
+    - name: PO 姓名
+      role: product
+      contact: mailto:po@example.com
+value:
+  business_goal: >-
+    用一句话概述该特性带来的核心价值或要提升的指标。
+  metrics:
+    north_star: 成功率/北极星指标
+    guardrails:
+      - cost_per_task <= 2 CNY
+  user_jobs:
+    - persona: 角色 A
+      job: 想完成的任务
+      pain_points: 当前痛点
+scope:
+  must:
+    - 必须实现的能力 A
+  should:
+    - 建议实现的能力 B
+  could:
+    - 可选增强项 C
+  wont:
+    - 当前阶段不做 D
+data:
+  sources:
+    - 数据源 A
+  interfaces:
+    - 系统 X API v1
+  masking: 采用脱敏策略/访问控制说明
+experience:
+  notes: 主要交互或体验要点
+  performance: TTI <= 3s, p95 <= 5s
+  accessibility: 支持键盘操作，符合 WCAG AA
+non_functional:
+  observability: 指标 + 日志 + trace 方案
+  logging: 审计/留存时长
+  resilience: 降级与扩缩容策略
+security:
+  classification: 数据分级 + 合规要求
+  permissions: 权限模型、审批链路
+  compliance: 外部评审/法律条款
+risk_register:
+  - id: R1
+    description: 风险描述
+    mitigation: 缓解策略
+budget:
+  limit: 预算上限 / 成本约束
+  sla: SLA/SLI 指标
+  governance: 限流/配额/治理策略
+release:
+  plan: 金丝雀 5% → 50% → 全量
+  rollback: 回滚到上一稳定版本
+  monitoring: 监控指标与报警渠道
+acceptance:
+  - id: A1
+    given: 前置条件
+    when: 触发条件
+    then: 预期结果
+  - id: A2
+    given: ...
+    when: ...
+    then: ...
+  - id: A3
+    given: ...
+    when: ...
+    then: ...
+test_data:
+  strategy: 测试数据来源或脱敏方案说明

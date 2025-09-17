@@ -1,32 +1,54 @@
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1/";
+
 export interface LLMConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  organization?: string;
 }
 
-let cachedConfig: LLMConfig | null = null;
-
-const DEFAULT_BASE_URL = "https://api.openai.com/v1";
-
-export function loadLLMConfig(): LLMConfig {
-  if (cachedConfig) {
-    return cachedConfig;
+export class LLMConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LLMConfigError";
   }
+}
 
-  const rawBaseUrl = process.env.OPENAI_BASE_URL?.trim();
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  const model = process.env.OPENAI_MODEL?.trim();
+export interface LoadLLMConfigOptions {
+  env?: NodeJS.ProcessEnv;
+}
+
+export function loadLLMConfig(options: LoadLLMConfigOptions = {}): LLMConfig {
+  const env = options.env ?? process.env;
+  const baseUrlRaw = env.OPENAI_BASE_URL?.trim();
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  const model = env.OPENAI_MODEL?.trim();
+  const organization = env.OPENAI_ORG?.trim();
 
   if (!apiKey) {
-    throw new Error("Missing OPENAI_API_KEY environment variable");
+    throw new LLMConfigError("OPENAI_API_KEY is not configured");
   }
-
   if (!model) {
-    throw new Error("Missing OPENAI_MODEL environment variable");
+    throw new LLMConfigError("OPENAI_MODEL is not configured");
   }
 
-  const baseUrl = rawBaseUrl && rawBaseUrl.length > 0 ? rawBaseUrl.replace(/\/$/, "") : DEFAULT_BASE_URL;
+  const baseUrl = normaliseBaseUrl(baseUrlRaw || DEFAULT_OPENAI_BASE_URL);
 
-  cachedConfig = { baseUrl, apiKey, model };
-  return cachedConfig;
+  return {
+    baseUrl,
+    apiKey,
+    model,
+    organization,
+  };
+}
+
+function normaliseBaseUrl(value: string): string {
+  if (!value.endsWith("/")) {
+    return `${value}/`;
+  }
+  return value;
+}
+
+export function buildChatCompletionsUrl(config: LLMConfig): URL {
+  return new URL("chat/completions", config.baseUrl);
 }

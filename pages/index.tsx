@@ -1,4 +1,4 @@
-import { FormEventHandler, useCallback, useState } from "react";
+import { FormEventHandler, useCallback, useMemo, useState } from "react";
 import type { NextPage } from "next";
 import LogFlowPanel from "../components/LogFlowPanel";
 
@@ -8,7 +8,7 @@ const HomePage: NextPage = () => {
   const [traceId, setTraceId] = useState<string | undefined>(undefined);
   const [finalOutput, setFinalOutput] = useState<any>(null);
   const [runError, setRunError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"chat" | "log">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "logflow">("chat");
 
   const handleRun = useCallback(async () => {
     if (isRunning) return;
@@ -44,26 +44,16 @@ const HomePage: NextPage = () => {
     [handleRun],
   );
 
-  const tabs: { id: "chat" | "log"; label: string }[] = [
-    { id: "chat", label: "Chat" },
-    { id: "log", label: "Log Flow" },
-  ];
-
-  const panelStyle = {
-    background: "#1e293b",
-    borderRadius: 12,
-    padding: "1.5rem",
-    boxShadow: "inset 0 0 0 1px rgba(148,163,184,0.15)",
-  } as const;
+  const tabItems = useMemo(
+    () => [
+      { id: "chat" as const, label: "Chat" },
+      { id: "logflow" as const, label: "LogFlow" },
+    ],
+    [],
+  );
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#0f172a",
-        color: "#e2e8f0",
-      }}
-    >
+    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0" }}>
       <header
         style={{
           padding: "1.5rem 2rem",
@@ -73,7 +63,8 @@ const HomePage: NextPage = () => {
       >
         <h1 style={{ margin: 0 }}>AgentOS · Chat + LogFlow</h1>
         <p style={{ margin: "0.25rem 0 0", fontSize: "0.95rem", color: "#94a3b8" }}>
-          Submit a prompt to run the local agent, inspect timeline events, and explore task branches.
+          Submit a prompt to run the local agent, inspect timeline events, and explore task
+          branches.
         </p>
       </header>
 
@@ -87,39 +78,33 @@ const HomePage: NextPage = () => {
         }}
       >
         <nav
-          aria-label="Agent panels"
-          role="tablist"
+          aria-label="Primary"
           style={{
             display: "flex",
-            gap: "0.75rem",
-            background: "rgba(15, 23, 42, 0.6)",
-            borderRadius: 999,
-            padding: "0.4rem",
-            border: "1px solid #334155",
+            gap: "0.5rem",
+            background: "#1e293b",
+            borderRadius: 12,
+            padding: "0.5rem",
           }}
         >
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
+          {tabItems.map((tab) => {
+            const selected = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
-                id={`${tab.id}-tab`}
                 type="button"
-                role="tab"
-                aria-selected={isActive}
-                aria-controls={`${tab.id}-panel`}
                 onClick={() => setActiveTab(tab.id)}
+                aria-pressed={selected}
                 style={{
                   flex: 1,
-                  padding: "0.6rem 1.25rem",
-                  borderRadius: 999,
+                  padding: "0.75rem 1rem",
+                  borderRadius: 10,
                   border: "none",
-                  background: isActive ? "#38bdf8" : "transparent",
-                  color: isActive ? "#0f172a" : "#cbd5f5",
+                  background: selected ? "#38bdf8" : "transparent",
+                  color: selected ? "#0f172a" : "#e2e8f0",
                   fontWeight: 600,
                   cursor: "pointer",
-                  transition: "background 0.2s ease, color 0.2s ease",
-                  boxShadow: isActive ? "0 1px 6px rgba(56,189,248,0.35)" : "none",
+                  transition: "background 0.2s ease",
                 }}
               >
                 {tab.label}
@@ -129,7 +114,16 @@ const HomePage: NextPage = () => {
         </nav>
 
         {activeTab === "chat" ? (
-          <section id="chat-panel" role="tabpanel" aria-labelledby="chat-tab" style={panelStyle}>
+          <section
+            style={{
+              background: "#1e293b",
+              borderRadius: 12,
+              padding: "1.5rem",
+              boxShadow: "inset 0 0 0 1px rgba(148,163,184,0.15)",
+              display: "grid",
+              gap: "1.5rem",
+            }}
+          >
             <form onSubmit={handleSubmit} style={{ display: "grid", gap: "1rem" }}>
               <label htmlFor="prompt" style={{ fontWeight: 600 }}>
                 Chat Input
@@ -184,7 +178,7 @@ const HomePage: NextPage = () => {
               </div>
             </form>
 
-            <div style={{ marginTop: "1.5rem" }}>
+            <div>
               <h3 style={{ margin: "0 0 0.5rem" }}>Final Output</h3>
               <pre
                 style={{
@@ -202,7 +196,14 @@ const HomePage: NextPage = () => {
             </div>
           </section>
         ) : (
-          <section id="log-panel" role="tabpanel" aria-labelledby="log-tab" style={panelStyle}>
+          <section
+            style={{
+              background: "#1e293b",
+              borderRadius: 12,
+              padding: "1.5rem",
+              boxShadow: "inset 0 0 0 1px rgba(148,163,184,0.15)",
+            }}
+          >
             <LogFlowPanel traceId={traceId} />
           </section>
         )}

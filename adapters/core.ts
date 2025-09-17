@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises";
-import { loadLLMConfig } from "../config/llm.js";
 import {
   ToolInvoker,
   ToolCall,
@@ -11,7 +10,8 @@ import {
   PlanStep,
   ActionOutcome,
   ReviewResult,
-} from "../core/agent.js";
+} from "../core/agent";
+import { buildChatCompletionsUrl, loadLLMConfig } from "../config/llm";
 
 async function handleHttpGet(args: any): Promise<ToolResult> {
   const url = args?.url;
@@ -61,169 +61,121 @@ function handleEcho(args: any): ToolResult {
   return { ok: true, data: args } satisfies ToolOk;
 }
 
-async function handleChat(args: any): Promise<ToolResult> {
-  const prompt = typeof args?.prompt === "string" ? args.prompt.trim() : "";
-  const messageList = Array.isArray(args?.messages) ? args.messages : [];
+type ChatMessage = { role: string; content: string };
 
-  const messages = messageList
-    .map((msg: any) => {
-      if (!msg || typeof msg?.content !== "string") {
-        return null;
+function normaliseMessages(args: any): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  if (Array.isArray(args?.messages)) {
+    for (const item of args.messages) {
+      if (item && typeof item.role === "string" && typeof item.content === "string") {
+        messages.push({ role: item.role, content: item.content });
       }
-      const role =
-        typeof msg.role === "string" && msg.role.trim().length > 0
-          ? msg.role
-          : "user";
-      return { role, content: msg.content };
-    })
-    .filter(Boolean) as Array<{ role: string; content: string }>;
+    }
+  }
 
-  if (prompt.length > 0) {
+  const prompt = typeof args?.prompt === "string" ? args.prompt.trim() : "";
+  if (prompt) {
     messages.push({ role: "user", content: prompt });
   }
 
-  if (messages.length === 0) {
-    return {
-      ok: false,
-      code: "llm.invalid_request",
-      message: "prompt or messages are required",
-    } satisfies ToolError;
-  }
+  return messages;
+}
 
+async function handleChat(args: any): Promise<ToolResult> {
   let config;
   try {
     config = loadLLMConfig();
-  } catch (err: any) {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown configuration error";
     return {
       ok: false,
       code: "llm.config_error",
-      message: err?.message ?? "LLM configuration error",
+      message,
     } satisfies ToolError;
   }
 
-  const url = `${config.baseUrl}/chat/completions`;
-  const payload: Record<string, any> = {
-    model: config.model,
-    messages,
-    temperature: typeof args?.temperature === "number" ? args.temperature : 0,
-  };
-
-  if (typeof args?.max_tokens === "number") {
-    payload.max_tokens = args.max_tokens;
+  const messages = normaliseMessages(args);
+  if (messages.length === 0) {
+    return {
+      ok: false,
+      code: "llm.invalid_args",
+      message: "prompt or messages must be provided",
+    } satisfies ToolError;
   }
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${config.apiKey}`,
-  };
+  const url = buildChatCompletionsUrl(config);
+  const temperature = typeof args?.temperature === "number" ? args.temperature : 0;
+  const maxTokens = typeof args?.max_tokens === "number" ? args.max_tokens : undefined;
 
-  const start = Date.now();
-  let response: Response;
   try {
-    response = await fetch(url, {
+    const response = await fetch(url, {
       method: "POST",
-      headers,
-      body: JSON.stringify(payload),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+        ...(config.organization ? { "OpenAI-Organization": config.organization } : {}),
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+        temperature,
+        ...(maxTokens ? { max_tokens: maxTokens } : {}),
+      }),
     });
-  } catch (err: any) {
+
+    if (!response.ok) {
+      let detail: unknown;
+      try {
+        detail = await response.json();
+      } catch {
+        detail = await response.text();
+      }
+
+      const message =
+        typeof (detail as any)?.error?.message === "string"
+          ? (detail as any).error.message
+          : typeof detail === "string"
+            ? detail
+            : `request failed (${response.status})`;
+
+      return {
+        ok: false,
+        code: "llm.http_error",
+        message,
+        retryable: response.status >= 500,
+      } satisfies ToolError;
+    }
+
+    const payload = (await response.json()) as {
+      id?: string;
+      choices?: Array<{ message?: ChatMessage; finish_reason?: string }>;
+      model?: string;
+      usage?: Record<string, unknown>;
+    };
+
+    const choice = payload.choices?.[0];
+    const content = choice?.message?.content ?? "";
+
+    return {
+      ok: true,
+      data: {
+        id: payload.id,
+        model: payload.model ?? config.model,
+        content,
+        choices: payload.choices,
+        usage: payload.usage,
+        finish_reason: choice?.finish_reason,
+      },
+    } satisfies ToolOk;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown error";
     return {
       ok: false,
       code: "llm.network_error",
-      message: err?.message ?? "Failed to reach LLM service",
+      message,
       retryable: true,
     } satisfies ToolError;
   }
-
-  const latencyMs = Date.now() - start;
-  let responseBody: any = null;
-  const isJson = response.headers.get("content-type")?.includes("application/json");
-
-  if (!response.ok) {
-    if (isJson) {
-      try {
-        responseBody = await response.json();
-      } catch (error) {
-        // ignore JSON parse errors for error responses
-      }
-    } else {
-      try {
-        responseBody = await response.text();
-      } catch (error) {
-        responseBody = null;
-      }
-    }
-
-    const errorMessage =
-      typeof responseBody?.error?.message === "string"
-        ? responseBody.error.message
-        : typeof responseBody === "string"
-          ? responseBody
-          : `LLM request failed with status ${response.status}`;
-
-    return {
-      ok: false,
-      code: "llm.api_error",
-      message: errorMessage,
-      retryable: response.status >= 500,
-    } satisfies ToolError;
-  }
-
-  try {
-    responseBody = isJson ? await response.json() : await response.text();
-  } catch (err: any) {
-    return {
-      ok: false,
-      code: "llm.invalid_response",
-      message: err?.message ?? "Failed to parse LLM response",
-    } satisfies ToolError;
-  }
-
-  if (!isJson) {
-    const textBody = typeof responseBody === "string" ? responseBody : "";
-    if (!textBody) {
-      return {
-        ok: false,
-        code: "llm.invalid_response",
-        message: "LLM response missing content",
-      } satisfies ToolError;
-    }
-    return {
-      ok: true,
-      data: { content: textBody, raw: textBody },
-      latency_ms: latencyMs,
-    } satisfies ToolOk;
-  }
-
-  const choice = responseBody?.choices?.[0];
-  const message = choice?.message ?? {};
-  const content =
-    typeof message?.content === "string"
-      ? message.content
-      : typeof choice?.text === "string"
-        ? choice.text
-        : "";
-
-  if (!content) {
-    return {
-      ok: false,
-      code: "llm.invalid_response",
-      message: "LLM response did not include any content",
-    } satisfies ToolError;
-  }
-
-  return {
-    ok: true,
-    data: {
-      content,
-      role: typeof message?.role === "string" ? message.role : "assistant",
-      raw: responseBody,
-    },
-    latency_ms: latencyMs,
-    cost:
-      typeof responseBody?.usage?.total_tokens === "number"
-        ? responseBody.usage.total_tokens
-        : undefined,
-  } satisfies ToolOk;
 }
 
 export function createDefaultToolInvoker(): ToolInvoker {
