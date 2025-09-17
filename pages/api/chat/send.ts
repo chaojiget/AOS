@@ -11,6 +11,15 @@ interface ChatSendResponse {
   trace_id: string;
   msg_id: string;
   result: unknown;
+  message: {
+    msg_id: string;
+    role: "assistant";
+    trace_id: string;
+    reply_to: string;
+    text?: string;
+    error?: unknown;
+    raw?: unknown;
+  };
   events: Array<{
     ts: string;
     type: string;
@@ -161,10 +170,55 @@ export default async function handler(
       context: { traceId, input: text, metadata: { history } },
     });
 
+    const assistantMsgId = randomUUID();
+    const assistantPayload: {
+      msg_id: string;
+      role: "assistant";
+      trace_id: string;
+      reply_to: string;
+      text?: string;
+      error?: unknown;
+      raw?: unknown;
+    } = {
+      msg_id: assistantMsgId,
+      role: "assistant",
+      trace_id: traceId,
+      reply_to: msgId,
+    };
+
+    const final = result?.final;
+    if (final && typeof final === "object") {
+      if (typeof (final as any).text === "string") {
+        assistantPayload.text = (final as any).text;
+      }
+      if ("error" in final) {
+        assistantPayload.error = (final as any).error;
+      }
+      if ("raw" in final) {
+        assistantPayload.raw = (final as any).raw;
+      }
+    } else if (typeof final === "string") {
+      assistantPayload.text = final;
+    } else if (final != null) {
+      assistantPayload.text = JSON.stringify(final);
+    } else if (result?.reason) {
+      assistantPayload.error = { reason: result.reason };
+    }
+
+    await bus.publish({
+      id: randomUUID(),
+      ts: new Date().toISOString(),
+      type: "chat.msg",
+      version: 1,
+      trace_id: traceId,
+      data: assistantPayload,
+    });
+
     res.status(200).json({
       trace_id: traceId,
       msg_id: msgId,
       result: result.final,
+      message: assistantPayload,
       events: events.map((evt: EventEnvelope) => ({
         ts: evt.ts,
         type: evt.type,
