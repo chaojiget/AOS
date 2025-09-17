@@ -44,7 +44,9 @@
         "localId": "local_id",
         "traceId": "trace_id",
         "latency": "latency",
-        "cost": "cost"
+        "cost": "cost",
+        "reason": "reason",
+        "reviewNotes": "review notes"
       },
       "status": {
         "error": "Delivery failed",

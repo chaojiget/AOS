@@ -7,19 +7,15 @@ import { runLoop, type CoreEvent, type EmitSpanOptions } from "../../../core/age
 import { EpisodeLogger } from "../../../runtime/episode";
 import { EventBus, type EventEnvelope, wrapCoreEvent } from "../../../runtime/events";
 
+type RunReason = "completed" | "no-plan" | "ask" | "max-iterations";
+
 interface ChatSendResponse {
   trace_id: string;
   msg_id: string;
   result: unknown;
-  message: {
-    msg_id: string;
-    role: "assistant";
-    trace_id: string;
-    reply_to: string;
-    text?: string;
-    error?: unknown;
-    raw?: unknown;
-  };
+  reason: RunReason;
+  review?: unknown;
+  message: AssistantEventPayload | null;
   events: Array<{
     ts: string;
     type: string;
@@ -34,6 +30,24 @@ type RequestMessage = { role: string; content: string };
 type ChatSendError = { error: string; message: string };
 
 type ParsedBody = Record<string, unknown>;
+
+type AssistantMessagePayload = {
+  msg_id: string;
+  ts: string;
+  text?: string;
+  error?: string;
+};
+
+type AssistantEventPayload = {
+  msg_id: string;
+  role: "assistant";
+  trace_id: string;
+  reply_to: string;
+  ts: string;
+  text?: string;
+  error?: unknown;
+  raw?: unknown;
+};
 
 function parseRequestBody(req: NextApiRequest): ParsedBody {
   const { body } = req;
@@ -94,6 +108,78 @@ function normaliseReplyTo(raw: unknown): string | null {
     return trimmed ? trimmed : null;
   }
   return null;
+}
+
+function normaliseAssistantMessage(
+  finalOutput: unknown,
+  reason: RunReason,
+  review: unknown,
+): AssistantMessagePayload | null {
+  const base: AssistantMessagePayload = {
+    msg_id: randomUUID(),
+    ts: new Date().toISOString(),
+  };
+
+  if (finalOutput == null) {
+    if (reason === "completed") {
+      return null;
+    }
+
+    const reviewNotes = Array.isArray((review as any)?.notes)
+      ? ((review as any).notes as unknown[]).filter((note): note is string => typeof note === "string")
+      : [];
+    const noteSummary = reviewNotes.join(" · ");
+    const message = noteSummary || `run ended with reason: ${reason}`;
+    return { ...base, error: message };
+  }
+
+  if (typeof finalOutput === "string") {
+    const text = finalOutput.trim();
+    if (!text) {
+      return { ...base, text: "" };
+    }
+    return { ...base, text };
+  }
+
+  if (typeof finalOutput === "object") {
+    const record = finalOutput as Record<string, unknown>;
+    const msgId =
+      typeof record.msg_id === "string" && record.msg_id.trim()
+        ? record.msg_id.trim()
+        : base.msg_id;
+    const ts = typeof record.ts === "string" && record.ts.trim() ? record.ts : base.ts;
+
+    const textValue = typeof record.text === "string" ? record.text : undefined;
+    const errorValue = record.error;
+    const errorText =
+      typeof errorValue === "string"
+        ? errorValue
+        : errorValue && typeof errorValue === "object"
+          ? typeof (errorValue as any).message === "string"
+            ? (errorValue as any).message
+            : JSON.stringify(errorValue)
+          : undefined;
+
+    if (textValue || errorText) {
+      return {
+        msg_id: msgId,
+        ts,
+        ...(textValue ? { text: textValue } : {}),
+        ...(errorText ? { error: errorText } : {}),
+      };
+    }
+
+    return {
+      msg_id: msgId,
+      ts,
+      text: JSON.stringify(finalOutput),
+    };
+  }
+
+  return {
+    ...base,
+    text: String(finalOutput),
+  };
 }
 
 export default async function handler(
@@ -174,39 +260,60 @@ export default async function handler(
       context: { traceId, input: text, metadata: { history } },
     });
 
-    const assistantMsgId = randomUUID();
-    const assistantPayload: {
-      msg_id: string;
-      role: "assistant";
-      trace_id: string;
-      reply_to: string;
-      text?: string;
-      error?: unknown;
-      raw?: unknown;
-    } = {
-      msg_id: assistantMsgId,
-      role: "assistant",
-      trace_id: traceId,
-      reply_to: msgId,
-    };
+    const finalOutput = result?.final;
+    const runReason = (result?.reason ?? "completed") as RunReason;
+    const review = result?.review;
 
-    const final = result?.final;
-    if (final && typeof final === "object") {
-      if (typeof (final as any).text === "string") {
-        assistantPayload.text = (final as any).text;
+    const assistantMessage = normaliseAssistantMessage(finalOutput, runReason, review);
+
+    let assistantPayload: AssistantEventPayload | null = assistantMessage
+      ? {
+          msg_id: assistantMessage.msg_id,
+          role: "assistant",
+          trace_id: traceId,
+          reply_to: msgId,
+          ts: assistantMessage.ts,
+          ...(assistantMessage.text ? { text: assistantMessage.text } : {}),
+          ...(assistantMessage.error ? { error: assistantMessage.error } : {}),
+        }
+      : null;
+
+    if (!assistantPayload) {
+      assistantPayload = {
+        msg_id: randomUUID(),
+        role: "assistant",
+        trace_id: traceId,
+        reply_to: msgId,
+        ts: new Date().toISOString(),
+      };
+    }
+
+    if (finalOutput && typeof finalOutput === "object") {
+      if (typeof (finalOutput as any).text === "string" && assistantPayload.text == null) {
+        assistantPayload.text = (finalOutput as any).text;
       }
-      if ("error" in final) {
-        assistantPayload.error = (final as any).error;
+      if ("error" in finalOutput && assistantPayload.error == null) {
+        assistantPayload.error = (finalOutput as any).error;
       }
-      if ("raw" in final) {
-        assistantPayload.raw = (final as any).raw;
+      if ("raw" in finalOutput) {
+        assistantPayload.raw = (finalOutput as any).raw;
       }
-    } else if (typeof final === "string") {
-      assistantPayload.text = final;
-    } else if (final != null) {
-      assistantPayload.text = JSON.stringify(final);
-    } else if (result?.reason) {
-      assistantPayload.error = { reason: result.reason };
+    } else if (typeof finalOutput === "string" && assistantPayload.text == null) {
+      assistantPayload.text = finalOutput;
+    } else if (
+      finalOutput != null &&
+      assistantPayload.text == null &&
+      assistantPayload.error == null
+    ) {
+      assistantPayload.text = JSON.stringify(finalOutput);
+    }
+
+    if (assistantPayload.text == null && assistantPayload.error == null) {
+      if (runReason !== "completed") {
+        assistantPayload.error = { reason: runReason };
+      } else {
+        assistantPayload.text = "";
+      }
     }
 
     await bus.publish({
@@ -221,7 +328,9 @@ export default async function handler(
     res.status(200).json({
       trace_id: traceId,
       msg_id: msgId,
-      result: result.final,
+      result: finalOutput,
+      reason: runReason,
+      review,
       message: assistantPayload,
       events: events.map((evt: EventEnvelope) => ({
         ts: evt.ts,

@@ -76,4 +76,35 @@ describe("ChatMessageList", () => {
     expect(html.includes("Delivered")).toBe(true);
     expect(html.includes("No messages yet.")).toBe(false);
   });
+
+  it("highlights failed assistant messages with review metadata", () => {
+    const messages: ChatHistoryMessage[] = [
+      {
+        id: "u-1",
+        role: "user",
+        content: "ping",
+        ts: new Date("2023-06-01T00:00:00Z").toISOString(),
+        status: "done",
+        msgId: "msg-user-1",
+      },
+      {
+        id: "a-err",
+        role: "assistant",
+        content: "tool invocation failed",
+        ts: new Date("2023-06-01T00:00:01Z").toISOString(),
+        status: "error",
+        msgId: "msg-assistant-err",
+        error: "tool invocation failed",
+        failureReason: "max-iterations",
+        reviewNotes: ["tool invocation failed"],
+      },
+    ];
+
+    const html = renderToStaticMarkup(<ChatMessageList messages={messages} />);
+
+    expect(html.includes('data-status="error"')).toBe(true);
+    expect(html.includes("tool invocation failed")).toBe(true);
+    expect(html.includes("reason: max-iterations")).toBe(true);
+    expect(html.includes("review notes: tool invocation failed")).toBe(true);
+  });
 });

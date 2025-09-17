@@ -44,7 +44,9 @@
         "localId": "本地 ID",
         "traceId": "追踪 ID",
         "latency": "延迟",
-        "cost": "成本"
+        "cost": "成本",
+        "reason": "原因",
+        "reviewNotes": "评审备注"
       },
       "status": {
         "error": "发送失败",
