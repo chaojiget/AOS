@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { loadLLMConfig } from "../config/llm.js";
 import {
   ToolInvoker,
   ToolCall,
@@ -60,23 +61,169 @@ function handleEcho(args: any): ToolResult {
   return { ok: true, data: args } satisfies ToolOk;
 }
 
-function handleChat(args: any): ToolResult {
-  const prompt = args?.prompt;
-  const messages = Array.isArray(args?.messages) ? args.messages : [];
+async function handleChat(args: any): Promise<ToolResult> {
+  const prompt = typeof args?.prompt === "string" ? args.prompt.trim() : "";
+  const messageList = Array.isArray(args?.messages) ? args.messages : [];
+
+  const messages = messageList
+    .map((msg: any) => {
+      if (!msg || typeof msg?.content !== "string") {
+        return null;
+      }
+      const role =
+        typeof msg.role === "string" && msg.role.trim().length > 0
+          ? msg.role
+          : "user";
+      return { role, content: msg.content };
+    })
+    .filter(Boolean) as Array<{ role: string; content: string }>;
+
+  if (prompt.length > 0) {
+    messages.push({ role: "user", content: prompt });
+  }
+
+  if (messages.length === 0) {
+    return {
+      ok: false,
+      code: "llm.invalid_request",
+      message: "prompt or messages are required",
+    } satisfies ToolError;
+  }
+
+  let config;
+  try {
+    config = loadLLMConfig();
+  } catch (err: any) {
+    return {
+      ok: false,
+      code: "llm.config_error",
+      message: err?.message ?? "LLM configuration error",
+    } satisfies ToolError;
+  }
+
+  const url = `${config.baseUrl}/chat/completions`;
+  const payload: Record<string, any> = {
+    model: config.model,
+    messages,
+    temperature: typeof args?.temperature === "number" ? args.temperature : 0,
+  };
+
+  if (typeof args?.max_tokens === "number") {
+    payload.max_tokens = args.max_tokens;
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${config.apiKey}`,
+  };
+
+  const start = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+  } catch (err: any) {
+    return {
+      ok: false,
+      code: "llm.network_error",
+      message: err?.message ?? "Failed to reach LLM service",
+      retryable: true,
+    } satisfies ToolError;
+  }
+
+  const latencyMs = Date.now() - start;
+  let responseBody: any = null;
+  const isJson = response.headers.get("content-type")?.includes("application/json");
+
+  if (!response.ok) {
+    if (isJson) {
+      try {
+        responseBody = await response.json();
+      } catch (error) {
+        // ignore JSON parse errors for error responses
+      }
+    } else {
+      try {
+        responseBody = await response.text();
+      } catch (error) {
+        responseBody = null;
+      }
+    }
+
+    const errorMessage =
+      typeof responseBody?.error?.message === "string"
+        ? responseBody.error.message
+        : typeof responseBody === "string"
+          ? responseBody
+          : `LLM request failed with status ${response.status}`;
+
+    return {
+      ok: false,
+      code: "llm.api_error",
+      message: errorMessage,
+      retryable: response.status >= 500,
+    } satisfies ToolError;
+  }
+
+  try {
+    responseBody = isJson ? await response.json() : await response.text();
+  } catch (err: any) {
+    return {
+      ok: false,
+      code: "llm.invalid_response",
+      message: err?.message ?? "Failed to parse LLM response",
+    } satisfies ToolError;
+  }
+
+  if (!isJson) {
+    const textBody = typeof responseBody === "string" ? responseBody : "";
+    if (!textBody) {
+      return {
+        ok: false,
+        code: "llm.invalid_response",
+        message: "LLM response missing content",
+      } satisfies ToolError;
+    }
+    return {
+      ok: true,
+      data: { content: textBody, raw: textBody },
+      latency_ms: latencyMs,
+    } satisfies ToolOk;
+  }
+
+  const choice = responseBody?.choices?.[0];
+  const message = choice?.message ?? {};
   const content =
-    typeof prompt === "string" && prompt.trim().length
-      ? prompt
-      : messages
-          .map((m: any) => m?.content)
-          .filter(Boolean)
-          .join("\n");
+    typeof message?.content === "string"
+      ? message.content
+      : typeof choice?.text === "string"
+        ? choice.text
+        : "";
 
-  const reply =
-    content?.length > 0
-      ? `Echoing (${content.length} chars): ${content}`
-      : "Hello! I am a local chat kernel. Provide a prompt to continue.";
+  if (!content) {
+    return {
+      ok: false,
+      code: "llm.invalid_response",
+      message: "LLM response did not include any content",
+    } satisfies ToolError;
+  }
 
-  return { ok: true, data: { content: reply } } satisfies ToolOk;
+  return {
+    ok: true,
+    data: {
+      content,
+      role: typeof message?.role === "string" ? message.role : "assistant",
+      raw: responseBody,
+    },
+    latency_ms: latencyMs,
+    cost:
+      typeof responseBody?.usage?.total_tokens === "number"
+        ? responseBody.usage.total_tokens
+        : undefined,
+  } satisfies ToolOk;
 }
 
 export function createDefaultToolInvoker(): ToolInvoker {
