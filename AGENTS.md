@@ -1,3 +1,5 @@
+# 使用中文交互
+
 # AGENTS.md — AOS 项目给 AI 编码代理的操作手册（标准版 v0.1）
 
 > 读者：AI 编码代理（Claude Code / Cursor / Roo Code / Windsurf / Copilot Chat 等）与协作者人类。
