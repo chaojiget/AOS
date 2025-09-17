@@ -88,12 +88,17 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
       setBranch(null);
       setBranchState({ loading: true, error: null });
 
-      const params = new URLSearchParams({ trace_id: traceId });
-      if (message.span_id) {
-        params.set("span_id", message.span_id);
-      } else {
-        params.set("ln", String(message.ln));
+      if (!message.span_id) {
+        setBranch(null);
+        setBranchState({
+          loading: false,
+          error: "Selected event is missing span information",
+        });
+        return;
       }
+
+      const params = new URLSearchParams({ trace_id: traceId });
+      params.set("span_id", message.span_id);
 
       fetch(`/api/logflow/branch?${params.toString()}`)
         .then(async (resp) => {

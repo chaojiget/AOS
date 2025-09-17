@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 import { createChatKernel, createDefaultToolInvoker } from "../../../adapters/core";
-import { runLoop, type CoreEvent } from "../../../core/agent";
+import { runLoop, type CoreEvent, type EmitSpanOptions } from "../../../core/agent";
 import { EpisodeLogger } from "../../../runtime/episode";
 import { EventBus, type EventEnvelope, wrapCoreEvent } from "../../../runtime/events";
 
@@ -11,7 +11,13 @@ interface ChatSendResponse {
   trace_id: string;
   msg_id: string;
   result: unknown;
-  events: Array<{ ts: string; type: string; data: unknown }>;
+  events: Array<{
+    ts: string;
+    type: string;
+    span_id?: string;
+    parent_span_id?: string;
+    data: unknown;
+  }>;
 }
 
 const episodesDir = process.env.AOS_EPISODES_DIR ?? join(process.cwd(), "episodes");
@@ -147,8 +153,8 @@ export default async function handler(
   try {
     await bus.publish(chatMessageEnvelope);
 
-    const emit = async (event: CoreEvent): Promise<void> => {
-      await bus.publish(wrapCoreEvent(traceId, event));
+    const emit = async (event: CoreEvent, span?: EmitSpanOptions): Promise<void> => {
+      await bus.publish(wrapCoreEvent(traceId, event, span));
     };
 
     const result = await runLoop(kernel, emit, {
@@ -162,6 +168,8 @@ export default async function handler(
       events: events.map((evt: EventEnvelope) => ({
         ts: evt.ts,
         type: evt.type,
+        span_id: evt.span_id,
+        parent_span_id: evt.parent_span_id,
         data: evt.data,
       })),
     });
