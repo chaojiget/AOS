@@ -15,6 +15,8 @@ interface RunResponse {
 
 const episodesDir = join(process.cwd(), "episodes");
 
+type RequestMessage = { role: string; content: string };
+
 function parseRequestBody(req: NextApiRequest): Record<string, unknown> {
   const { body } = req;
   if (body == null || body === "") {
@@ -34,6 +36,20 @@ function parseRequestBody(req: NextApiRequest): Record<string, unknown> {
   }
 
   return {};
+}
+
+function normaliseHistory(raw: unknown): RequestMessage[] {
+  if (!Array.isArray(raw)) return [];
+  const history: RequestMessage[] = [];
+  for (const entry of raw) {
+    if (entry && typeof entry === "object" && typeof (entry as any).role === "string") {
+      const content = (entry as any).content;
+      if (typeof content === "string") {
+        history.push({ role: (entry as any).role, content });
+      }
+    }
+  }
+  return history;
 }
 
 export default async function handler(
@@ -56,12 +72,13 @@ export default async function handler(
 
   const messageRaw = payload.message ?? payload.input ?? "";
   const message = typeof messageRaw === "string" ? messageRaw : "";
+  const history = normaliseHistory(payload.messages);
   const traceId = randomUUID();
 
   const bus = new EventBus();
   const logger = new EpisodeLogger({ traceId, dir: episodesDir });
   const toolInvoker = createDefaultToolInvoker();
-  const kernel = createChatKernel({ message, traceId, toolInvoker });
+  const kernel = createChatKernel({ message, traceId, toolInvoker, history });
 
   const events: EventEnvelope<CoreEvent>[] = [];
   bus.subscribe((event: EventEnvelope<CoreEvent>) => {

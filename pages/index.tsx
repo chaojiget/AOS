@@ -1,40 +1,64 @@
 import { FormEventHandler, useCallback, useMemo, useState } from "react";
 import type { NextPage } from "next";
+import ChatMessageList from "../components/ChatMessageList";
 import LogFlowPanel from "../components/LogFlowPanel";
+
+export type ChatMessage = {
+  role: "user" | "assistant" | "system";
+  content: string;
+};
 
 const HomePage: NextPage = () => {
   const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [traceId, setTraceId] = useState<string | undefined>(undefined);
-  const [finalOutput, setFinalOutput] = useState<any>(null);
+  const [latestResponse, setLatestResponse] = useState<any>(null);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "logflow">("chat");
 
   const handleRun = useCallback(async () => {
     if (isRunning) return;
     const prompt = input.trim();
+    if (!prompt) return;
+
+    const previousHistory = chatHistory;
+    const userMessage: ChatMessage = { role: "user", content: prompt };
+    const nextHistory = [...previousHistory, userMessage];
+
+    setChatHistory(nextHistory);
     setIsRunning(true);
     setRunError(null);
     setTraceId(undefined);
-    setFinalOutput(null);
+    setLatestResponse(null);
     try {
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: prompt }),
+        body: JSON.stringify({ message: prompt, messages: previousHistory }),
       });
       const data = await response.json().catch(() => null);
       if (!response.ok || !data) {
         throw new Error(data?.message ?? `Request failed (${response.status})`);
       }
       setTraceId(data.trace_id);
-      setFinalOutput(data.result);
+      setLatestResponse(data.result);
+      const assistantMessage: ChatMessage = {
+        role: "assistant",
+        content: data.result?.text ?? JSON.stringify(data.result),
+      };
+      setChatHistory((history) => [...history, assistantMessage]);
     } catch (err: any) {
       setRunError(err?.message ?? "Failed to run agent");
+      const errorMessage: ChatMessage = {
+        role: "system",
+        content: `Error: ${err?.message ?? "Failed to run agent"}`,
+      };
+      setChatHistory((history) => [...history, errorMessage]);
     } finally {
       setIsRunning(false);
     }
-  }, [input, isRunning]);
+  }, [input, isRunning, chatHistory]);
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
     (event) => {
@@ -124,6 +148,10 @@ const HomePage: NextPage = () => {
               gap: "1.5rem",
             }}
           >
+            <div>
+              <h3 style={{ margin: "0 0 0.75rem" }}>Conversation</h3>
+              <ChatMessageList messages={chatHistory} isRunning={isRunning} />
+            </div>
             <form onSubmit={handleSubmit} style={{ display: "grid", gap: "1rem" }}>
               <label htmlFor="prompt" style={{ fontWeight: 600 }}>
                 Chat Input
@@ -177,23 +205,25 @@ const HomePage: NextPage = () => {
                 </span>
               </div>
             </form>
-
-            <div>
-              <h3 style={{ margin: "0 0 0.5rem" }}>Final Output</h3>
+            <details
+              style={{
+                background: "#0f172a",
+                borderRadius: 8,
+                border: "1px solid #1f2937",
+                padding: "1rem",
+              }}
+            >
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>Latest raw response</summary>
               <pre
                 style={{
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
-                  background: "#0f172a",
-                  borderRadius: 8,
-                  padding: "1rem",
-                  border: "1px solid #1f2937",
-                  minHeight: 120,
+                  marginTop: "0.75rem",
                 }}
               >
-                {finalOutput ? JSON.stringify(finalOutput, null, 2) : "No output yet."}
+                {latestResponse ? JSON.stringify(latestResponse, null, 2) : "No response yet."}
               </pre>
-            </div>
+            </details>
           </section>
         ) : (
           <section
