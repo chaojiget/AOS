@@ -2,6 +2,7 @@ import React from "react";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import ChatMessageList, { type ChatHistoryMessage } from "../components/ChatMessageList";
+import { I18nProvider } from "../lib/i18n/index";
 
 describe("ChatMessageList", () => {
   it("renders multi-turn conversation bubbles with status", () => {
@@ -34,7 +35,11 @@ describe("ChatMessageList", () => {
       },
     ];
 
-    const html = renderToStaticMarkup(<ChatMessageList messages={messages} isRunning />);
+    const html = renderToStaticMarkup(
+      <I18nProvider locale="zh-CN">
+        <ChatMessageList messages={messages} isRunning />
+      </I18nProvider>,
+    );
 
     expect(html.includes('data-group-role="user"')).toBe(true);
     expect(html.includes('data-group-role="assistant"')).toBe(true);
@@ -43,8 +48,32 @@ describe("ChatMessageList", () => {
     expect(html.includes("Hello")).toBe(true);
     expect(html.includes("Hi, how can I help?")).toBe(true);
     expect(html.includes("Tell me a joke.")).toBe(true);
-    expect(html.includes("latency: 1200 ms")).toBe(true);
-    expect(html.includes("cost: 0.0042")).toBe(true);
+    expect(html.includes("延迟: 1200 ms")).toBe(true);
+    expect(html.includes("成本: 0.0042")).toBe(true);
     expect(html.includes('data-role="status"')).toBe(true);
+    expect(html.includes("正在生成回复…")).toBe(true);
+  });
+
+  it("renders english labels when locale is en", () => {
+    const messages: ChatHistoryMessage[] = [
+      {
+        id: "u-1",
+        role: "user",
+        content: "你好",
+        ts: new Date("2023-06-01T00:00:00Z").toISOString(),
+        status: "done",
+        msgId: "msg-user-1",
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      <I18nProvider locale="en">
+        <ChatMessageList messages={messages} />
+      </I18nProvider>,
+    );
+
+    expect(html.includes("msg_id")).toBe(true);
+    expect(html.includes("Delivered")).toBe(true);
+    expect(html.includes("No messages yet.")).toBe(false);
   });
 });
