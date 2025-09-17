@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { createChatKernel } from "../adapters/core";
+import type { ToolInvoker } from "../core/agent";
 import {
   runLoop,
   type AgentKernel,
@@ -233,5 +235,163 @@ describe("runLoop", () => {
 
     const finalEvent = emitted.find(isFinalEvent);
     expect(finalEvent?.event.reason).toBe("non-retryable-error");
+  });
+
+  it("runs chat kernel multi-step plan to completion", async () => {
+    const emitted: EmittedEntry[] = [];
+    const plannerCalls: string[] = [];
+    const toolInvoker: ToolInvoker = async (call) => {
+      if (call.name === "planner.plan") {
+        plannerCalls.push(call.name);
+        return {
+          ok: true,
+          data: {
+            notes: ["multi-step"],
+            steps: [
+              {
+                id: "fetch-1",
+                op: "http.get",
+                args: { url: "https://example.com" },
+                description: "fetch data",
+              },
+              {
+                id: "reply-1",
+                op: "llm.chat",
+                args: {},
+                description: "produce answer",
+              },
+            ],
+          },
+        } satisfies ToolResult;
+      }
+      if (call.name === "http.get") {
+        return { ok: true, data: { body: "hello world" } } satisfies ToolResult;
+      }
+      if (call.name === "llm.chat") {
+        return { ok: true, data: { content: "完成了" } } satisfies ToolResult;
+      }
+      throw new Error(`unexpected call ${call.name}`);
+    };
+
+    const kernel = createChatKernel({
+      message: "请总结",
+      traceId: "trace-multi",
+      toolInvoker,
+    });
+
+    const result = await runLoop(
+      kernel,
+      (event: CoreEvent, span?: EmitSpanOptions) => {
+        emitted.push({ event, span });
+      },
+      { context: { traceId: "trace-multi" }, maxIterations: 2 },
+    );
+
+    expect(plannerCalls).toHaveLength(1);
+    expect(result.reason).toBe("completed");
+    expect(result.review?.passed).toBe(true);
+    expect(result.review?.score).toBe(1);
+    expect(result.final).toEqual({ text: "完成了", raw: { content: "完成了" } });
+
+    const planEvent = emitted.find((entry) => entry.event.type === "plan");
+    expect(planEvent?.event.steps).toHaveLength(2);
+  });
+
+  it("stops with ask when planner requests clarification", async () => {
+    const emitted: EmittedEntry[] = [];
+    const toolInvoker: ToolInvoker = async (call) => {
+      if (call.name === "planner.plan") {
+        return {
+          ok: true,
+          data: {
+            steps: [
+              {
+                id: "ask-more",
+                op: "ask.user",
+                args: { question: "需要更多细节" },
+              },
+            ],
+          },
+        } satisfies ToolResult;
+      }
+      throw new Error(`unexpected call ${call.name}`);
+    };
+
+    const kernel = createChatKernel({
+      message: "请帮忙",
+      traceId: "trace-ask-planner",
+      toolInvoker,
+    });
+
+    const result = await runLoop(
+      kernel,
+      (event: CoreEvent, span?: EmitSpanOptions) => {
+        emitted.push({ event, span });
+      },
+      { context: { traceId: "trace-ask-planner" } },
+    );
+
+    expect(result.reason).toBe("ask");
+    expect(result.actions[0]?.ask?.question).toBe("需要更多细节");
+    const askEvent = emitted.find((entry) => entry.event.type === "ask");
+    expect(askEvent?.event.question).toBe("需要更多细节");
+  });
+
+  it("retries after a failure and succeeds on the next plan", async () => {
+    const emitted: EmittedEntry[] = [];
+    let plannerCalls = 0;
+    let llmCalls = 0;
+    const toolInvoker: ToolInvoker = async (call) => {
+      if (call.name === "planner.plan") {
+        plannerCalls += 1;
+        return {
+          ok: true,
+          data: {
+            reason: plannerCalls === 1 ? "initial" : "retry",
+            steps: [
+              {
+                id: `reply-${plannerCalls}`,
+                op: "llm.chat",
+                args: {},
+              },
+            ],
+          },
+        } satisfies ToolResult;
+      }
+      if (call.name === "llm.chat") {
+        llmCalls += 1;
+        if (llmCalls === 1) {
+          return {
+            ok: false,
+            code: "llm.error",
+            message: "temporary failure",
+            retryable: true,
+          } satisfies ToolResult;
+        }
+        return { ok: true, data: { content: "恢复成功" } } satisfies ToolResult;
+      }
+      throw new Error(`unexpected call ${call.name}`);
+    };
+
+    const kernel = createChatKernel({
+      message: "请回答",
+      traceId: "trace-retry",
+      toolInvoker,
+    });
+
+    const result = await runLoop(
+      kernel,
+      (event: CoreEvent, span?: EmitSpanOptions) => {
+        emitted.push({ event, span });
+      },
+      { context: { traceId: "trace-retry" }, maxIterations: 3 },
+    );
+
+    expect(plannerCalls).toBe(2);
+    expect(llmCalls).toBe(2);
+    expect(result.reason).toBe("completed");
+    expect(result.review?.passed).toBe(true);
+    expect(result.review?.notes?.some((note) => note.includes("历史失败步骤"))).toBe(true);
+    expect(result.actions).toHaveLength(2);
   });
 });

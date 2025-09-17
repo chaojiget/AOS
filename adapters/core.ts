@@ -10,6 +10,7 @@ import {
   PlanStep,
   ActionOutcome,
   ReviewResult,
+  AskRequest,
 } from "../core/agent";
 import type { ChatMessage } from "../types/chat";
 import { buildChatCompletionsUrl, loadLLMConfig } from "../config/llm";
@@ -232,6 +233,7 @@ class ChatKernel implements AgentKernel {
   private planCount = 0;
   private actions: ActionOutcome[] = [];
   private readonly history: ChatMessage[];
+  private readonly stepRevision = new Map<string, number>();
 
   constructor(private readonly options: ChatKernelOptions) {
     const baseHistory = Array.isArray(options.history)
@@ -265,39 +267,306 @@ class ChatKernel implements AgentKernel {
         : []),
     ];
 
+    const plannerCall: ToolCall = {
+      name: "planner.plan",
+      args: {
+        goal: this.options.message ?? "",
+        history: combinedHistory,
+        revision: this.planCount,
+      },
+    };
+
+    const plannerContext = {
+      trace_id: this.options.traceId,
+      span_id: `plan-${this.planCount}-planner`,
+    };
+
+    let plannerResult: ToolResult | undefined;
+    try {
+      plannerResult = await this.options.toolInvoker(plannerCall, plannerContext);
+    } catch (err) {
+      plannerResult = {
+        ok: false,
+        code: "planner.invoke_failed",
+        message: err instanceof Error ? err.message : "planner invocation failed",
+      } satisfies ToolError;
+    }
+
+    const ensurePlannerData = (result: ToolResult | undefined): any => {
+      if (!result) return undefined;
+      if (!result.ok) {
+        return { error: result.message };
+      }
+
+      const data = result.data;
+      if (typeof data === "string") {
+        try {
+          return JSON.parse(data);
+        } catch {
+          return { steps: [], notes: ["planner returned non-JSON string"] };
+        }
+      }
+      return data;
+    };
+
+    const plannerData = ensurePlannerData(plannerResult);
+
+    const plannerStepsSource = Array.isArray(plannerData?.steps)
+      ? plannerData.steps
+      : Array.isArray(plannerData)
+        ? plannerData
+        : Array.isArray(plannerData?.plan?.steps)
+          ? plannerData.plan.steps
+          : [];
+
+    const steps: PlanStep[] = [];
+    for (let index = 0; index < plannerStepsSource.length; index += 1) {
+      const raw = plannerStepsSource[index];
+      if (!raw || typeof raw.op !== "string" || !raw.op.trim()) {
+        continue;
+      }
+
+      const args =
+        raw.args && typeof raw.args === "object" ? { ...raw.args } : {};
+
+      if (
+        raw.op === "llm.chat" &&
+        !Array.isArray(args.messages) &&
+        typeof args.prompt !== "string"
+      ) {
+        args.messages = combinedHistory;
+      }
+
+      const stepId =
+        typeof raw.id === "string" && raw.id.trim()
+          ? raw.id
+          : `${this.options.traceId}-r${this.planCount}-s${index + 1}`;
+
+      const step: PlanStep = {
+        id: stepId,
+        op: raw.op,
+        args,
+        ...(typeof raw.description === "string" && raw.description.trim()
+          ? { description: raw.description }
+          : {}),
+      } satisfies PlanStep;
+
+      this.stepRevision.set(step.id, this.planCount);
+      steps.push(step);
+    }
+
+    if (steps.length > 0) {
+      const planNotes = Array.isArray(plannerData?.notes)
+        ? plannerData.notes.filter((note: unknown): note is string =>
+            typeof note === "string" && note.trim() !== "",
+          )
+        : undefined;
+
+      return {
+        revision: this.planCount,
+        reason:
+          typeof plannerData?.reason === "string"
+            ? plannerData.reason
+            : this.planCount === 1
+              ? "initial"
+              : "retry",
+        notes: planNotes,
+        steps,
+      } satisfies Plan;
+    }
+
+    const fallbackStep: PlanStep = {
+      id: `${this.options.traceId}-r${this.planCount}-s1`,
+      op: "llm.chat",
+      args: { messages: combinedHistory },
+      description: "fallback chat response",
+    } satisfies PlanStep;
+    this.stepRevision.set(fallbackStep.id, this.planCount);
+
+    const fallbackNotes: string[] = [];
+    if (plannerResult && !plannerResult.ok) {
+      fallbackNotes.push(`planner failed: ${plannerResult.message}`);
+    }
+
     return {
       revision: this.planCount,
-      reason: this.planCount === 1 ? "initial" : "retry",
-      steps: [
-        {
-          id: `${this.options.traceId}-step-${this.planCount}`,
-          op: "llm.chat",
-          args: { messages: combinedHistory },
-        },
-      ],
+      reason: "fallback",
+      notes: fallbackNotes.length ? fallbackNotes : undefined,
+      steps: [fallbackStep],
     } satisfies Plan;
   }
 
   async act(step: PlanStep): Promise<ActionOutcome> {
-    const result = await this.options.toolInvoker(
-      { name: step.op, args: step.args },
-      {
-        trace_id: this.options.traceId,
-        span_id: step.id,
-      },
-    );
+    const makeAskOutcome = (ask: AskRequest): ActionOutcome => {
+      const outcome: ActionOutcome = {
+        step,
+        result: { ok: true, data: null },
+        ask,
+      } satisfies ActionOutcome;
+      this.actions.push(outcome);
+      return outcome;
+    };
+
+    if (step.op === "ask.user" || step.op === "ask") {
+      const question =
+        typeof (step.args as any)?.question === "string"
+          ? (step.args as any).question
+          : "请补充更多信息";
+      const ask: AskRequest = {
+        question,
+        origin_step: step.id,
+        detail: (step.args as any)?.detail,
+      } satisfies AskRequest;
+      return makeAskOutcome(ask);
+    }
+
+    const revision = this.stepRevision.get(step.id);
+    const context = {
+      trace_id: this.options.traceId,
+      span_id: step.id,
+      ...(revision ? { metadata: { revision } } : {}),
+    };
+
+    const resolveCall = (): ToolCall | null => {
+      if (!step.op || typeof step.op !== "string") {
+        return null;
+      }
+
+      if (step.op.startsWith("mcp")) {
+        const normalised = step.op.replace(/^mcp(:\/\/)?/, "");
+        const separator = normalised.includes("/") ? "/" : ".";
+        const [server, tool] = normalised.split(separator, 2);
+        if (!server || !tool) {
+          return null;
+        }
+        return {
+          name: "mcp.invoke",
+          args: { server, tool, input: step.args },
+        } satisfies ToolCall;
+      }
+
+      if (step.op.startsWith("local.")) {
+        return {
+          name: step.op.slice("local.".length),
+          args: step.args,
+        } satisfies ToolCall;
+      }
+
+      return { name: step.op, args: step.args } satisfies ToolCall;
+    };
+
+    const call = resolveCall();
+
+    if (!call) {
+      const result: ToolError = {
+        ok: false,
+        code: "plan.invalid_step",
+        message: `无法识别的操作: ${String(step.op)}`,
+      } satisfies ToolError;
+      const outcome: ActionOutcome = { step, result };
+      this.actions.push(outcome);
+      return outcome;
+    }
+
+    let result: ToolResult;
+    try {
+      result = await this.options.toolInvoker(call, context);
+    } catch (err) {
+      result = {
+        ok: false,
+        code: "tool.invoke_failed",
+        message: err instanceof Error ? err.message : "unknown tool error",
+        retryable: false,
+      } satisfies ToolError;
+    }
+
     const outcome: ActionOutcome = { step, result };
+
+    if (!result.ok && result.code === "ask.required") {
+      outcome.ask = {
+        question: result.message,
+        origin_step: step.id,
+        detail: { code: result.code },
+      } satisfies AskRequest;
+    }
+
     this.actions.push(outcome);
     return outcome;
   }
 
   async review(actions: ActionOutcome[]): Promise<ReviewResult> {
-    const latest = actions.at(-1);
-    const passed = Boolean(latest?.result.ok);
+    if (!Array.isArray(actions) || actions.length === 0) {
+      return {
+        score: 0,
+        passed: false,
+        notes: ["尚未执行任何步骤"],
+      } satisfies ReviewResult;
+    }
+
+    const revision = this.planCount;
+    const currentRevisionActions = actions.filter(
+      (action) => this.stepRevision.get(action.step.id) === revision,
+    );
+
+    const considered = currentRevisionActions.length > 0 ? currentRevisionActions : actions;
+
+    const total = considered.length;
+    let successCount = 0;
+    const notes: string[] = [];
+    const failures: ActionOutcome[] = [];
+    const asks: ActionOutcome[] = [];
+
+    for (const action of considered) {
+      if (action.ask) {
+        asks.push(action);
+      }
+      if (action.result.ok) {
+        successCount += 1;
+      } else {
+        failures.push(action);
+      }
+    }
+
+    if (asks.length > 0) {
+      notes.push(
+        `等待用户补充信息：${asks
+          .map((ask) => ask.ask?.question ?? ask.step.id)
+          .join("; ")}`,
+      );
+    }
+
+    for (const failure of failures) {
+      const message = failure.result.ok
+        ? ""
+        : failure.result.message ?? "unknown error";
+      notes.push(`步骤 ${failure.step.id} 失败：${message}`);
+    }
+
+    const previousFailures = actions.filter(
+      (action) =>
+        this.stepRevision.get(action.step.id) !== revision && !action.result.ok,
+    );
+    if (previousFailures.length > 0) {
+      notes.push(
+        `历史失败步骤：${previousFailures
+          .map((item) => item.step.id)
+          .join(", ")}`,
+      );
+    }
+
+    const score = total > 0 ? successCount / total : 0;
+    const passed = failures.length === 0 && asks.length === 0 && total > 0;
+
+    if (passed) {
+      notes.push(`第 ${revision} 轮计划全部完成`);
+    } else if (notes.length === 0) {
+      notes.push("计划未通过评审");
+    }
+
     return {
-      score: passed ? 1 : 0,
+      score,
       passed,
-      notes: passed ? ["auto-pass: chat response generated"] : ["tool invocation failed"],
+      notes,
     } satisfies ReviewResult;
   }
 
