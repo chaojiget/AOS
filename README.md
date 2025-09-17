@@ -1,6 +1,5 @@
 # AOS
 
-<<<<<<< HEAD
 Agent Operating System（AOS）旨在提供一个可回放、可量化的智能体运行平台，结合微内核、插件与本地技能，实现 Plan→Execute→Review→Replay 的闭环能力。
 
 ## 快速导航
