@@ -1,10 +1,10 @@
-import { readFile } from "node:fs/promises";
 import {
   ToolInvoker,
   ToolCall,
   ToolResult,
   ToolOk,
   ToolError,
+  ToolContext,
   AgentKernel,
   Plan,
   PlanStep,
@@ -12,6 +12,7 @@ import {
   ReviewResult,
 } from "../core/agent";
 import type { ChatMessage } from "../types/chat";
+import { createMcpRegistry, type CreateMcpRegistryOptions } from "./mcp";
 import { buildChatCompletionsUrl, loadLLMConfig } from "../config/llm";
 
 export const DEFAULT_SYSTEM_PROMPT = {
@@ -42,23 +43,6 @@ async function handleHttpGet(args: any): Promise<ToolResult> {
       code: "http.error",
       message: err?.message ?? "request failed",
       retryable: true,
-    } satisfies ToolError;
-  }
-}
-
-async function handleFileRead(args: any): Promise<ToolResult> {
-  const path = args?.path;
-  if (!path) {
-    return { ok: false, code: "file.invalid_path", message: "path is required" };
-  }
-  try {
-    const content = await readFile(path, "utf8");
-    return { ok: true, data: { path, content } } satisfies ToolOk;
-  } catch (err: any) {
-    return {
-      ok: false,
-      code: "file.read_error",
-      message: err?.message ?? "failed to read file",
     } satisfies ToolError;
   }
 }
@@ -182,15 +166,20 @@ async function handleChat(args: any): Promise<ToolResult> {
   }
 }
 
-export function createDefaultToolInvoker(): ToolInvoker {
-  return async (call: ToolCall, _ctx: any) => {
+export interface DefaultToolInvokerOptions extends CreateMcpRegistryOptions {}
+
+export function createDefaultToolInvoker(options: DefaultToolInvokerOptions = {}): ToolInvoker {
+  const mcpRegistry = createMcpRegistry(options);
+  return async (call: ToolCall, ctx: ToolContext) => {
+    const mcpResult = await mcpRegistry.invoke(call, ctx);
+    if (mcpResult !== null) {
+      return mcpResult;
+    }
     switch (call.name) {
       case "echo":
         return handleEcho(call.args);
       case "http.get":
         return handleHttpGet(call.args);
-      case "file.read":
-        return handleFileRead(call.args);
       case "llm.chat":
         return handleChat(call.args);
       default:

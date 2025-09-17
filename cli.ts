@@ -10,7 +10,7 @@ async function runOnce(message: string) {
   const traceId = randomUUID();
   const bus = new EventBus();
   const logger = new EpisodeLogger({ traceId });
-  const toolInvoker = createDefaultToolInvoker();
+  const toolInvoker = createDefaultToolInvoker({ eventBus: bus });
   const kernel = createChatKernel({ message, traceId, toolInvoker, history: [] });
 
   bus.subscribe((event: any) => {

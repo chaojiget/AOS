@@ -221,7 +221,7 @@ export default async function handler(
 
   const bus = new EventBus();
   const logger = new EpisodeLogger({ traceId, dir: episodesDir });
-  const toolInvoker = createDefaultToolInvoker();
+  const toolInvoker = createDefaultToolInvoker({ eventBus: bus });
   const kernel = createChatKernel({ message: text, traceId, toolInvoker, history });
 
   const events: EventEnvelope[] = [];
