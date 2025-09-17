@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
-import type { EventEnvelope } from "./events.js";
+import type { EventEnvelope } from "./events";
 
 export interface ReplayOptions {
   dir?: string;

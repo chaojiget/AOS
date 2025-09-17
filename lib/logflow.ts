@@ -2,11 +2,7 @@ import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import type { EventEnvelope } from "../runtime/events";
 import { readEpisodeIndex } from "../runtime/episode";
-import type {
-  BranchNode,
-  EpisodeIndexEntry,
-  LogFlowMessage,
-} from "../types/logflow";
+import type { BranchNode, EpisodeIndexEntry, LogFlowMessage } from "../types/logflow";
 
 const DEFAULT_EPISODE_DIR = join(process.cwd(), "episodes");
 

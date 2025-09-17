@@ -68,13 +68,18 @@ export default async function handler(
     events.push(event);
     return logger
       .append(event)
+      .then(() => {
+        return undefined;
+      })
       .catch((error: unknown) => {
         console.error("failed to append episode event", error);
       });
   });
 
   try {
-    const emit = (event: CoreEvent) => bus.publish(wrapCoreEvent(traceId, event));
+    const emit = async (event: CoreEvent): Promise<void> => {
+      await bus.publish(wrapCoreEvent(traceId, event));
+    };
     const result = await runLoop(kernel, emit, {
       context: { traceId, input: message },
     });

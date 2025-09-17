@@ -1,0 +1,167 @@
+name: 功能需求（含 DoR）
+description: 提交新特性前，请完整回答多角度问题并通过 DoR 核对表
+labels:
+  - enhancement
+title: "[Feature] <一句话描述>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 多角度需求澄清
+        请参考 `AGENTS.md §24.1`，逐项回答以下问题。可保留 Markdown 小标题便于评审。
+  - type: textarea
+    id: business_value
+    attributes:
+      label: 业务价值 & 指标
+      description: 战略目标、北极星指标、优先级、预期收益等。
+      placeholder: |
+        - 战略目标：
+        - 关键指标：
+        - 优先级：
+    validations:
+      required: true
+  - type: textarea
+    id: users_jtbd
+    attributes:
+      label: 用户画像 & JTBD
+      description: 核心用户、场景、待完成的工作、痛点。
+      placeholder: |
+        - Persona：
+        - 任务/痛点：
+        - 现状：
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 范围划分（MoSCoW）
+      description: Must / Should / Could / Won’t，请列出核心条目。
+      placeholder: |
+        - Must:
+        - Should:
+        - Could:
+        - Won't:
+    validations:
+      required: true
+  - type: textarea
+    id: data_integration
+    attributes:
+      label: 数据 & 集成
+      description: 数据源、接口、脱敏方案、上下游依赖。
+      placeholder: |
+        - 数据源：
+        - 新增/变更接口：
+        - 脱敏策略：
+    validations:
+      required: true
+  - type: textarea
+    id: experience
+    attributes:
+      label: 体验 / 性能 / a11y
+      description: 关键交互、性能指标（TTI、p95 等）、可访问性和兼容性要求。
+      placeholder: |
+        - 交互：
+        - 性能目标：
+        - a11y / 兼容性：
+    validations:
+      required: true
+  - type: textarea
+    id: non_functional
+    attributes:
+      label: 非功能 & 运维
+      description: 可观测性、日志、弹性、维护策略。
+      placeholder: |
+        - 可观测性：
+        - 日志/审计：
+        - 弹性/维护：
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: 安全 / 合规
+      description: 数据分级、权限、合规条款、第三方评估。
+      placeholder: |
+        - 数据分类：
+        - 权限模型：
+        - 合规要求：
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: 风险与红线
+      description: 失败模式、灾备、兜底方案、Guardian 审批需求。
+      placeholder: |
+        - 风险：
+        - 兜底：
+        - Guardian：
+    validations:
+      required: true
+  - type: textarea
+    id: budget
+    attributes:
+      label: 预算 / SLA / 治理
+      description: 成本上限、SLA、容量规划、限流策略。
+      placeholder: |
+        - 预算：
+        - SLA：
+        - 治理：
+    validations:
+      required: true
+  - type: textarea
+    id: release
+    attributes:
+      label: 发布 & 回滚计划
+      description: 上线窗口、灰度策略、回滚方案、监控项。
+      placeholder: |
+        - 上线窗口：
+        - 灰度：
+        - 回滚：
+        - 监控：
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准（>=3 条 Given/When/Then）
+      description: 使用 G/W/T 结构列出至少三条验收标准。
+      placeholder: |
+        - A1 Given ... When ... Then ...
+        - A2 Given ... When ... Then ...
+        - A3 Given ... When ... Then ...
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ## DoR 核对表
+        以下条目必须全部勾选，否则 Issue 将被关闭并标记为 `status:blocked`。
+  - type: checkboxes
+    id: dor_checklist
+    attributes:
+      label: Definition of Ready
+      options:
+        - label: 已量化业务价值并确认优先级
+          required: true
+        - label: 已明确用户画像、JTBD 与成功判定标准
+          required: true
+        - label: Must/非功能/风险清单已落档
+          required: true
+        - label: 数据、接口、权限、脱敏、预算/SLA 均获批
+          required: true
+        - label: 至少 3 条验收标准（G/W/T）并指定验收人
+          required: true
+        - label: 具备回滚/兜底方案、发布计划及监控
+          required: true
+        - label: 测试数据或脱敏方案已准备
+          required: true
+  - type: textarea
+    id: attachments
+    attributes:
+      label: 附件 / 参考资料
+      description: 链接至 PRD、原型、仪表盘、实验或其他补充材料。
+      placeholder: https://...
+    validations:
+      required: false
