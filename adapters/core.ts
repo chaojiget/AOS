@@ -11,6 +11,7 @@ import {
   ActionOutcome,
   ReviewResult,
 } from "../core/agent";
+import type { ChatMessage } from "../types/chat";
 import { buildChatCompletionsUrl, loadLLMConfig } from "../config/llm";
 
 async function handleHttpGet(args: any): Promise<ToolResult> {
@@ -60,8 +61,6 @@ async function handleFileRead(args: any): Promise<ToolResult> {
 function handleEcho(args: any): ToolResult {
   return { ok: true, data: args } satisfies ToolOk;
 }
-
-type ChatMessage = { role: string; content: string };
 
 function normaliseMessages(args: any): ChatMessage[] {
   const messages: ChatMessage[] = [];
@@ -230,7 +229,9 @@ class ChatKernel implements AgentKernel {
   private readonly history: ChatMessage[];
 
   constructor(private readonly options: ChatKernelOptions) {
-    this.history = Array.isArray(options.history) ? [...options.history] : [];
+    this.history = Array.isArray(options.history)
+      ? options.history.map((msg) => ({ role: msg.role, content: msg.content }))
+      : [];
   }
 
   async perceive(): Promise<void> {
