@@ -100,7 +100,11 @@ describe("ChatMessageList", () => {
       },
     ];
 
-    const html = renderToStaticMarkup(<ChatMessageList messages={messages} />);
+    const html = renderToStaticMarkup(
+      <I18nProvider locale="en">
+        <ChatMessageList messages={messages} />
+      </I18nProvider>,
+    );
 
     expect(html.includes('data-status="error"')).toBe(true);
     expect(html.includes("tool invocation failed")).toBe(true);
