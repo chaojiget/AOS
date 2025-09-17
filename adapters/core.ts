@@ -13,6 +13,29 @@ import {
 } from "../core/agent";
 import type { ChatMessage } from "../types/chat";
 import { buildChatCompletionsUrl, loadLLMConfig } from "../config/llm";
+import { createMCPClient, parseQualifiedToolName, MCPClient } from "./mcp";
+
+let mcpClientPromise: Promise<MCPClient | null> | null = null;
+
+async function getMCPClient(): Promise<MCPClient | null> {
+  if (mcpClientPromise) {
+    const cached = await mcpClientPromise;
+    if (cached) {
+      return cached;
+    }
+    mcpClientPromise = null;
+  }
+  const pending = createMCPClient().catch((error) => {
+    console.warn("failed to initialise MCP client", error);
+    return null;
+  });
+  mcpClientPromise = pending;
+  const client = await pending;
+  if (!client) {
+    mcpClientPromise = null;
+  }
+  return client;
+}
 
 export const DEFAULT_SYSTEM_PROMPT = {
   role: "system",
@@ -182,8 +205,8 @@ async function handleChat(args: any): Promise<ToolResult> {
   }
 }
 
-export function createDefaultToolInvoker(): ToolInvoker {
-  return async (call: ToolCall, _ctx: any) => {
+function createLocalToolInvoker(): ToolInvoker {
+  return async (call: ToolCall) => {
     switch (call.name) {
       case "echo":
         return handleEcho(call.args);
@@ -200,6 +223,24 @@ export function createDefaultToolInvoker(): ToolInvoker {
           message: `tool ${call.name} is not available`,
         } satisfies ToolError;
     }
+  };
+}
+
+export function createDefaultToolInvoker(): ToolInvoker {
+  const localInvoker = createLocalToolInvoker();
+  return async (call: ToolCall, ctx: any) => {
+    const client = await getMCPClient();
+    if (client) {
+      const parts = parseQualifiedToolName(call.name, client.defaultServer?.id);
+      if (parts) {
+        const result = await client.invoke(parts.serverId, parts.toolName, call.args, ctx);
+        if (!result.ok && (result.code === "tool.not_found" || result.code.startsWith("mcp."))) {
+          return localInvoker(call, ctx);
+        }
+        return result;
+      }
+    }
+    return localInvoker(call, ctx);
   };
 }
 
