@@ -58,11 +58,10 @@ export class EpisodeLogger {
     this.queue = this.queue.then(async () => {
       await this.ensureReady();
       const enriched = event;
-      if (typeof enriched.ln === "number") {
-        this.line = Math.max(this.line, enriched.ln);
-      } else {
-        enriched.ln = ++this.line;
-      }
+      const nextLine =
+        typeof enriched.ln === "number" && enriched.ln > this.line ? enriched.ln : this.line + 1;
+      enriched.ln = nextLine;
+      this.line = nextLine;
       const startOffset = enriched.byte_offset ?? this.byteOffset;
       enriched.byte_offset = startOffset;
       const payload = JSON.stringify(enriched) + "\n";
