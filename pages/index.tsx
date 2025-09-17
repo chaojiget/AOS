@@ -2,6 +2,7 @@ import { FormEventHandler, useCallback, useMemo, useState } from "react";
 import type { NextPage } from "next";
 import ChatMessageList, { type ChatHistoryMessage } from "../components/ChatMessageList";
 import LogFlowPanel from "../components/LogFlowPanel";
+import { useI18n } from "../lib/i18n/index";
 
 interface ChatSendResponse {
   trace_id?: string;
@@ -39,6 +40,7 @@ const serialiseHistoryForRequest = (messages: ChatHistoryMessage[]) =>
   }));
 
 const HomePage: NextPage = () => {
+  const { t } = useI18n();
   const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [traceId, setTraceId] = useState<string | undefined>(undefined);
@@ -144,7 +146,7 @@ const HomePage: NextPage = () => {
           (data?.error as { message?: string } | undefined)?.message ??
           data?.message_error ??
           data?.message?.content ??
-          `Request failed (${response.status})`;
+          t("errors.requestFailed", { status: response.status });
         throw new Error(errorMessage);
       }
       setLatestResponse(data);
@@ -208,7 +210,7 @@ const HomePage: NextPage = () => {
         return [...updatedHistory, assistantMessage];
       });
     } catch (err: any) {
-      const errorMessage = err?.message ?? "Failed to run agent";
+      const errorMessage = err?.message ?? t("chat.runFailure");
       setRunError(errorMessage);
       setFinalOutput(null);
       setChatHistory((history) => {
@@ -226,7 +228,7 @@ const HomePage: NextPage = () => {
           {
             id: generateLocalId(),
             role: "system",
-            content: `Error: ${errorMessage}`,
+            content: t("chat.errorPrefix", { message: errorMessage }),
             ts: new Date().toISOString(),
             status: "error" as const,
             error: errorMessage,
@@ -237,7 +239,7 @@ const HomePage: NextPage = () => {
     } finally {
       setIsRunning(false);
     }
-  }, [input, isRunning, chatHistory, traceId]);
+  }, [chatHistory, input, isRunning, t, traceId]);
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
     (event) => {
@@ -249,10 +251,10 @@ const HomePage: NextPage = () => {
 
   const tabItems = useMemo(
     () => [
-      { id: "chat" as const, label: "Chat" },
-      { id: "logflow" as const, label: "LogFlow" },
+      { id: "chat" as const, label: t("layout.tabs.chat") },
+      { id: "logflow" as const, label: t("layout.tabs.logflow") },
     ],
-    [],
+    [t],
   );
 
   return (
@@ -264,10 +266,9 @@ const HomePage: NextPage = () => {
           boxShadow: "0 1px 12px rgba(0,0,0,0.4)",
         }}
       >
-        <h1 style={{ margin: 0 }}>AgentOS · Chat + LogFlow</h1>
+        <h1 style={{ margin: 0 }}>{t("layout.title")}</h1>
         <p style={{ margin: "0.25rem 0 0", fontSize: "0.95rem", color: "#94a3b8" }}>
-          Submit a prompt to run the local agent, inspect timeline events, and explore task
-          branches.
+          {t("layout.subtitle")}
         </p>
       </header>
 
@@ -342,7 +343,7 @@ const HomePage: NextPage = () => {
                   gap: "0.75rem",
                 }}
               >
-                <h3 style={{ margin: 0 }}>Conversation</h3>
+                <h3 style={{ margin: 0 }}>{t("conversation.heading")}</h3>
                 <div
                   style={{
                     display: "flex",
@@ -354,9 +355,10 @@ const HomePage: NextPage = () => {
                 >
                   {traceId ? (
                     <span style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
-                      此对话已写入 episodes/{traceId}.jsonl ·{" "}
+                      {t("conversation.traceNotice", { traceId })}
+                      {" · "}
                       <a href={`/api/episodes/${traceId}`} style={{ color: "#38bdf8" }}>
-                        下载 JSONL
+                        {t("conversation.downloadJsonl")}
                       </a>
                     </span>
                   ) : null}
@@ -374,7 +376,7 @@ const HomePage: NextPage = () => {
                       cursor: !chatHistory.length && !draftInput ? "not-allowed" : "pointer",
                     }}
                   >
-                    保存对话
+                    {t("conversation.saveButton")}
                   </button>
                 </div>
               </div>
@@ -390,7 +392,7 @@ const HomePage: NextPage = () => {
                   }}
                 >
                   <div style={{ color: "#94a3b8", fontSize: "0.8rem", marginBottom: "0.25rem" }}>
-                    draft input
+                    {t("conversation.draftLabel")}
                   </div>
                   <div>{draftInput}</div>
                 </div>
@@ -404,7 +406,7 @@ const HomePage: NextPage = () => {
                   }}
                 >
                   <div style={{ color: "#94a3b8", fontSize: "0.8rem", marginBottom: "0.25rem" }}>
-                    Latest final output snapshot
+                    {t("conversation.finalOutputTitle")}
                   </div>
                   <pre
                     style={{
@@ -423,7 +425,7 @@ const HomePage: NextPage = () => {
 
             <form onSubmit={handleSubmit} style={{ display: "grid", gap: "1rem" }}>
               <label htmlFor="prompt" style={{ fontWeight: 600 }}>
-                Chat Input
+                {t("chat.inputLabel")}
               </label>
               <textarea
                 id="prompt"
@@ -435,7 +437,7 @@ const HomePage: NextPage = () => {
                     void handleRun();
                   }
                 }}
-                placeholder="Ask the agent for a summary or instruction..."
+                placeholder={t("chat.placeholder")}
                 style={{
                   width: "100%",
                   minHeight: 140,
@@ -469,7 +471,7 @@ const HomePage: NextPage = () => {
                     <span
                       style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}
                     >
-                      trace_id
+                      {t("chat.metrics.traceId")}
                     </span>
                     <span style={{ fontSize: "0.9rem" }}>{traceId ?? "-"}</span>
                   </div>
@@ -477,7 +479,7 @@ const HomePage: NextPage = () => {
                     <span
                       style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}
                     >
-                      latency
+                      {t("chat.metrics.latency")}
                     </span>
                     <span style={{ fontSize: "0.9rem" }}>
                       {typeof latencyMs === "number" ? `${latencyMs.toFixed(0)} ms` : "-"}
@@ -487,7 +489,7 @@ const HomePage: NextPage = () => {
                     <span
                       style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}
                     >
-                      cost
+                      {t("chat.metrics.cost")}
                     </span>
                     <span style={{ fontSize: "0.9rem" }}>
                       {typeof cost === "number" ? cost.toFixed(4) : "-"}
@@ -508,16 +510,16 @@ const HomePage: NextPage = () => {
                       cursor: isRunning ? "not-allowed" : "pointer",
                     }}
                   >
-                    {isRunning ? "Running…" : "Run"}
+                    {isRunning ? t("chat.submit.running") : t("chat.submit.run")}
                   </button>
                   <span style={{ fontSize: "0.9rem", color: "#94a3b8" }}>
                     {runError
                       ? runError
                       : isRunning
-                        ? "Running agent"
+                        ? t("chat.statusIndicator.running")
                         : chatHistory.length > 0
-                          ? "Ready"
-                          : "Idle"}
+                          ? t("chat.statusIndicator.ready")
+                          : t("chat.statusIndicator.idle")}
                   </span>
                 </div>
               </div>
@@ -530,7 +532,9 @@ const HomePage: NextPage = () => {
                 padding: "1rem",
               }}
             >
-              <summary style={{ cursor: "pointer", fontWeight: 600 }}>Latest raw response</summary>
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                {t("chat.latestResponse")}
+              </summary>
               <pre
                 style={{
                   whiteSpace: "pre-wrap",
@@ -538,7 +542,7 @@ const HomePage: NextPage = () => {
                   marginTop: "0.75rem",
                 }}
               >
-                {latestResponse ? JSON.stringify(latestResponse, null, 2) : "No response yet."}
+                {latestResponse ? JSON.stringify(latestResponse, null, 2) : t("chat.noResponse")}
               </pre>
             </details>
           </section>

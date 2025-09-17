@@ -1,5 +1,7 @@
 import type { FC } from "react";
 
+import { useI18n } from "../lib/i18n/index";
+
 export type ChatHistoryMessage = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -44,14 +46,14 @@ const groupMessagesByRole = (messages: ChatHistoryMessage[]) => {
   return groups;
 };
 
-const formatTimestamp = (ts: string): string => {
+const formatTimestamp = (ts: string, locale: string): string => {
   if (!ts) return "";
   try {
     const date = new Date(ts);
     if (Number.isNaN(date.getTime())) {
       return ts;
     }
-    return date.toLocaleTimeString(undefined, {
+    return date.toLocaleTimeString(locale, {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
@@ -62,6 +64,7 @@ const formatTimestamp = (ts: string): string => {
 };
 
 const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false }) => {
+  const { locale, t } = useI18n();
   const groups = groupMessagesByRole(messages);
 
   return (
@@ -79,7 +82,7 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
       }}
     >
       {messages.length === 0 ? (
-        <p style={{ margin: 0, color: "#94a3b8" }}>No messages yet.</p>
+        <p style={{ margin: 0, color: "#94a3b8" }}>{t("chat.empty")}</p>
       ) : (
         groups.map((group) => {
           const style = bubbleStyles[group.role];
@@ -107,7 +110,7 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
                   color: "#64748b",
                 }}
               >
-                {group.role}
+                {t(`roles.${group.role}`)}
               </span>
               {group.items.map((message) => (
                 <article
@@ -141,24 +144,34 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
                     }}
                   >
                     <span>
-                      {message.msgId ? `msg_id: ${message.msgId}` : `local_id: ${message.id}`}
+                      {message.msgId
+                        ? `${t("chat.message.labels.msgId")}: ${message.msgId}`
+                        : `${t("chat.message.labels.localId")}: ${message.id}`}
                     </span>
-                    <span>{formatTimestamp(message.ts)}</span>
+                    <span>{formatTimestamp(message.ts, locale)}</span>
                     <span>
                       {message.status === "error"
-                        ? (message.error ?? "Delivery failed")
+                        ? (message.error ?? t("chat.message.status.error"))
                         : message.status === "pending"
-                          ? "Pending"
+                          ? t("chat.message.status.pending")
                           : message.status === "done"
-                            ? "Delivered"
-                            : "Sent"}
+                            ? t("chat.message.status.done")
+                            : t("chat.message.status.sent")}
                     </span>
-                    {message.traceId ? <span>trace_id: {message.traceId}</span> : null}
+                    {message.traceId ? (
+                      <span>
+                        {t("chat.message.labels.traceId")}: {message.traceId}
+                      </span>
+                    ) : null}
                     {typeof message.latencyMs === "number" ? (
-                      <span>latency: {message.latencyMs.toFixed(0)} ms</span>
+                      <span>
+                        {t("chat.message.labels.latency")}: {message.latencyMs.toFixed(0)} ms
+                      </span>
                     ) : null}
                     {typeof message.cost === "number" ? (
-                      <span>cost: {message.cost.toFixed(4)}</span>
+                      <span>
+                        {t("chat.message.labels.cost")}: {message.cost.toFixed(4)}
+                      </span>
                     ) : null}
                   </footer>
                 </article>
@@ -176,7 +189,7 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
             fontStyle: "italic",
           }}
         >
-          Generating response…
+          {t("chat.generating")}
         </div>
       ) : null}
     </div>

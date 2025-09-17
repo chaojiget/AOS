@@ -1,0 +1,65 @@
+{
+  "layout": {
+    "title": "AgentOS · 对话与日志流",
+    "subtitle": "提交提示以运行本地代理，查看时间线事件并探索任务分支。",
+    "tabs": {
+      "chat": "聊天",
+      "logflow": "日志流"
+    }
+  },
+  "conversation": {
+    "heading": "对话",
+    "traceNotice": "此对话已写入 episodes/{traceId}.jsonl",
+    "downloadJsonl": "下载 JSONL",
+    "saveButton": "保存对话",
+    "draftLabel": "草稿输入",
+    "finalOutputTitle": "最新最终输出快照"
+  },
+  "chat": {
+    "inputLabel": "聊天输入",
+    "placeholder": "请向代理提问或发送指令…",
+    "metrics": {
+      "traceId": "Trace ID",
+      "latency": "延迟",
+      "cost": "成本"
+    },
+    "submit": {
+      "run": "运行",
+      "running": "运行中…"
+    },
+    "statusIndicator": {
+      "running": "代理运行中",
+      "ready": "就绪",
+      "idle": "空闲"
+    },
+    "latestResponse": "最新原始响应",
+    "noResponse": "暂未收到响应。",
+    "runFailure": "无法运行代理",
+    "errorPrefix": "错误：{message}",
+    "empty": "暂无消息。",
+    "generating": "正在生成回复…",
+    "message": {
+      "labels": {
+        "msgId": "消息 ID",
+        "localId": "本地 ID",
+        "traceId": "追踪 ID",
+        "latency": "延迟",
+        "cost": "成本"
+      },
+      "status": {
+        "error": "发送失败",
+        "pending": "等待中",
+        "done": "已送达",
+        "sent": "已发送"
+      }
+    }
+  },
+  "roles": {
+    "user": "用户",
+    "assistant": "助手",
+    "system": "系统"
+  },
+  "errors": {
+    "requestFailed": "请求失败（{status}）"
+  }
+}

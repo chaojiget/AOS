@@ -1,0 +1,65 @@
+{
+  "layout": {
+    "title": "AgentOS · Chat + LogFlow",
+    "subtitle": "Submit a prompt to run the local agent, inspect timeline events, and explore task branches.",
+    "tabs": {
+      "chat": "Chat",
+      "logflow": "LogFlow"
+    }
+  },
+  "conversation": {
+    "heading": "Conversation",
+    "traceNotice": "This conversation is logged to episodes/{traceId}.jsonl",
+    "downloadJsonl": "Download JSONL",
+    "saveButton": "Save conversation",
+    "draftLabel": "Draft input",
+    "finalOutputTitle": "Latest final output snapshot"
+  },
+  "chat": {
+    "inputLabel": "Chat input",
+    "placeholder": "Ask the agent for a summary or instruction...",
+    "metrics": {
+      "traceId": "Trace ID",
+      "latency": "Latency",
+      "cost": "Cost"
+    },
+    "submit": {
+      "run": "Run",
+      "running": "Running…"
+    },
+    "statusIndicator": {
+      "running": "Running agent",
+      "ready": "Ready",
+      "idle": "Idle"
+    },
+    "latestResponse": "Latest raw response",
+    "noResponse": "No response yet.",
+    "runFailure": "Failed to run agent",
+    "errorPrefix": "Error: {message}",
+    "empty": "No messages yet.",
+    "generating": "Generating response…",
+    "message": {
+      "labels": {
+        "msgId": "msg_id",
+        "localId": "local_id",
+        "traceId": "trace_id",
+        "latency": "latency",
+        "cost": "cost"
+      },
+      "status": {
+        "error": "Delivery failed",
+        "pending": "Pending",
+        "done": "Delivered",
+        "sent": "Sent"
+      }
+    }
+  },
+  "roles": {
+    "user": "user",
+    "assistant": "assistant",
+    "system": "system"
+  },
+  "errors": {
+    "requestFailed": "Request failed ({status})"
+  }
+}
