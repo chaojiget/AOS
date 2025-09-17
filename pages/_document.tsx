@@ -21,7 +21,7 @@ export default function Document() {
             `,
           }}
         />
-        <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+        <script src="https://cdn.tailwindcss.com?plugins=typography" defer></script>
       </Head>
       <body className="bg-slate-950 text-slate-100">
         <Main />
