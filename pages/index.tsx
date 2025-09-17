@@ -2,6 +2,14 @@ import { FormEventHandler, useCallback, useMemo, useState } from "react";
 import type { NextPage } from "next";
 import LogFlowPanel from "../components/LogFlowPanel";
 
+interface ChatEntry {
+  role: "user" | "assistant" | "system";
+  text: string;
+  ts: string;
+  traceId?: string;
+  draft?: boolean;
+}
+
 const HomePage: NextPage = () => {
   const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
@@ -9,10 +17,16 @@ const HomePage: NextPage = () => {
   const [finalOutput, setFinalOutput] = useState<any>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "logflow">("chat");
+  const [chatHistory, setChatHistory] = useState<ChatEntry[]>([]);
 
   const handleRun = useCallback(async () => {
     if (isRunning) return;
     const prompt = input.trim();
+    const userTimestamp = new Date().toISOString();
+    if (prompt) {
+      setChatHistory((prev) => [...prev, { role: "user", text: prompt, ts: userTimestamp }]);
+    }
+
     setIsRunning(true);
     setRunError(null);
     setTraceId(undefined);
@@ -29,8 +43,48 @@ const HomePage: NextPage = () => {
       }
       setTraceId(data.trace_id);
       setFinalOutput(data.result);
+
+      const result = data.result as any;
+      const assistantText =
+        typeof result?.text === "string"
+          ? result.text
+          : result != null
+            ? JSON.stringify(result)
+            : "";
+      let assistantTimestamp = new Date().toISOString();
+      if (Array.isArray(data.events)) {
+        for (let index = data.events.length - 1; index >= 0; index -= 1) {
+          const event = data.events[index];
+          if (event?.type === "final" && typeof event.ts === "string") {
+            assistantTimestamp = event.ts;
+            break;
+          }
+        }
+      }
+      if (assistantText) {
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            text: assistantText,
+            ts: assistantTimestamp,
+            traceId: data.trace_id,
+          },
+        ]);
+      }
     } catch (err: any) {
-      setRunError(err?.message ?? "Failed to run agent");
+      const message = err?.message ?? "Failed to run agent";
+      setRunError(message);
+      if (prompt) {
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            text: `Error: ${message}`,
+            ts: new Date().toISOString(),
+          },
+        ]);
+      }
     } finally {
       setIsRunning(false);
     }
@@ -51,6 +105,44 @@ const HomePage: NextPage = () => {
     ],
     [],
   );
+
+  const handleSaveConversation = useCallback(() => {
+    const entries: Array<Record<string, unknown>> = chatHistory.map((entry) => ({
+      role: entry.role,
+      text: entry.text,
+      timestamp: entry.ts,
+      ...(entry.traceId ? { traceId: entry.traceId } : {}),
+    }));
+    const draftInputValue = input.trim();
+    if (draftInputValue) {
+      entries.push({
+        role: "user",
+        text: draftInputValue,
+        timestamp: new Date().toISOString(),
+        draft: true,
+      });
+    }
+    if (entries.length === 0) {
+      return;
+    }
+    const blob = new Blob([JSON.stringify(entries, null, 2)], {
+      type: "application/json",
+    });
+    const idPart = traceId ? `-${traceId}` : `-${Date.now()}`;
+    const filename = `conversation${idPart}.json`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 0);
+  }, [chatHistory, input, traceId]);
+
+  const draftInput = useMemo(() => input.trim(), [input]);
 
   return (
     <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0" }}>
@@ -179,20 +271,109 @@ const HomePage: NextPage = () => {
             </form>
 
             <div>
-              <h3 style={{ margin: "0 0 0.5rem" }}>Final Output</h3>
-              <pre
+              <div
                 style={{
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "1rem",
+                  flexWrap: "wrap",
+                  marginBottom: "0.5rem",
+                }}
+              >
+                <h3 style={{ margin: 0 }}>Conversation</h3>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "0.75rem",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {traceId ? (
+                    <span style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
+                      此对话已写入 episodes/{traceId}.jsonl ·{" "}
+                      <a href={`/api/episodes/${traceId}`} style={{ color: "#38bdf8" }}>
+                        下载 JSONL
+                      </a>
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={handleSaveConversation}
+                    disabled={!chatHistory.length && !draftInput}
+                    style={{
+                      padding: "0.6rem 1.25rem",
+                      borderRadius: 999,
+                      border: "1px solid #38bdf8",
+                      background: "transparent",
+                      color: "#38bdf8",
+                      fontWeight: 600,
+                      cursor: !chatHistory.length && !draftInput ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    保存对话
+                  </button>
+                </div>
+              </div>
+              <div
+                style={{
                   background: "#0f172a",
                   borderRadius: 8,
                   padding: "1rem",
                   border: "1px solid #1f2937",
                   minHeight: 120,
+                  display: "grid",
+                  gap: "0.75rem",
                 }}
               >
-                {finalOutput ? JSON.stringify(finalOutput, null, 2) : "No output yet."}
-              </pre>
+                {chatHistory.length ? (
+                  chatHistory.map((entry, index) => (
+                    <div key={`${entry.ts}-${index}`} style={{ fontSize: "0.95rem" }}>
+                      <div style={{ color: "#94a3b8", fontSize: "0.8rem" }}>
+                        {entry.role === "assistant" ? "Agent" : "User"} · {entry.ts}
+                        {entry.traceId ? ` · trace_id: ${entry.traceId}` : ""}
+                      </div>
+                      <div>{entry.text}</div>
+                    </div>
+                  ))
+                ) : (
+                  <span style={{ color: "#94a3b8" }}>
+                    No conversation yet. Submit a prompt to start chatting.
+                  </span>
+                )}
+                {draftInput ? (
+                  <div style={{ fontSize: "0.95rem", opacity: 0.75 }}>
+                    <div style={{ color: "#94a3b8", fontSize: "0.8rem" }}>User · draft input</div>
+                    <div>{draftInput}</div>
+                  </div>
+                ) : null}
+                {finalOutput ? (
+                  <div
+                    style={{
+                      borderTop: "1px solid #1f2937",
+                      paddingTop: "0.75rem",
+                      fontSize: "0.9rem",
+                    }}
+                  >
+                    <div style={{ color: "#94a3b8", fontSize: "0.8rem", marginBottom: "0.25rem" }}>
+                      Latest final output snapshot
+                    </div>
+                    <pre
+                      style={{
+                        margin: 0,
+                        background: "#111827",
+                        padding: "0.75rem",
+                        borderRadius: 6,
+                        overflowX: "auto",
+                      }}
+                    >
+                      {JSON.stringify(finalOutput, null, 2)}
+                    </pre>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </section>
         ) : (
