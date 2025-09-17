@@ -1,13 +1,28 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
+import { resolve as resolvePath } from "node:path";
+import { addOrUpdateMCPServer } from "./config/mcpRegistry";
 import { runLoop, type CoreEvent, type EmitSpanOptions } from "./core/agent";
 import { EventBus, wrapCoreEvent } from "./runtime/events";
 import { EpisodeLogger } from "./runtime/episode";
 import { replayEpisode } from "./runtime/replay";
 import { createChatKernel, createDefaultToolInvoker } from "./adapters/core";
-import { updateMCPRegistry, type MCPServerEntry } from "./config/mcpRegistry";
+
+interface Writer {
+  write(chunk: string): unknown;
+}
+
+interface CliStreams {
+  stdout: Writer;
+  stderr: Writer;
+}
+
+export interface RunCliOptions {
+  stdout?: Writer;
+  stderr?: Writer;
+  cwd?: string;
+}
 
 async function runOnce(message: string) {
   const traceId = randomUUID();
@@ -68,136 +83,16 @@ async function replay(traceId: string) {
   console.log(`Replayed ${events.length} events.`);
 }
 
-function printUsage() {
-  console.log("Usage (after compiling to JavaScript):");
-  console.log('  node dist/cli.js run "message"');
-  console.log("  node dist/cli.js replay <trace_id>");
-  console.log("  node dist/cli.js mcp add --transport <kind> <id> <url> [--default]");
-}
-
-function printMcpUsage() {
-  console.log("MCP subcommands:");
-  console.log("  mcp add --transport <kind> <id> <url> [--default]");
-}
-
-async function handleMcpAdd(args: string[]): Promise<number> {
-  let transport: string | undefined;
-  let setDefault = false;
-  let registryPath: string | undefined;
-  const positional: string[] = [];
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === "--transport") {
-      transport = args[i + 1];
-      if (!transport) {
-        console.error("Missing value for --transport option.");
-        return 1;
-      }
-      i += 1;
-      continue;
-    }
-    if (token === "--default") {
-      setDefault = true;
-      continue;
-    }
-    if (token === "--file" || token === "--registry") {
-      registryPath = args[i + 1];
-      if (!registryPath) {
-        console.error(`Missing value for ${token} option.`);
-        return 1;
-      }
-      i += 1;
-      continue;
-    }
-    if (token.startsWith("--")) {
-      console.error(`Unknown option: ${token}`);
-      return 1;
-    }
-    positional.push(token);
-  }
-
-  const [id, url] = positional;
-  if (!id) {
-    console.error("Server id is required.");
-    return 1;
-  }
-  if (!transport) {
-    console.error("--transport option is required.");
-    return 1;
-  }
-
-  const entry: MCPServerEntry = { id, transport };
-  if (url) {
-    entry.url = url;
-  }
-
-  let created = false;
-  let updated = false;
-  let defaultChanged = false;
-
-  await updateMCPRegistry((registry) => {
-    const index = registry.servers.findIndex((server) => server.id === id);
-    if (index === -1) {
-      registry.servers.push({ ...entry });
-      created = true;
-    } else {
-      const existing = registry.servers[index];
-      if (existing.transport !== transport || existing.url !== url) {
-        registry.servers[index] = { ...existing, ...entry };
-        updated = true;
-      }
-    }
-
-    if (setDefault) {
-      if (registry.defaultServerId !== id) {
-        defaultChanged = true;
-      }
-      registry.defaultServerId = id;
-    }
-  }, registryPath);
-
-  if (created) {
-    console.log(
-      `Registered MCP server "${id}" (${transport})${entry.url ? ` -> ${entry.url}` : ""}.`,
-    );
-  } else if (updated) {
-    console.log(`Updated MCP server "${id}" (${transport}).`);
-  } else {
-    console.log(`MCP server "${id}" is already registered.`);
-  }
-
-  if (setDefault) {
-    if (defaultChanged) {
-      console.log(`Default MCP server set to "${id}".`);
-    } else {
-      console.log(`Default MCP server remains "${id}".`);
-    }
-  }
-
-  return 0;
-}
-
-async function handleMcpCommand(args: string[]): Promise<number> {
-  const [subcommand, ...rest] = args;
-  if (!subcommand || subcommand === "help") {
-    printMcpUsage();
-    return 0;
-  }
-
-  if (subcommand === "add") {
-    return handleMcpAdd(rest);
-  }
-
-  console.error(`Unknown MCP subcommand: ${subcommand}`);
-  return 1;
-}
-
-export async function runCLI(argv: string[]): Promise<number> {
+export async function runCli(argv: string[], options: RunCliOptions = {}): Promise<number> {
+  const streams = resolveCliStreams(options);
+  const cwd = options.cwd ?? process.cwd();
   const [command, ...args] = argv;
 
   if (!command || command === "help") {
-    printUsage();
+    streams.stdout.write("Usage (after compiling to JavaScript):\n");
+    streams.stdout.write('  node dist/cli.js run "message"\n');
+    streams.stdout.write("  node dist/cli.js replay <trace_id>\n");
+    streams.stdout.write("  node dist/cli.js mcp add --transport <type> <id> <url> [--default]\n");
     return 0;
   }
 
@@ -210,7 +105,7 @@ export async function runCLI(argv: string[]): Promise<number> {
   if (command === "replay") {
     const traceId = args[0];
     if (!traceId) {
-      console.error("Trace id is required for replay.");
+      streams.stderr.write("Trace id is required for replay.\n");
       return 1;
     }
     await replay(traceId);
@@ -218,27 +113,128 @@ export async function runCLI(argv: string[]): Promise<number> {
   }
 
   if (command === "mcp") {
-    return handleMcpCommand(args);
+    return handleMcpCommand(args, { streams, cwd });
   }
 
-  console.error(`Unknown command: ${command}`);
+  streams.stderr.write(`Unknown command: ${command}\n`);
   return 1;
 }
 
-const isDirectExecution =
-  typeof process !== "undefined" &&
-  process.argv[1] &&
-  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+export async function runCLI(argv: string[], options?: RunCliOptions): Promise<number> {
+  return runCli(argv, options);
+}
 
-if (isDirectExecution) {
-  runCLI(process.argv.slice(2))
-    .then((code) => {
-      if (code !== 0) {
-        process.exitCode = code;
+function resolveCliStreams(options: RunCliOptions): CliStreams {
+  const stdout = options.stdout ?? process.stdout;
+  const stderr = options.stderr ?? process.stderr;
+  return { stdout, stderr };
+}
+
+async function handleMcpCommand(args: string[], context: { streams: CliStreams; cwd: string }): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (!subcommand || subcommand === "help") {
+    context.streams.stdout.write("Usage: mcp add --transport <type> <id> <url> [--default]\n");
+    return 0;
+  }
+
+  if (subcommand !== "add") {
+    context.streams.stderr.write(`Unknown MCP command: ${subcommand}\n`);
+    return 1;
+  }
+
+  const parsed = parseMcpAddArgs(rest);
+  if (parsed.error) {
+    context.streams.stderr.write(`${parsed.error}\n`);
+    return 1;
+  }
+
+  const result = await addOrUpdateMCPServer({
+    id: parsed.id,
+    transport: parsed.transport,
+    url: parsed.url,
+    setAsDefault: parsed.setAsDefault,
+    registryPath: resolvePath(context.cwd, "mcp.registry.json"),
+  });
+
+  if (result.action === "created") {
+    context.streams.stdout.write(`已添加 MCP 端点 "${parsed.id}" (transport: ${parsed.transport})。\n`);
+  } else if (result.action === "updated") {
+    context.streams.stdout.write(`已更新 MCP 端点 "${parsed.id}" 的配置。\n`);
+  } else {
+    context.streams.stdout.write(`MCP 端点 "${parsed.id}" 配置未变。\n`);
+  }
+
+  if (parsed.setAsDefault) {
+    if (result.defaultChanged) {
+      context.streams.stdout.write(`已将 "${parsed.id}" 设置为默认端点。\n`);
+    } else {
+      context.streams.stdout.write(`"${parsed.id}" 已经是默认端点。\n`);
+    }
+  }
+
+  return 0;
+}
+
+interface ParsedMcpAddArgs {
+  id: string;
+  url: string;
+  transport: string;
+  setAsDefault: boolean;
+  error?: undefined;
+}
+
+interface ParsedMcpAddArgsError {
+  error: string;
+}
+
+function parseMcpAddArgs(args: string[]): ParsedMcpAddArgs | ParsedMcpAddArgsError {
+  let transport: string | undefined;
+  let setAsDefault = false;
+  const positional: string[] = [];
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--transport") {
+      const value = args[i + 1];
+      if (!value) {
+        return { error: "参数 --transport 需要一个值" };
       }
-    })
-    .catch((err) => {
-      console.error(err);
-      process.exit(1);
-    });
+      transport = value;
+      i += 1;
+      continue;
+    }
+    if (arg === "--default") {
+      setAsDefault = true;
+      continue;
+    }
+    positional.push(arg);
+  }
+
+  if (!transport) {
+    return { error: "请通过 --transport 指定端点传输类型。" };
+  }
+
+  const [id, url] = positional;
+  if (!id) {
+    return { error: "请提供端点 ID。" };
+  }
+  if (!url) {
+    return { error: "请提供端点 URL。" };
+  }
+
+  return { id, url, transport, setAsDefault };
+}
+
+if (process.argv[1]) {
+  const entryUrl = pathToFileURL(process.argv[1]).href;
+  if (import.meta.url === entryUrl) {
+    runCli(process.argv.slice(2))
+      .then((code) => {
+        process.exitCode = code;
+      })
+      .catch((err) => {
+        console.error(err);
+        process.exitCode = 1;
+      });
+  }
 }

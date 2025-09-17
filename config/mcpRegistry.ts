@@ -1,114 +1,146 @@
 import { promises as fs } from "node:fs";
-import path from "node:path";
+import { dirname, resolve } from "node:path";
 
-export interface MCPServerEntry {
+export interface MCPServerConfig {
   id: string;
   transport: string;
   url?: string;
-  cmd?: string;
-  args?: string[];
+  default?: boolean;
   [key: string]: unknown;
 }
 
 export interface MCPRegistry {
-  servers: MCPServerEntry[];
-  defaultServerId?: string;
+  servers: MCPServerConfig[];
 }
 
-const DEFAULT_FILENAME = "mcp.registry.json";
-
-function createEmptyRegistry(): MCPRegistry {
-  return { servers: [] };
+export interface LoadRegistryOptions {
+  registryPath?: string;
 }
 
-function normalizeRegistry(value: any): MCPRegistry {
-  if (!value || typeof value !== "object") {
-    return createEmptyRegistry();
-  }
-
-  const servers = Array.isArray((value as any).servers)
-    ? (value as any).servers
-        .filter((server: any) => server && typeof server === "object")
-        .map((server: any) => {
-          const entry: MCPServerEntry = {
-            id: String(server.id ?? ""),
-            transport: String(server.transport ?? ""),
-          };
-
-          if (!entry.id || !entry.transport) {
-            return null;
-          }
-
-          if (typeof server.url === "string" && server.url) {
-            entry.url = server.url;
-          }
-          if (typeof server.cmd === "string" && server.cmd) {
-            entry.cmd = server.cmd;
-          }
-          if (Array.isArray(server.args)) {
-            entry.args = server.args.filter((arg: any) => typeof arg === "string");
-          }
-
-          const extraKeys = Object.keys(server).filter(
-            (key) => !["id", "transport", "url", "cmd", "args"].includes(key),
-          );
-          for (const key of extraKeys) {
-            entry[key] = server[key];
-          }
-
-          return entry;
-        })
-        .filter((entry: MCPServerEntry | null): entry is MCPServerEntry => entry !== null)
-    : [];
-
-  const registry: MCPRegistry = { servers };
-
-  if (typeof (value as any).defaultServerId === "string" && (value as any).defaultServerId) {
-    registry.defaultServerId = (value as any).defaultServerId;
-  }
-
-  return registry;
+export interface AddServerOptions {
+  id: string;
+  transport: string;
+  url?: string;
+  setAsDefault?: boolean;
+  registryPath?: string;
 }
 
-export function resolveMCPRegistryPath(customPath?: string): string {
-  const candidate = customPath ?? process.env.MCP_REGISTRY_PATH ?? DEFAULT_FILENAME;
-  return path.isAbsolute(candidate) ? candidate : path.resolve(process.cwd(), candidate);
+export interface AddServerResult {
+  action: "created" | "updated" | "unchanged";
+  defaultChanged: boolean;
+  registry: MCPRegistry;
 }
 
-export async function readMCPRegistry(filePath = resolveMCPRegistryPath()): Promise<MCPRegistry> {
+const DEFAULT_REGISTRY: MCPRegistry = { servers: [] };
+
+export async function readMCPRegistry(
+  options: LoadRegistryOptions = {},
+): Promise<MCPRegistry> {
+  const registryPath = resolveRegistryPath(options.registryPath);
   try {
-    const content = await fs.readFile(filePath, "utf8");
-    if (!content.trim()) {
-      return createEmptyRegistry();
+    const contents = await fs.readFile(registryPath, "utf8");
+    const parsed = JSON.parse(contents) as MCPRegistry;
+    if (!parsed.servers || !Array.isArray(parsed.servers)) {
+      throw new Error("Invalid registry: missing servers array");
     }
-    return normalizeRegistry(JSON.parse(content));
+    return {
+      servers: parsed.servers.map((server) => ({ ...server })),
+    };
   } catch (error: any) {
     if (error?.code === "ENOENT") {
-      return createEmptyRegistry();
+      await initialiseRegistryFile(registryPath);
+      return { ...DEFAULT_REGISTRY, servers: [] };
     }
     throw error;
   }
 }
 
-export async function writeMCPRegistry(
-  registry: MCPRegistry,
-  filePath = resolveMCPRegistryPath(),
-): Promise<void> {
-  const normalized = normalizeRegistry(registry);
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+export async function addOrUpdateMCPServer(
+  options: AddServerOptions,
+): Promise<AddServerResult> {
+  const registryPath = resolveRegistryPath(options.registryPath);
+  const registry = await readMCPRegistry({ registryPath });
+
+  const existingIndex = registry.servers.findIndex((server) => server.id === options.id);
+  let action: AddServerResult["action"] = "unchanged";
+  let defaultChanged = false;
+
+  if (existingIndex === -1) {
+    const newServer: MCPServerConfig = buildServer(options);
+    registry.servers.push(newServer);
+    action = "created";
+  } else {
+    const existing = registry.servers[existingIndex];
+    const updated = applyServerUpdates(existing, options);
+    if (updated) {
+      action = "updated";
+    }
+  }
+
+  if (options.setAsDefault) {
+    defaultChanged = updateDefaultServer(registry, options.id);
+  }
+
+  if (action !== "unchanged" || defaultChanged) {
+    await writeRegistry(registryPath, registry);
+  }
+
+  return { action, defaultChanged, registry };
 }
 
-export async function updateMCPRegistry(
-  mutator: (registry: MCPRegistry) => void | MCPRegistry | Promise<void | MCPRegistry>,
-  filePath = resolveMCPRegistryPath(),
-): Promise<MCPRegistry> {
-  const current = await readMCPRegistry(filePath);
-  const draft: MCPRegistry = JSON.parse(JSON.stringify(current));
-  const result = await mutator(draft);
-  const next = normalizeRegistry(result ?? draft);
-  await writeMCPRegistry(next, filePath);
-  return next;
+async function initialiseRegistryFile(registryPath: string) {
+  await fs.mkdir(dirname(registryPath), { recursive: true });
+  await writeRegistry(registryPath, DEFAULT_REGISTRY);
 }
 
-export const DEFAULT_MCP_REGISTRY_FILENAME = DEFAULT_FILENAME;
+function resolveRegistryPath(registryPath?: string): string {
+  if (registryPath) {
+    return resolve(registryPath);
+  }
+  const envPath = process.env.MCP_REGISTRY_PATH;
+  if (envPath) {
+    return resolve(envPath);
+  }
+  return resolve(process.cwd(), "mcp.registry.json");
+}
+
+function buildServer(options: AddServerOptions): MCPServerConfig {
+  const server: MCPServerConfig = {
+    id: options.id,
+    transport: options.transport,
+  };
+  if (options.url !== undefined) {
+    server.url = options.url;
+  }
+  return server;
+}
+
+function applyServerUpdates(existing: MCPServerConfig, options: AddServerOptions): boolean {
+  let changed = false;
+  if (existing.transport !== options.transport) {
+    existing.transport = options.transport;
+    changed = true;
+  }
+  if (options.url !== undefined && existing.url !== options.url) {
+    existing.url = options.url;
+    changed = true;
+  }
+  return changed;
+}
+
+function updateDefaultServer(registry: MCPRegistry, defaultId: string): boolean {
+  let changed = false;
+  for (const server of registry.servers) {
+    const shouldBeDefault = server.id === defaultId;
+    if ((server.default ?? false) !== shouldBeDefault) {
+      server.default = shouldBeDefault;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+async function writeRegistry(registryPath: string, registry: MCPRegistry) {
+  const serialised = `${JSON.stringify(registry, null, 2)}\n`;
+  await fs.writeFile(registryPath, serialised, "utf8");
+}

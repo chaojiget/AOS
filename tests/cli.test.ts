@@ -1,91 +1,116 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import path from "node:path";
-import type { MCPRegistry } from "../config/mcpRegistry";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-describe("CLI mcp add command", () => {
-  let tempDir: string;
-  let registryPath: string;
-  let runCLI: (argv: string[]) => Promise<number>;
+import { runCli } from "../cli";
+
+interface MemoryWriter {
+  write(chunk: string): unknown;
+  toString(): string;
+}
+
+function createMemoryWriter(): MemoryWriter {
+  let buffer = "";
+  return {
+    write(chunk: string) {
+      buffer += String(chunk);
+      return true;
+    },
+    toString() {
+      return buffer;
+    },
+  };
+}
+
+describe("CLI mcp add", () => {
+  let cwd: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(path.join(tmpdir(), "aos-cli-"));
-    registryPath = path.join(tempDir, "mcp.registry.json");
-    process.env.MCP_REGISTRY_PATH = registryPath;
-    ({ runCLI } = await import("../cli"));
+    cwd = await mkdtemp(join(tmpdir(), "aos-cli-"));
   });
 
   afterEach(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-    delete process.env.MCP_REGISTRY_PATH;
+    await rm(cwd, { recursive: true, force: true });
   });
 
-  async function loadRegistry(): Promise<MCPRegistry> {
-    const data = await readFile(registryPath, "utf8");
-    return JSON.parse(data) as MCPRegistry;
-  }
+  it("creates a new registry file on first add", async () => {
+    const stdout = createMemoryWriter();
+    const stderr = createMemoryWriter();
 
-  it("creates a default registry when the file is missing", async () => {
-    const exitCode = await runCLI([
-      "mcp",
-      "add",
-      "--transport",
-      "ws",
-      "alpha",
-      "wss://alpha.example",
-    ]);
+    const code = await runCli(
+      ["mcp", "add", "--transport", "ws", "mcp-search", "wss://example.com"],
+      { cwd, stdout, stderr },
+    );
 
-    expect(exitCode).toBe(0);
+    expect(code).toBe(0);
+    expect(stderr.toString()).toBe("");
+    expect(stdout.toString().includes('已添加 MCP 端点 "mcp-search"')).toBe(true);
 
-    const registry = await loadRegistry();
-    expect(registry.servers).toEqual([
-      {
-        id: "alpha",
-        transport: "ws",
-        url: "wss://alpha.example",
-      },
-    ]);
-    expect(registry.defaultServerId).toBe(undefined);
-  });
-
-  it("does not duplicate entries when the same server is added twice", async () => {
-    await runCLI(["mcp", "add", "--transport", "ws", "alpha", "wss://alpha.example"]);
-    const exitCode = await runCLI([
-      "mcp",
-      "add",
-      "--transport",
-      "ws",
-      "alpha",
-      "wss://alpha.example",
-    ]);
-
-    expect(exitCode).toBe(0);
-
-    const registry = await loadRegistry();
+    const registryRaw = await readFile(join(cwd, "mcp.registry.json"), "utf8");
+    const registry = JSON.parse(registryRaw) as { servers: any[] };
     expect(registry.servers).toHaveLength(1);
     expect(registry.servers[0]).toMatchObject({
-      id: "alpha",
+      id: "mcp-search",
       transport: "ws",
-      url: "wss://alpha.example",
+      url: "wss://example.com",
     });
   });
 
-  it("sets the default server when --default is provided", async () => {
-    const exitCode = await runCLI([
-      "mcp",
-      "add",
-      "--transport",
-      "ws",
-      "beta",
-      "wss://beta.example",
-      "--default",
-    ]);
+  it("does not duplicate servers when the same id is added twice", async () => {
+    await runCli(["mcp", "add", "--transport", "ws", "mcp-search", "wss://example.com"], {
+      cwd,
+      stdout: createMemoryWriter(),
+      stderr: createMemoryWriter(),
+    });
 
-    expect(exitCode).toBe(0);
+    const stdout = createMemoryWriter();
+    const stderr = createMemoryWriter();
+    const code = await runCli(
+      ["mcp", "add", "--transport", "ws", "mcp-search", "wss://example.com"],
+      { cwd, stdout, stderr },
+    );
 
-    const registry = await loadRegistry();
-    expect(registry.defaultServerId).toBe("beta");
-    expect(registry.servers[0]).toMatchObject({ id: "beta" });
+    expect(code).toBe(0);
+    expect(stderr.toString()).toBe("");
+    expect(stdout.toString().includes('MCP 端点 "mcp-search" 配置未变')).toBe(true);
+
+    const registryRaw = await readFile(join(cwd, "mcp.registry.json"), "utf8");
+    const registry = JSON.parse(registryRaw) as { servers: any[] };
+    expect(registry.servers).toHaveLength(1);
+  });
+
+  it("marks the server as default when --default is provided", async () => {
+    await runCli(["mcp", "add", "--transport", "ws", "mcp-search", "wss://example.com"], {
+      cwd,
+      stdout: createMemoryWriter(),
+      stderr: createMemoryWriter(),
+    });
+
+    const stdout = createMemoryWriter();
+    const stderr = createMemoryWriter();
+    const code = await runCli(
+      [
+        "mcp",
+        "add",
+        "--transport",
+        "ws",
+        "mcp-primary",
+        "wss://primary.example.com",
+        "--default",
+      ],
+      { cwd, stdout, stderr },
+    );
+
+    expect(code).toBe(0);
+    expect(stderr.toString()).toBe("");
+    expect(stdout.toString().includes('已将 "mcp-primary" 设置为默认端点')).toBe(true);
+
+    const registryRaw = await readFile(join(cwd, "mcp.registry.json"), "utf8");
+    const registry = JSON.parse(registryRaw) as { servers: any[] };
+    const searchServer = registry.servers.find((server) => server.id === "mcp-search");
+    const defaultServer = registry.servers.find((server) => server.id === "mcp-primary");
+    expect(Boolean(searchServer?.default)).toBe(false);
+    expect(Boolean(defaultServer?.default)).toBe(true);
   });
 });
