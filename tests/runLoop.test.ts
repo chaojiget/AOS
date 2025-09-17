@@ -3,6 +3,7 @@ import {
   runLoop,
   type AgentKernel,
   type Plan,
+  type PlanStep,
   type ActionOutcome,
   type ToolResult,
   type CoreEvent,
@@ -160,5 +161,77 @@ describe("runLoop", () => {
     expect(result.reason).toBe("ask");
     const askEvent = emitted.find((item) => item.event.type === "ask");
     expect(askEvent?.span).toEqual({ spanId: "ask-step", parentSpanId: "plan-1" });
+  });
+
+  it("terminates when a tool returns a non-retryable error", async () => {
+    const emitted: EmittedEntry[] = [];
+    const actCalls: PlanStep[] = [];
+    const act = async (step: PlanStep): Promise<ActionOutcome> => {
+      actCalls.push(step);
+      if (step.id === "s1") {
+        return {
+          step,
+          result: { ok: false, code: "fatal", message: "boom", retryable: false },
+        } satisfies ActionOutcome;
+      }
+      return {
+        step,
+        result: { ok: true, data: "should-not-run" },
+      } satisfies ActionOutcome;
+    };
+
+    let renderFinalCalls = 0;
+    const renderFinal = async () => {
+      renderFinalCalls += 1;
+      return { text: "failed" };
+    };
+    let reviewCalled = false;
+    const review = async () => {
+      reviewCalled = true;
+      return { score: 0, passed: false };
+    };
+
+    const kernel: AgentKernel = {
+      async perceive() {
+        /* no-op */
+      },
+      async plan(): Promise<Plan> {
+        return {
+          steps: [
+            { id: "s1", op: "tool.fail", args: {} },
+            { id: "s2", op: "tool.next", args: {} },
+          ],
+        } satisfies Plan;
+      },
+      act: act as AgentKernel["act"],
+      review: review as AgentKernel["review"],
+      renderFinal: renderFinal as AgentKernel["renderFinal"],
+    };
+
+    const result = await runLoop(
+      kernel,
+      (event: CoreEvent, span?: EmitSpanOptions) => {
+        emitted.push({ event, span });
+      },
+      { context: { traceId: "trace-non-retry" } },
+    );
+
+    expect(result.reason).toBe("non-retryable-error");
+    expect(renderFinalCalls).toBe(1);
+    expect(reviewCalled).toBe(false);
+    expect(actCalls).toHaveLength(1);
+
+    const toolEvents = emitted.filter(
+      (item): item is { event: Extract<CoreEvent, { type: "tool" }>; span?: EmitSpanOptions } =>
+        item.event.type === "tool",
+    );
+    expect(toolEvents).toHaveLength(1);
+    expect(toolEvents[0]?.event.result?.ok).toBe(false);
+
+    const planEvents = emitted.filter((item) => item.event.type === "plan");
+    expect(planEvents).toHaveLength(1);
+
+    const finalEvent = emitted.find(isFinalEvent);
+    expect(finalEvent?.event.reason).toBe("non-retryable-error");
   });
 });

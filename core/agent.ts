@@ -120,7 +120,7 @@ export interface RunLoopOptions {
 export interface RunLoopResult {
   actions: ActionOutcome[];
   final?: any;
-  reason: "completed" | "no-plan" | "ask" | "max-iterations";
+  reason: "completed" | "no-plan" | "ask" | "max-iterations" | "non-retryable-error";
   review?: ReviewResult;
 }
 
@@ -225,6 +225,28 @@ export async function runLoop(
           { spanId: step.id, parentSpanId: planSpanId },
         ),
       );
+
+      if (!outcome.result.ok && outcome.result.retryable === false) {
+        await ensurePromise(
+          emit(
+            {
+              type: "log",
+              level: "error",
+              message: "non-retryable tool error encountered",
+              detail: { step: step.id, error: outcome.result },
+            },
+            { spanId: step.id, parentSpanId: planSpanId },
+          ),
+        );
+        const finalOutputs = await kernel.renderFinal(actions);
+        await ensurePromise(
+          emit(
+            { type: "final", outputs: finalOutputs, reason: "non-retryable-error" },
+            { spanId: traceSpanId },
+          ),
+        );
+        return { actions, final: finalOutputs, reason: "non-retryable-error" };
+      }
 
       if (outcome.ask) {
         await ensurePromise(

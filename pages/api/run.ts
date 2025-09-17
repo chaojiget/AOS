@@ -3,13 +3,19 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 import { createChatKernel, createDefaultToolInvoker } from "../../adapters/core";
-import { runLoop, type CoreEvent, type EmitSpanOptions } from "../../core/agent";
+import {
+  runLoop,
+  type CoreEvent,
+  type EmitSpanOptions,
+  type RunLoopResult,
+} from "../../core/agent";
 import { EpisodeLogger } from "../../runtime/episode";
 import { EventBus, wrapCoreEvent, type EventEnvelope } from "../../runtime/events";
 
 interface RunResponse {
   trace_id: string;
   result: unknown;
+  reason: RunResultReason;
   events: Array<{
     ts: string;
     type: string;
@@ -55,6 +61,8 @@ function normaliseHistory(raw: unknown): RequestMessage[] {
   }
   return history;
 }
+
+type RunResultReason = RunLoopResult["reason"];
 
 export default async function handler(
   req: NextApiRequest,
@@ -157,6 +165,7 @@ export default async function handler(
     res.status(200).json({
       trace_id: traceId,
       result: result.final,
+      reason: result.reason,
       events: events.map((evt) => ({
         ts: evt.ts,
         type: evt.type,
