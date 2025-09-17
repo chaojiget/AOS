@@ -193,4 +193,25 @@ describe("POST /api/chat/send", () => {
     });
     expect(latestAssistant.data.msg_id).toBe(second.body?.message?.msg_id);
   });
+
+  it("returns chinese error messages for unsupported methods", async () => {
+    const req = { method: "GET" } as unknown as NextApiRequest;
+    const { res, record } = createMockResponse();
+    await handler(req, res);
+
+    expect(record.statusCode).toBe(405);
+    expect(record.body).toEqual({
+      error: "method_not_allowed",
+      message: "仅支持 POST 请求",
+    });
+  });
+
+  it("validates missing text with chinese feedback", async () => {
+    const record = await invokeHandler({});
+    expect(record.statusCode).toBe(400);
+    expect(record.body).toEqual({
+      error: "invalid_input",
+      message: "必须提供文本内容",
+    });
+  });
 });
