@@ -92,9 +92,54 @@ export default async function handler(
     const emit = async (event: CoreEvent): Promise<void> => {
       await bus.publish(wrapCoreEvent(traceId, event));
     };
+
+    let lastPublishedKey: string | undefined;
+    let lastUserMessageId: string | undefined;
+
+    const publishChatMessage = async (role: string, text: string): Promise<string | undefined> => {
+      const normalizedText = typeof text === "string" ? text : "";
+      const key = `${role}:${normalizedText}`;
+      if (key === lastPublishedKey) {
+        return undefined;
+      }
+      lastPublishedKey = key;
+      const msgId = randomUUID();
+      await emit({
+        type: "chat.msg",
+        msg_id: msgId,
+        role,
+        text: normalizedText,
+        trace_id: traceId,
+      });
+      if (role === "user") {
+        lastUserMessageId = msgId;
+      }
+      return msgId;
+    };
+
+    for (const entry of history) {
+      await publishChatMessage(entry.role, entry.content);
+    }
+
+    if (message) {
+      await publishChatMessage("user", message);
+    }
+
     const result = await runLoop(kernel, emit, {
       context: { traceId, input: message },
     });
+
+    if (result.final !== undefined) {
+      const assistantText = normaliseAssistantText(result.final);
+      await emit({
+        type: "chat.msg",
+        msg_id: randomUUID(),
+        role: "assistant",
+        text: assistantText,
+        trace_id: traceId,
+        ...(lastUserMessageId ? { reply_to: lastUserMessageId } : {}),
+      });
+    }
 
     res.status(200).json({
       trace_id: traceId,
@@ -110,4 +155,27 @@ export default async function handler(
     const message = err instanceof Error ? err.message : "unknown error";
     res.status(500).json({ error: "internal_error", message });
   }
+}
+
+function normaliseAssistantText(finalOutput: unknown): string {
+  if (finalOutput == null) {
+    return "";
+  }
+  if (typeof finalOutput === "string") {
+    return finalOutput;
+  }
+  if (typeof finalOutput === "object") {
+    if (typeof (finalOutput as any).text === "string") {
+      return (finalOutput as any).text;
+    }
+    if (typeof (finalOutput as any).content === "string") {
+      return (finalOutput as any).content;
+    }
+    try {
+      return JSON.stringify(finalOutput);
+    } catch {
+      return String(finalOutput);
+    }
+  }
+  return String(finalOutput);
 }
