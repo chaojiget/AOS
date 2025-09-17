@@ -54,6 +54,8 @@ const HomePage: NextPage = () => {
     const prompt = input.trim();
     if (!prompt) return;
 
+    const previousHistory = chatHistory;
+    const previousTraceId = traceId;
     const createdAt = new Date().toISOString();
     const localId = generateLocalId();
     const userMessage: ChatHistoryMessage = {
@@ -64,13 +66,11 @@ const HomePage: NextPage = () => {
       status: "pending",
       traceId,
     };
-
-    const historyForRequest = [...chatHistory, userMessage];
+    const historyForRequest = [...previousHistory, userMessage];
 
     setChatHistory(historyForRequest);
     setIsRunning(true);
     setRunError(null);
-    const previousTraceId = traceId;
     setTraceId(undefined);
     setLatestResponse(null);
     setLatencyMs(null);
@@ -78,13 +78,17 @@ const HomePage: NextPage = () => {
     setInput("");
     const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     try {
-      const response = await fetch("/api/chat.send", {
+      const serialisedHistory = serialiseHistoryForRequest(previousHistory);
+      const messagesForRequest = serialisedHistory.map(({ role, content }) => ({ role, content }));
+
+      const response = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: prompt,
-          trace_id: traceId,
-          history: serialiseHistoryForRequest(historyForRequest),
+          messages: messagesForRequest,
+          history: serialisedHistory,
+          ...(previousTraceId ? { trace_id: previousTraceId } : {}),
         }),
       });
       const data: ChatSendResponse | null = await response.json().catch(() => null);

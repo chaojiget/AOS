@@ -119,6 +119,7 @@
       const status = document.getElementById("status");
       let eventSource = null;
       let logLines = [];
+      let currentTraceId = null;
 
       function closeStream() {
         if (eventSource) {
@@ -219,22 +220,26 @@
         logLines = [];
 
         try {
-          const response = await fetch("/api/run", {
+          const response = await fetch("/api/chat/send", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: prompt }),
+            body: JSON.stringify({
+              text: prompt,
+              ...(currentTraceId ? { trace_id: currentTraceId } : {}),
+            }),
           });
 
-          if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.message || "Request failed");
+          const payload = await response.json().catch(() => ({}));
+
+          if (!response.ok || !payload) {
+            throw new Error(payload.message || "Request failed");
           }
 
-          const data = await response.json();
-          const traceId = data.trace_id;
+          const traceId = payload.trace_id;
           if (!traceId) {
             throw new Error("Trace id missing from response");
           }
+          currentTraceId = traceId;
           traceInfo.textContent = `trace_id: ${traceId}`;
           status.textContent = "Waiting for events...";
           subscribeToEvents(traceId);
