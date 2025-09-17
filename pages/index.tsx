@@ -13,13 +13,16 @@ interface ChatSendResponse {
     text?: string;
     ts?: string;
     trace_id?: string;
+    error?: string;
   };
-  result?: { text?: string; msg_id?: string; ts?: string };
-  output?: { text?: string; msg_id?: string; ts?: string };
-  final?: { text?: string; msg_id?: string; ts?: string };
+  result?: { text?: string; msg_id?: string; ts?: string; error?: string };
+  output?: { text?: string; msg_id?: string; ts?: string; error?: string };
+  final?: { text?: string; msg_id?: string; ts?: string; error?: string };
   metrics?: { latency_ms?: number; cost?: number };
   error?: { message?: string } | null;
   message_error?: string;
+  reason?: "completed" | "no-plan" | "ask" | "max-iterations";
+  review?: { notes?: string[]; score?: number; passed?: boolean } | null;
 }
 
 const generateLocalId = (): string => {
@@ -63,6 +66,10 @@ const HomePage: NextPage = () => {
       ...(typeof message.latencyMs === "number" ? { latency_ms: message.latencyMs } : {}),
       ...(typeof message.cost === "number" ? { cost: message.cost } : {}),
       ...(message.error ? { error: message.error } : {}),
+      ...(message.failureReason ? { failure_reason: message.failureReason } : {}),
+      ...(message.reviewNotes && message.reviewNotes.length
+        ? { review_notes: message.reviewNotes }
+        : {}),
     }));
 
     if (draftInput) {
@@ -167,21 +174,28 @@ const HomePage: NextPage = () => {
         msg_id?: string;
         ts?: string;
         trace_id?: string;
+        error?: string;
       };
+      const isCompleted = (data.reason ?? "completed") === "completed";
+      const assistantMsgId = assistantPayload.msg_id ?? data.msg_id ?? generateLocalId();
+      const assistantTs = assistantPayload.ts ?? new Date().toISOString();
+      const assistantErrorText =
+        typeof assistantPayload.error === "string"
+          ? assistantPayload.error
+          : undefined;
       const assistantContentRaw =
         typeof assistantPayload.content === "string"
           ? assistantPayload.content
           : typeof assistantPayload.text === "string"
             ? assistantPayload.text
-            : assistantPayload && typeof assistantPayload === "object"
-              ? JSON.stringify(assistantPayload)
-              : "";
+            : assistantErrorText ??
+              (assistantPayload && typeof assistantPayload === "object"
+                ? JSON.stringify(assistantPayload)
+                : "");
       const assistantContent =
         typeof assistantContentRaw === "string" && assistantContentRaw.length > 0
           ? assistantContentRaw
-          : "";
-      const assistantMsgId = assistantPayload.msg_id ?? data.msg_id ?? generateLocalId();
-      const assistantTs = assistantPayload.ts ?? new Date().toISOString();
+          : assistantErrorText ?? "";
 
       setChatHistory((history) => {
         const updatedHistory: ChatHistoryMessage[] = history.map((message) =>
@@ -200,10 +214,13 @@ const HomePage: NextPage = () => {
           role: "assistant",
           content: assistantContent,
           ts: assistantTs,
-          status: "done" as const,
+          status: isCompleted ? ("done" as const) : ("error" as const),
           traceId: resolvedTraceId,
           latencyMs: typeof computedLatency === "number" ? computedLatency : null,
           cost: typeof computedCost === "number" ? computedCost : null,
+          error: isCompleted ? null : assistantContent || assistantErrorText || null,
+          failureReason: isCompleted ? null : data.reason ?? null,
+          reviewNotes: Array.isArray(data.review?.notes) ? data.review?.notes ?? [] : undefined,
         };
         return [...updatedHistory, assistantMessage];
       });

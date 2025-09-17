@@ -11,6 +11,8 @@ export type ChatHistoryMessage = {
   latencyMs?: number | null;
   cost?: number | null;
   error?: string | null;
+  failureReason?: string | null;
+  reviewNotes?: string[] | undefined;
 };
 
 interface ChatMessageListProps {
@@ -154,6 +156,14 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
                             : "Sent"}
                     </span>
                     {message.traceId ? <span>trace_id: {message.traceId}</span> : null}
+                    {message.failureReason ? (
+                      <span>reason: {message.failureReason}</span>
+                    ) : null}
+                    {message.reviewNotes && message.reviewNotes.length > 0 ? (
+                      <span>
+                        review notes: {message.reviewNotes.filter(Boolean).join(" · ")}
+                      </span>
+                    ) : null}
                     {typeof message.latencyMs === "number" ? (
                       <span>latency: {message.latencyMs.toFixed(0)} ms</span>
                     ) : null}
