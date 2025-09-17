@@ -119,17 +119,28 @@ export interface RunLoopResult {
 
 const ensurePromise = async <T>(value: T | Promise<T>): Promise<T> => value;
 
+export interface EmitSpanOptions {
+  spanId?: string;
+  parentSpanId?: string;
+}
+
 export async function runLoop(
   kernel: AgentKernel,
-  emit: (event: CoreEvent) => void | Promise<void>,
+  emit: (event: CoreEvent, span?: EmitSpanOptions) => void | Promise<void>,
   options: RunLoopOptions = {},
 ): Promise<RunLoopResult> {
   const maxIterations = options.maxIterations ?? 3;
   const actions: ActionOutcome[] = [];
   const context = options.context ?? { traceId: randomUUID() };
+  const traceSpanId = context.traceId;
 
   await ensurePromise(kernel.perceive(context));
-  await ensurePromise(emit({ type: "progress", step: "perceive", pct: 0.2 }));
+  await ensurePromise(
+    emit(
+      { type: "progress", step: "perceive", pct: 0.2 },
+      { spanId: traceSpanId },
+    ),
+  );
 
   let iteration = 0;
   let lastReview: ReviewResult | undefined;
@@ -139,22 +150,29 @@ export async function runLoop(
     const plan = await kernel.plan();
     const steps = plan?.steps ?? [];
     const revision = plan?.revision ?? iteration;
+    const planSpanId = `plan-${revision}`;
     await ensurePromise(
-      emit({
-        type: "plan",
-        steps,
-        revision,
-        reason: plan?.reason ?? (iteration === 1 ? "initial" : "retry"),
-      }),
+      emit(
+        {
+          type: "plan",
+          steps,
+          revision,
+          reason: plan?.reason ?? (iteration === 1 ? "initial" : "retry"),
+        },
+        { spanId: planSpanId, parentSpanId: traceSpanId },
+      ),
     );
 
     if (!steps.length) {
       await ensurePromise(
-        emit({
-          type: "log",
-          level: "warn",
-          message: "plan returned no executable steps, using fallback response",
-        }),
+        emit(
+          {
+            type: "log",
+            level: "warn",
+            message: "plan returned no executable steps, using fallback response",
+          },
+          { spanId: planSpanId, parentSpanId: traceSpanId },
+        ),
       );
 
       const fallbackStep: PlanStep = {
@@ -165,42 +183,64 @@ export async function runLoop(
       const outcome = await kernel.act(fallbackStep);
       actions.push(outcome);
       await ensurePromise(
-        emit({
-          type: "tool",
-          name: fallbackStep.op,
-          args: fallbackStep.args,
-          result: outcome.result,
-          cost: outcome.result.ok ? outcome.result.cost : undefined,
-          latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
-        }),
+        emit(
+          {
+            type: "tool",
+            name: fallbackStep.op,
+            args: fallbackStep.args,
+            result: outcome.result,
+            cost: outcome.result.ok ? outcome.result.cost : undefined,
+            latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
+          },
+          { spanId: fallbackStep.id, parentSpanId: planSpanId },
+        ),
       );
       const finalOutputs = await kernel.renderFinal(actions);
-      await ensurePromise(emit({ type: "final", outputs: finalOutputs, reason: "no-plan" }));
+      await ensurePromise(
+        emit(
+          { type: "final", outputs: finalOutputs, reason: "no-plan" },
+          { spanId: traceSpanId },
+        ),
+      );
       return { actions, final: finalOutputs, reason: "no-plan" };
     }
 
     for (const step of steps) {
-      await ensurePromise(emit({ type: "progress", step: "act", pct: 0.4 }));
+      await ensurePromise(
+        emit(
+          { type: "progress", step: "act", pct: 0.4 },
+          { spanId: step.id, parentSpanId: planSpanId },
+        ),
+      );
       const outcome = await kernel.act(step);
       actions.push(outcome);
       await ensurePromise(
-        emit({
-          type: "tool",
-          name: step.op,
-          args: step.args,
-          result: outcome.result,
-          cost: outcome.result.ok ? outcome.result.cost : undefined,
-          latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
-        }),
+        emit(
+          {
+            type: "tool",
+            name: step.op,
+            args: step.args,
+            result: outcome.result,
+            cost: outcome.result.ok ? outcome.result.cost : undefined,
+            latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
+          },
+          { spanId: step.id, parentSpanId: planSpanId },
+        ),
       );
 
       if (outcome.ask) {
         await ensurePromise(
-          emit({
-            type: "ask",
-            question: outcome.ask.question,
-            origin_step: outcome.ask.origin_step ?? step.id,
-          }),
+          emit(
+            {
+              type: "ask",
+              question: outcome.ask.question,
+              origin_step: outcome.ask.origin_step ?? step.id,
+            },
+            {
+              spanId: outcome.ask.origin_step ?? step.id,
+              parentSpanId: planSpanId,
+            },
+          ),
         );
         return { actions, reason: "ask" };
       }
@@ -208,17 +248,25 @@ export async function runLoop(
 
     lastReview = await kernel.review(actions);
     await ensurePromise(
-      emit({
-        type: "score",
-        value: lastReview.score,
-        passed: lastReview.passed,
-        notes: lastReview.notes,
-      }),
+      emit(
+        {
+          type: "score",
+          value: lastReview.score,
+          passed: lastReview.passed,
+          notes: lastReview.notes,
+        },
+        { spanId: planSpanId, parentSpanId: traceSpanId },
+      ),
     );
 
     if (lastReview.passed) {
       const finalOutputs = await kernel.renderFinal(actions);
-      await ensurePromise(emit({ type: "final", outputs: finalOutputs, reason: "completed" }));
+      await ensurePromise(
+        emit(
+          { type: "final", outputs: finalOutputs, reason: "completed" },
+          { spanId: traceSpanId },
+        ),
+      );
       return {
         actions,
         final: finalOutputs,
@@ -229,11 +277,14 @@ export async function runLoop(
   }
 
   await ensurePromise(
-    emit({
-      type: "log",
-      level: "warn",
-      message: "max iterations reached without passing review",
-    }),
+    emit(
+      {
+        type: "log",
+        level: "warn",
+        message: "max iterations reached without passing review",
+      },
+      { spanId: traceSpanId },
+    ),
   );
   return { actions, reason: "max-iterations", review: lastReview };
 }

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 import { createChatKernel, createDefaultToolInvoker } from "../../adapters/core";
-import { runLoop, type CoreEvent } from "../../core/agent";
+import { runLoop, type CoreEvent, type EmitSpanOptions } from "../../core/agent";
 import { EpisodeLogger } from "../../runtime/episode";
 import { EventBus, wrapCoreEvent, type EventEnvelope } from "../../runtime/events";
 
@@ -90,8 +90,8 @@ export default async function handler(
   });
 
   try {
-    const emit = async (event: CoreEvent): Promise<void> => {
-      await bus.publish(wrapCoreEvent(traceId, event));
+    const emit = async (event: CoreEvent, span?: EmitSpanOptions): Promise<void> => {
+      await bus.publish(wrapCoreEvent(traceId, event, span));
     };
 
     let lastPublishedKey: string | undefined;
