@@ -1,5 +1,18 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+export interface SkillDto {
+  id: string;
+  name: string;
+  description: string;
+  category?: string;
+  tags?: string[];
+  enabled: boolean;
+  template_json?: Record<string, unknown>;
+  used_count?: number;
+  win_rate?: number;
+  review_status?: string;
+  last_analyzed_at?: string;
+}
+
+export type SkillReviewStatus = "draft" | "pending_review" | "approved" | "rejected";
 
 export interface SkillMetadata {
   id: string;
@@ -8,157 +21,153 @@ export interface SkillMetadata {
   category?: string;
   tags?: string[];
   enabled: boolean;
+  templateJson: Record<string, unknown>;
+  usedCount: number;
+  winRate: number;
+  reviewStatus: SkillReviewStatus;
+  lastAnalyzedAt?: string;
 }
 
-export class SkillNotFoundError extends Error {
-  constructor(id: string) {
-    super(`Skill with id "${id}" was not found`);
-    this.name = "SkillNotFoundError";
+export interface SkillsOverview {
+  enabled: SkillMetadata[];
+  candidates: SkillMetadata[];
+}
+
+export interface SkillsAnalyzeResponse {
+  ok: boolean;
+  analyzed: number;
+  candidates: SkillMetadata[];
+}
+
+interface SkillsApiListResponse {
+  skills: SkillDto[];
+}
+
+interface SkillsCandidatesResponse {
+  candidates: SkillDto[];
+}
+
+const API_BASE = process.env.NEXT_PUBLIC_AOS_API_BASE ?? "";
+
+function resolveUrl(path: string): string {
+  if (path.startsWith("http")) {
+    return path;
   }
+  return `${API_BASE}${path}`;
 }
 
-const DEFAULT_SKILLS: SkillMetadata[] = [
-  {
-    id: "csv.clean",
-    name: "CSV Cleaner",
-    description: "Normalise and sanitise CSV datasets for downstream tooling.",
-    category: "data",
-    tags: ["csv", "preprocess"],
-    enabled: true,
-  },
-  {
-    id: "stats.aggregate",
-    name: "Stats Aggregate",
-    description: "Compute descriptive statistics across structured tabular inputs.",
-    category: "analytics",
-    tags: ["statistics", "report"],
-    enabled: true,
-  },
-  {
-    id: "md.render",
-    name: "Markdown Renderer",
-    description: "Render Markdown knowledge cards into enriched HTML blocks.",
-    category: "rendering",
-    tags: ["markdown", "ui"],
-    enabled: false,
-  },
-];
-
-let memorySkills: SkillMetadata[] = cloneSkills(DEFAULT_SKILLS);
-
-const getSkillsStorePath = (): string =>
-  process.env.AOS_SKILLS_PATH ?? join(process.cwd(), "runtime", "skills.json");
-
-function cloneSkill(skill: SkillMetadata): SkillMetadata {
-  const cloned: SkillMetadata = {
-    ...skill,
-    ...(skill.tags ? { tags: [...skill.tags] } : {}),
-  };
-  return cloned;
+async function parseJson<T>(response: Response): Promise<T> {
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message =
+      payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
+        ? payload.message
+        : `Request failed with status ${response.status}`;
+    throw new Error(message);
+  }
+  return payload as T;
 }
 
-function cloneSkills(skills: SkillMetadata[]): SkillMetadata[] {
-  return skills.map((skill) => cloneSkill(skill));
-}
-
-function normaliseSkill(raw: unknown): SkillMetadata | null {
+function normaliseSkillDto(raw: unknown): SkillMetadata | null {
   if (!raw || typeof raw !== "object") {
     return null;
   }
-  const candidate = raw as Record<string, unknown>;
-  const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
-  const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
-  const description = typeof candidate.description === "string" ? candidate.description.trim() : "";
-  if (!id || !name || !description) {
+  const candidate = raw as SkillDto;
+  if (typeof candidate.id !== "string" || typeof candidate.name !== "string") {
     return null;
   }
-
-  const enabledValue = candidate.enabled;
-  const enabled = typeof enabledValue === "boolean" ? enabledValue : true;
-  const category =
-    typeof candidate.category === "string" && candidate.category.trim().length > 0
-      ? candidate.category.trim()
-      : undefined;
+  if (typeof candidate.description !== "string") {
+    return null;
+  }
+  const reviewStatus =
+    candidate.review_status === "draft" ||
+    candidate.review_status === "pending_review" ||
+    candidate.review_status === "approved" ||
+    candidate.review_status === "rejected"
+      ? (candidate.review_status as SkillReviewStatus)
+      : "pending_review";
   const tags = Array.isArray(candidate.tags)
     ? candidate.tags.filter((tag): tag is string => typeof tag === "string" && tag.length > 0)
     : undefined;
+  const template =
+    typeof candidate.template_json === "object" && candidate.template_json !== null
+      ? (candidate.template_json as Record<string, unknown>)
+      : {};
+  const usedCount =
+    typeof candidate.used_count === "number" && Number.isFinite(candidate.used_count)
+      ? Math.max(0, Math.floor(candidate.used_count))
+      : 0;
+  const winRate =
+    typeof candidate.win_rate === "number" && Number.isFinite(candidate.win_rate)
+      ? Math.min(1, Math.max(0, candidate.win_rate))
+      : 0;
+  const lastAnalyzedAt =
+    typeof candidate.last_analyzed_at === "string" && candidate.last_analyzed_at.length > 0
+      ? candidate.last_analyzed_at
+      : undefined;
 
   return {
-    id,
-    name,
-    description,
-    enabled,
-    ...(category ? { category } : {}),
-    ...(tags && tags.length > 0 ? { tags: [...tags] } : {}),
-  };
+    id: candidate.id,
+    name: candidate.name,
+    description: candidate.description,
+    enabled: Boolean(candidate.enabled),
+    category: typeof candidate.category === "string" ? candidate.category : undefined,
+    tags,
+    templateJson: JSON.parse(JSON.stringify(template)),
+    usedCount,
+    winRate,
+    reviewStatus,
+    ...(lastAnalyzedAt ? { lastAnalyzedAt } : {}),
+  } satisfies SkillMetadata;
 }
 
-async function readFromFile(): Promise<SkillMetadata[] | null> {
-  const filePath = getSkillsStorePath();
-  try {
-    const payload = await readFile(filePath, "utf8");
-    const parsed = JSON.parse(payload);
-    if (!Array.isArray(parsed)) {
-      return null;
-    }
-    const normalised = parsed
-      .map((entry) => normaliseSkill(entry))
-      .filter((entry): entry is SkillMetadata => entry !== null);
-    if (normalised.length === 0) {
-      return null;
-    }
-    return normalised;
-  } catch (error) {
-    return null;
+function normaliseSkillList(list?: SkillDto[]): SkillMetadata[] {
+  if (!Array.isArray(list)) {
+    return [];
   }
+  return list
+    .map((item) => normaliseSkillDto(item))
+    .filter((item): item is SkillMetadata => item !== null);
 }
 
-async function persistSkills(skills: SkillMetadata[]): Promise<void> {
-  const filePath = getSkillsStorePath();
-  try {
-    await mkdir(dirname(filePath), { recursive: true });
-    await writeFile(filePath, JSON.stringify(skills, null, 2), "utf8");
-  } catch (error) {
-    console.warn("Failed to persist skills store", error);
-  }
+export async function fetchEnabledSkills(): Promise<SkillMetadata[]> {
+  const response = await fetch(resolveUrl("/api/skills"), { headers: { Accept: "application/json" } });
+  const payload = await parseJson<SkillsApiListResponse>(response);
+  return normaliseSkillList(payload.skills);
 }
 
-async function ensureMemoryStore(): Promise<SkillMetadata[]> {
-  const stored = await readFromFile();
-  if (stored) {
-    memorySkills = cloneSkills(stored);
-  }
-  return memorySkills;
+export async function fetchCandidateSkills(): Promise<SkillMetadata[]> {
+  const response = await fetch(resolveUrl("/api/skills/candidates"), {
+    headers: { Accept: "application/json" },
+  });
+  const payload = await parseJson<SkillsCandidatesResponse>(response);
+  return normaliseSkillList(payload.candidates);
 }
 
-export async function listSkills(): Promise<SkillMetadata[]> {
-  const skills = await ensureMemoryStore();
-  return cloneSkills(skills);
+export async function fetchSkillsOverview(): Promise<SkillsOverview> {
+  const [enabled, candidates] = await Promise.all([fetchEnabledSkills(), fetchCandidateSkills()]);
+  return { enabled, candidates } satisfies SkillsOverview;
 }
 
-export async function setSkillEnabled(id: string, enabled: boolean): Promise<SkillMetadata> {
-  const skills = await ensureMemoryStore();
-  const match = skills.find((skill) => skill.id === id);
-  if (!match) {
-    throw new SkillNotFoundError(id);
-  }
-  match.enabled = enabled;
-  await persistSkills(skills);
-  return cloneSkill(match);
+export async function setSkillEnabled(id: string, enabled: boolean): Promise<SkillsOverview> {
+  const response = await fetch(resolveUrl("/api/skills"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ id, enabled }),
+  });
+  await parseJson<unknown>(response);
+  return fetchSkillsOverview();
 }
 
-export async function resetSkillsStore(options?: {
-  skills?: SkillMetadata[];
-  persist?: boolean;
-}): Promise<void> {
-  const { skills = DEFAULT_SKILLS, persist = false } = options ?? {};
-  memorySkills = cloneSkills(skills);
-  const filePath = getSkillsStorePath();
-  if (!persist) {
-    await rm(filePath, { force: true });
-    return;
-  }
-  await persistSkills(memorySkills);
+export async function triggerSkillsAnalysis(): Promise<SkillsAnalyzeResponse> {
+  const response = await fetch(resolveUrl("/api/skills/analyze"), {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  const payload = await parseJson<{ ok: boolean; analyzed: number; candidates: SkillDto[] }>(response);
+  return {
+    ok: Boolean(payload.ok),
+    analyzed: typeof payload.analyzed === "number" ? payload.analyzed : 0,
+    candidates: normaliseSkillList(payload.candidates),
+  } satisfies SkillsAnalyzeResponse;
 }
-
-export { DEFAULT_SKILLS };

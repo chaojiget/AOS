@@ -5,7 +5,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { describe, expect, it } from "vitest";
 
 import handler from "../pages/api/skills/index";
-import { DEFAULT_SKILLS, listSkills, resetSkillsStore } from "../lib/skills";
+import { DEFAULT_SKILLS, listSkills, resetSkillsStore } from "../packages/skills/storage";
 
 interface MockResponseState {
   statusCode: number;

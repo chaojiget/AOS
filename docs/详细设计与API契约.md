@@ -86,6 +86,60 @@ graph TB
 
 API 通过 `apps/server` 暴露，默认挂载在 `/api` 前缀下。所有响应遵循 `{ code: string; message: string; data?: any; trace_id?: string }` 结构，当出现错误时返回 `4xx/5xx` 并附带 `trace_id`。
 
+### 5.x 技能分析与审核
+
+技能评审采用“离线分析 → 人工审核 → 灰度放量”三阶段：
+
+1. `packages/skills/pipeline` 从 `events` 表（/episodes JSON 快照）去重汇总工具调用，生成技能草稿。重复的 `call_id` 会被排除，样本不足会保留在 `draft` 状态。
+2. LLM 总结器将聚合后的样本转成 `template_json`（含示例输入/输出、成功率、事件 ID）。状态机遵循：`draft`（样本 < 阈值）→ `pending_review`（达到阈值，待人审）→ `approved` / `rejected`（人工决策）。
+3. 通过脚本 `node --loader ./scripts/ts-loader.mjs ./scripts/skills-eval.ts` 回放小样本，写入 `runtime/evals.json` 与 `runtime/ab_tests.json`。只有当 `used_count ≥ AOS_SKILL_EVAL_MIN_USAGE` 且 `win_rate ≥ AOS_SKILL_EVAL_MIN_WIN` 时才视为通过，失败会阻止启用并返回非零 exit code。
+
+| 状态              | 说明                                             | 升级条件/触发者            |
+| ----------------- | ------------------------------------------------ | --------------------------- |
+| `draft`           | 样本不足，继续积累事件                           | `used_count` ≥ 阈值后自动变更 |
+| `pending_review`  | 样本充足，等待人工校验与风险评估                 | 审核人将其置为 `approved`/`rejected` |
+| `approved`        | 已投入灰度或正式流量，Pipeline 仅刷新指标         | 人工调整或回滚              |
+| `rejected`        | 人工拒绝，Pipeline 不会再次自动激活               | 重新评估后人工复位          |
+
+#### `POST /api/skills/analyze`
+
+| 方法   | 路径                   | 描述                                        |
+| ------ | ---------------------- | ------------------------------------------- |
+| `POST` | `/api/skills/analyze`  | 触发离线 Pipeline，返回最新候选技能列表。 |
+
+**响应示例**
+
+```json
+{
+  "ok": true,
+  "analyzed": 12,
+  "candidates": [
+    {
+      "id": "md.render",
+      "name": "Markdown Render Skill",
+      "review_status": "pending_review",
+      "used_count": 3,
+      "win_rate": 0.67,
+      "template_json": {
+        "analysis": {
+          "success_count": 2,
+          "failure_count": 1,
+          "event_ids": ["call-1", "call-2", "call-3"]
+        }
+      }
+    }
+  ]
+}
+```
+
+#### `GET /api/skills/candidates`
+
+| 方法 | 路径                       | 描述                               |
+| ---- | -------------------------- | ---------------------------------- |
+| `GET`| `/api/skills/candidates`   | 返回当前 `pending_review`/`draft` 技能 |
+
+返回数据用于前端技能面板的候选区块展示，便于审核人复核指标与样本。
+
 ### 5.1 健康检查
 
 | 方法  | 路径          | 描述                         |

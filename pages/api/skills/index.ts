@@ -4,11 +4,11 @@ import {
   listSkills,
   setSkillEnabled,
   SkillNotFoundError,
-  type SkillMetadata,
-} from "../../../lib/skills";
+  type SkillRecord,
+} from "../../../packages/skills/storage";
 
-type SkillsListResponse = { skills: SkillMetadata[] };
-type SkillMutationResponse = { skill: SkillMetadata; skills: SkillMetadata[] };
+type SkillsListResponse = { skills: SkillRecord[] };
+type SkillMutationResponse = { skill: SkillRecord; skills: SkillRecord[] };
 type ErrorResponse = { error: string; message: string };
 
 function parseBoolean(value: unknown): value is boolean {

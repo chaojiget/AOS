@@ -16,77 +16,59 @@ import {
   shellClass,
   subtleTextClass,
 } from "../lib/theme";
-import type { SkillMetadata } from "../lib/skills";
+import {
+  fetchSkillsOverview,
+  setSkillEnabled,
+  triggerSkillsAnalysis,
+  type SkillMetadata,
+  type SkillsOverview,
+} from "../lib/skills";
 
 type SkillsState = {
   isLoading: boolean;
   error: string | null;
-  items: SkillMetadata[];
+  overview: SkillsOverview;
 };
-
-type SkillsResponse = { skills?: SkillMetadata[]; skill?: SkillMetadata; message?: string };
 
 type ToggleRequest = { id: string; enabled: boolean };
 
+const emptyOverview: SkillsOverview = { enabled: [], candidates: [] };
+
+function formatWinRate(value: number): string {
+  const percentage = Math.round((value ?? 0) * 1000) / 10;
+  return `${percentage.toFixed(1)}%`;
+}
+
 const SkillsPage: NextPage = () => {
-  const [state, setState] = useState<SkillsState>({ isLoading: true, error: null, items: [] });
+  const [state, setState] = useState<SkillsState>({
+    isLoading: true,
+    error: null,
+    overview: emptyOverview,
+  });
   const [mutatingId, setMutatingId] = useState<string | null>(null);
+  const [isAnalysing, setIsAnalysing] = useState<boolean>(false);
+
+  const loadOverview = useCallback(async () => {
+    setState((previous) => ({ ...previous, isLoading: true, error: null }));
+    try {
+      const overview = await fetchSkillsOverview();
+      setState({ isLoading: false, error: null, overview });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "An unexpected error occurred while loading skills";
+      setState({ isLoading: false, error: message, overview: emptyOverview });
+    }
+  }, []);
 
   useEffect(() => {
-    let isMounted = true;
-    const loadSkills = async () => {
-      try {
-        const response = await fetch("/api/skills");
-        const payload: SkillsResponse | null = await response.json().catch(() => null);
-        if (!response.ok || !payload || !Array.isArray(payload.skills)) {
-          throw new Error(payload?.message ?? "Failed to load skills");
-        }
-        if (!isMounted) return;
-        setState({ isLoading: false, error: null, items: payload.skills });
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "An unexpected error occurred while loading skills";
-        if (!isMounted) return;
-        setState({ isLoading: false, error: message, items: [] });
-      }
-    };
-
-    loadSkills();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+    loadOverview();
+  }, [loadOverview]);
 
   const handleToggle = useCallback(async (payload: ToggleRequest) => {
     setMutatingId(payload.id);
     try {
-      const response = await fetch("/api/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data: SkillsResponse | null = await response.json().catch(() => null);
-      if (!response.ok || !data) {
-        throw new Error(data?.message ?? "Failed to update skill status");
-      }
-      setState((previous) => {
-        if (Array.isArray(data.skills)) {
-          return { isLoading: false, error: null, items: data.skills };
-        }
-        if (data.skill) {
-          return {
-            isLoading: false,
-            error: null,
-            items: previous.items.map((skill) =>
-              skill.id === data.skill?.id ? data.skill! : skill,
-            ),
-          };
-        }
-        return previous;
-      });
+      const overview = await setSkillEnabled(payload.id, payload.enabled);
+      setState({ isLoading: false, error: null, overview });
     } catch (error) {
       const message =
         error instanceof Error
@@ -98,63 +80,95 @@ const SkillsPage: NextPage = () => {
     }
   }, []);
 
-  const renderSkills = () => {
-    if (state.isLoading) {
-      return <p className={subtleTextClass}>Loading skills...</p>;
+  const handleAnalyze = useCallback(async () => {
+    setIsAnalysing(true);
+    try {
+      const result = await triggerSkillsAnalysis();
+      setState((previous) => ({
+        isLoading: false,
+        error: null,
+        overview: { enabled: previous.overview.enabled, candidates: result.candidates },
+      }));
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred while analysing skills";
+      setState((previous) => ({ ...previous, error: message }));
+    } finally {
+      setIsAnalysing(false);
     }
+  }, []);
 
-    if (state.items.length === 0) {
-      return <p className={subtleTextClass}>No skills are currently registered.</p>;
-    }
-
+  const renderSkillCard = (skill: SkillMetadata, options: { showToggle: boolean }) => {
+    const winRateLabel = formatWinRate(skill.winRate);
+    const usageLabel = `${skill.usedCount} ${skill.usedCount === 1 ? "use" : "uses"}`;
+    const reviewLabel = skill.reviewStatus.replace("_", " ");
     return (
-      <ul className="flex flex-col gap-4">
-        {state.items.map((skill) => {
-          const isMutating = mutatingId === skill.id;
-          const actionLabel = skill.enabled ? "Disable" : "Enable";
-          const buttonClass = skill.enabled ? outlineButtonClass : primaryButtonClass;
-          const statusLabel = skill.enabled ? "Enabled" : "Disabled";
-
-          return (
-            <li
-              key={skill.id}
-              className={`${insetSurfaceClass} flex flex-col gap-3 p-5`}
-              data-testid="skill-card"
+      <li key={skill.id} className={`${insetSurfaceClass} flex flex-col gap-3 p-5`} data-testid="skill-card">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <h2 className={`${headingClass} text-base`}>{skill.name}</h2>
+            <span className={subtleTextClass}>{skill.description}</span>
+          </div>
+          <div className="flex flex-col items-end gap-2 text-right">
+            <span className={labelClass}>Review</span>
+            <span className={badgeClass}>{reviewLabel}</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {skill.category ? <span className={badgeClass}>#{skill.category}</span> : null}
+            {skill.tags?.map((tag) => (
+              <span key={tag} className={badgeClass}>
+                {tag}
+              </span>
+            ))}
+          </div>
+          <div className="flex items-center gap-4 text-sm text-slate-200/80">
+            <span>
+              <span className="font-medium">Usage:</span> {usageLabel}
+            </span>
+            <span>
+              <span className="font-medium">Win rate:</span> {winRateLabel}
+            </span>
+          </div>
+        </div>
+        {options.showToggle ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              disabled={mutatingId === skill.id}
+              className={skill.enabled ? outlineButtonClass : primaryButtonClass}
+              onClick={() => handleToggle({ id: skill.id, enabled: !skill.enabled })}
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-col gap-1">
-                  <h2 className={`${headingClass} text-base`}>{skill.name}</h2>
-                  <span className={subtleTextClass}>{skill.description}</span>
-                </div>
-                <div className="flex flex-col items-end gap-2 text-right">
-                  <span className={labelClass}>Status</span>
-                  <span className={badgeClass} data-testid="skill-status">
-                    {statusLabel}
-                  </span>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  {skill.category ? <span className={badgeClass}>#{skill.category}</span> : null}
-                  {skill.tags?.map((tag) => (
-                    <span key={tag} className={badgeClass}>
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  disabled={isMutating}
-                  className={buttonClass}
-                  onClick={() => handleToggle({ id: skill.id, enabled: !skill.enabled })}
-                >
-                  {isMutating ? "Updating..." : actionLabel}
-                </button>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+              {mutatingId === skill.id ? "Updating..." : skill.enabled ? "Disable" : "Enable"}
+            </button>
+          </div>
+        ) : null}
+      </li>
+    );
+  };
+
+  const renderSection = (
+    title: string,
+    skills: SkillMetadata[],
+    options: { showToggle: boolean; emptyLabel: string; description: string },
+  ) => {
+    return (
+      <section className={`${panelSurfaceClass} flex flex-col gap-6 p-8`}>
+        <header className="flex items-center justify-between">
+          <div className="flex flex-col gap-1">
+            <h2 className={`${headingClass} text-xl`}>{title}</h2>
+            <p className={subtleTextClass}>{options.description}</p>
+          </div>
+        </header>
+        {skills.length === 0 ? (
+          <p className={subtleTextClass}>{options.emptyLabel}</p>
+        ) : (
+          <ul className="flex flex-col gap-4">{skills.map((skill) => renderSkillCard(skill, options))}</ul>
+        )}
+      </section>
     );
   };
 
@@ -180,12 +194,19 @@ const SkillsPage: NextPage = () => {
         </div>
       </header>
       <main className={`${pageContainerClass} flex flex-col gap-6`}>
-        <section className={`${panelSurfaceClass} flex flex-col gap-6 p-8`}>
-          <div className="flex flex-col gap-2">
+        <section className={`${panelSurfaceClass} flex flex-col gap-4 p-8`}>
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <p className={subtleTextClass}>
-              Review the currently registered skills, toggle their availability, and jump into a run
-              to verify changes instantly.
+              Review the generated skills, trigger new analyses, and toggle approved capabilities.
             </p>
+            <button
+              type="button"
+              className={primaryButtonClass}
+              onClick={handleAnalyze}
+              disabled={isAnalysing}
+            >
+              {isAnalysing ? "Analysing..." : "Analyse recent runs"}
+            </button>
           </div>
           {state.error ? (
             <div
@@ -195,7 +216,22 @@ const SkillsPage: NextPage = () => {
               {state.error}
             </div>
           ) : null}
-          {renderSkills()}
+          {state.isLoading ? (
+            <p className={subtleTextClass}>Loading skills...</p>
+          ) : (
+            <div className="flex flex-col gap-6">
+              {renderSection("Candidate skills", state.overview.candidates, {
+                showToggle: false,
+                description: "Skills awaiting manual review before rollout.",
+                emptyLabel: "No candidate skills available. Trigger an analysis run to populate this list.",
+              })}
+              {renderSection("Enabled skills", state.overview.enabled, {
+                showToggle: true,
+                description: "Approved skills currently available to the agent.",
+                emptyLabel: "No enabled skills found.",
+              })}
+            </div>
+          )}
         </section>
       </main>
     </div>
