@@ -1,66 +1,69 @@
 {
-  "goal": "Remove binary visual snapshot while keeping chat UI styling improvements validated via deterministic layout tokens.",
+  "goal": "将当前远程仓库已有的所有分支合并入 main，并完成规定的测试脚本以确认稳定性。",
   "constraints": [
-    "Follow repository guardrails defined in AGENTS.md",
-    "Use pnpm scripts for quality checks",
-    "Avoid introducing binary artifacts into the repository",
-    "Keep working tree clean before completion"
+    "遵循 AGENTS.md 中的守护与权限要求，仅使用 pnpm 提供的脚本执行测试。",
+    "操作过程中保留合并顺序与日志，出现冲突时优先与用户沟通。",
+    "禁止修改 /kernel 结构性文件与敏感配置。"
   ],
-  "budget": { "currency": "CNY", "limit": 0.0 },
+  "budget": { "currency": "CNY", "limit": 0 },
   "acceptance": [
     {
       "id": "A1",
-      "given": "updated test suite",
-      "when": "pnpm test:ui is executed",
-      "then": "visual regression coverage relies on text-based snapshots and passes without binary assets"
+      "given": "main 分支基于最新远程状态",
+      "when": "所有当前远程分支按顺序完成合并",
+      "then": "git status 显示 main 包含全部合并提交且无未解决冲突"
     },
     {
       "id": "A2",
-      "given": "repository state",
-      "when": "pnpm typecheck && pnpm lint && pnpm test run",
-      "then": "all checks succeed"
-    },
-    {
-      "id": "A3",
-      "given": "final git status",
-      "when": "git status --short",
-      "then": "working tree clean"
+      "given": "合并完成",
+      "when": "执行 pnpm typecheck && pnpm lint && pnpm test && pnpm smoke",
+      "then": "全部命令成功退出"
     }
   ],
   "steps": [
     {
       "id": "S1",
-      "action": "code",
-      "input": {
-        "files": ["tests/ui/chat-page.pw.ts"],
-        "description": "Replace screenshot assertion with deterministic style snapshot logic"
-      },
-      "expect": "Playwright test captures design tokens in text form"
+      "action": "tool",
+      "input": { "command": "git fetch --all --prune" },
+      "expect": "本地同步最新远程引用" 
     },
     {
       "id": "S2",
-      "action": "code",
-      "input": {
-        "files": ["tests/ui/__snapshots__"],
-        "description": "Remove binary snapshot and add textual JSON snapshot"
-      },
-      "expect": "Snapshot directory contains only text files"
+      "action": "tool",
+      "input": { "command": "git branch -r" },
+      "expect": "列出所有远程分支并确定待合并列表"
     },
     {
       "id": "S3",
-      "action": "shell",
-      "input": {
-        "command": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:ui"
-      },
-      "expect": "All checks pass"
+      "action": "tool",
+      "input": { "command": "git checkout main && git pull --ff-only" },
+      "expect": "main 分支基于最新远程 main"
+    },
+    {
+      "id": "S4",
+      "action": "tool",
+      "input": { "command": "对每个待合并分支执行 git merge --no-ff <branch>，若冲突则记录并解决" },
+      "expect": "main 成功合并所有分支且每次合并完成后提交记录清晰"
+    },
+    {
+      "id": "S5",
+      "action": "tool",
+      "input": { "command": "pnpm typecheck && pnpm lint && pnpm test && pnpm smoke" },
+      "expect": "所有验证脚本通过"
+    },
+    {
+      "id": "S6",
+      "action": "tool",
+      "input": { "command": "git status -sb" },
+      "expect": "确认工作区干净或仅有预期改动"
     }
   ],
   "risks": [
-    "Computed style values may vary across environments causing flaky snapshots",
-    "Removing binary snapshot could reduce coverage if not capturing enough tokens"
+    "多个分支之间存在冲突，可能需要人工决策或与需求方确认",
+    "测试脚本执行时间长或失败，需要定位具体问题并可能回滚部分合并"
   ],
   "rollback": [
-    "Revert to previous commit if new snapshot approach fails",
-    "Adjust computed style selection to minimize variability"
+    "若某分支合并失败，可使用 git merge --abort 或 git reset --hard HEAD~ 回退",
+    "如发现合并顺序导致问题，可记录问题分支并暂缓合并，等待人工确认"
   ]
 }
