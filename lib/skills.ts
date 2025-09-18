@@ -60,7 +60,10 @@ async function parseJson<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const message =
-      payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
+      payload &&
+      typeof payload === "object" &&
+      "message" in payload &&
+      typeof payload.message === "string"
         ? payload.message
         : `Request failed with status ${response.status}`;
     throw new Error(message);
@@ -131,7 +134,9 @@ function normaliseSkillList(list?: SkillDto[]): SkillMetadata[] {
 }
 
 export async function fetchEnabledSkills(): Promise<SkillMetadata[]> {
-  const response = await fetch(resolveUrl("/api/skills"), { headers: { Accept: "application/json" } });
+  const response = await fetch(resolveUrl("/api/skills"), {
+    headers: { Accept: "application/json" },
+  });
   const payload = await parseJson<SkillsApiListResponse>(response);
   return normaliseSkillList(payload.skills);
 }
@@ -164,7 +169,9 @@ export async function triggerSkillsAnalysis(): Promise<SkillsAnalyzeResponse> {
     method: "POST",
     headers: { Accept: "application/json" },
   });
-  const payload = await parseJson<{ ok: boolean; analyzed: number; candidates: SkillDto[] }>(response);
+  const payload = await parseJson<{ ok: boolean; analyzed: number; candidates: SkillDto[] }>(
+    response,
+  );
   return {
     ok: Boolean(payload.ok),
     analyzed: typeof payload.analyzed === "number" ? payload.analyzed : 0,

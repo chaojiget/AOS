@@ -90,15 +90,7 @@ describe("CLI mcp add", () => {
     const stdout = createMemoryWriter();
     const stderr = createMemoryWriter();
     const code = await runCli(
-      [
-        "mcp",
-        "add",
-        "--transport",
-        "ws",
-        "mcp-primary",
-        "wss://primary.example.com",
-        "--default",
-      ],
+      ["mcp", "add", "--transport", "ws", "mcp-primary", "wss://primary.example.com", "--default"],
       { cwd, stdout, stderr },
     );
 

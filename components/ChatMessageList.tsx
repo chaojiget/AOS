@@ -1,12 +1,7 @@
 import type { FC } from "react";
 
 import { useI18n } from "../lib/i18n/index";
-import {
-  badgeClass,
-  chatBubbleVariants,
-  insetSurfaceClass,
-  subtleTextClass,
-} from "../lib/theme";
+import { badgeClass, chatBubbleVariants, insetSurfaceClass, subtleTextClass } from "../lib/theme";
 
 export type ChatHistoryMessage = {
   id: string;
@@ -84,7 +79,7 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
               {group.items.map((message) => {
                 const statusLabel =
                   message.status === "error"
-                    ? message.error ?? t("chat.message.status.error")
+                    ? (message.error ?? t("chat.message.status.error"))
                     : message.status === "pending"
                       ? t("chat.message.status.pending")
                       : message.status === "done"
@@ -115,9 +110,7 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
                   );
                 }
                 if (typeof message.cost === "number") {
-                  metadata.push(
-                    `${t("chat.message.labels.cost")}: ${message.cost.toFixed(4)}`,
-                  );
+                  metadata.push(`${t("chat.message.labels.cost")}: ${message.cost.toFixed(4)}`);
                 }
 
                 const ringClass =
@@ -131,7 +124,9 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
                     data-status={message.status ?? "sent"}
                     className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed ring-offset-0 transition ${tone.article} ${ringClass}`}
                   >
-                    <div className="whitespace-pre-wrap break-words text-left">{message.content}</div>
+                    <div className="whitespace-pre-wrap break-words text-left">
+                      {message.content}
+                    </div>
                     <footer
                       className={`mt-3 flex flex-wrap items-center gap-2 text-[0.7rem] font-medium uppercase tracking-[0.14em] ${tone.meta}`}
                     >

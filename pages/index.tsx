@@ -27,6 +27,8 @@ import {
   subtleTextClass,
 } from "../lib/theme";
 
+type ToolStatus = Extract<SkillEvent, { type: "tool" }>["status"];
+
 interface ChatSendResponse {
   trace_id: string;
   result?: unknown;
@@ -367,7 +369,7 @@ const HomePage: NextPage = () => {
       if (kind.startsWith("tool")) {
         const data = event.data ?? {};
         const spanKey = event.span_id ?? event.id;
-        const status: SkillEvent["status"] =
+        const status: ToolStatus =
           kind === "tool.failed" ? "failed" : kind === "tool.started" ? "started" : "succeeded";
         const name =
           typeof data.name === "string"
@@ -696,22 +698,20 @@ const HomePage: NextPage = () => {
           message.id === localId
             ? {
                 ...message,
-                status: "error",
+                status: "error" as const,
                 error: errorMessage,
               }
             : message,
         );
-        return [
-          ...updated,
-          {
-            id: generateLocalId(),
-            role: "system",
-            content: t("chat.errorPrefix", { message: errorMessage }),
-            ts: new Date().toISOString(),
-            status: "error",
-            error: errorMessage,
-          },
-        ];
+        const entry: ChatHistoryMessage = {
+          id: generateLocalId(),
+          role: "system",
+          content: t("chat.errorPrefix", { message: errorMessage }),
+          ts: new Date().toISOString(),
+          status: "error",
+          error: errorMessage,
+        };
+        return [...updated, entry];
       });
       setTraceId(previousTraceId);
     }

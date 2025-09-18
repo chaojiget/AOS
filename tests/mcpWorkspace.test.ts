@@ -23,7 +23,10 @@ import { replayEpisode } from "../runtime/replay";
 class WorkspaceKernel implements AgentKernel {
   private planned = false;
 
-  constructor(private readonly toolInvoker: ToolInvoker, private readonly traceId: string) {}
+  constructor(
+    private readonly toolInvoker: ToolInvoker,
+    private readonly traceId: string,
+  ) {}
 
   async perceive(): Promise<void> {
     // no-op
@@ -100,7 +103,9 @@ describe("mcp workspace registry", () => {
       });
 
       const kernel = new WorkspaceKernel(toolInvoker, traceId);
-      const emit = (event: CoreEvent, span?: EmitSpanOptions) => bus.publish(wrapCoreEvent(traceId, event, span));
+      const emit = async (event: CoreEvent, span?: EmitSpanOptions) => {
+        await bus.publish(wrapCoreEvent(traceId, event, span));
+      };
       const result = await runLoop(kernel, emit, { context: { traceId } });
 
       expect(result.reason).toBe("completed");
@@ -131,7 +136,9 @@ describe("mcp workspace registry", () => {
       expect((mcpResultEvent?.data as any).path).toBe("notes/hello.txt");
 
       const replayed = await replayEpisode(traceId, { dir: episodesDir });
-      expect(replayed.map((event) => event.type)).toEqual(recordedEvents.map((event) => event.type));
+      expect(replayed.map((event) => event.type)).toEqual(
+        recordedEvents.map((event) => event.type),
+      );
       const replayWriteResult = replayed.find(
         (event) => event.type === "mcp.result" && (event.data as any).tool === "file.write",
       );
@@ -153,8 +160,9 @@ describe("mcp workspace registry", () => {
         });
 
         const replayKernel = new WorkspaceKernel(replayInvoker, `${traceId}-replay`);
-        const replayEmit = (event: CoreEvent, span?: EmitSpanOptions) =>
-          replayBus.publish(wrapCoreEvent(`${traceId}-replay`, event, span));
+        const replayEmit = async (event: CoreEvent, span?: EmitSpanOptions) => {
+          await replayBus.publish(wrapCoreEvent(`${traceId}-replay`, event, span));
+        };
         const replayResult = await runLoop(replayKernel, replayEmit, {
           context: { traceId: `${traceId}-replay` },
         });
@@ -264,6 +272,8 @@ describe("mcp workspace adapter", () => {
     expect(replayEvents.filter((event) => event.type === "mcp.call")).toHaveLength(3);
     expect(replayEvents.filter((event) => event.type === "mcp.result")).toHaveLength(3);
 
-    await expect(stat(join(workspace, "notes", "hello.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(workspace, "notes", "hello.txt"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 });

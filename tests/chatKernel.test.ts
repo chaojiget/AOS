@@ -24,6 +24,9 @@ describe("createChatKernel", () => {
 
     await kernel.perceive({ traceId: "trace-test" });
     const plan = await kernel.plan();
+    if (!plan) {
+      throw new Error("expected plan to be generated");
+    }
 
     expect(invocations).toHaveLength(1);
     expect(invocations[0]?.name).toBe("llm.chat");
@@ -36,11 +39,7 @@ describe("createChatKernel", () => {
 
     const step = plan.steps[0];
     expect(step.args).toEqual({
-      messages: [
-        DEFAULT_SYSTEM_PROMPT,
-        ...history,
-        { role: "user", content: "what's next?" },
-      ],
+      messages: [DEFAULT_SYSTEM_PROMPT, ...history, { role: "user", content: "what's next?" }],
     });
 
     const outcome = await kernel.act(step);
@@ -67,6 +66,9 @@ describe("createChatKernel", () => {
 
     await kernel.perceive({ traceId: "trace-fallback" });
     const plan = await kernel.plan();
+    if (!plan) {
+      throw new Error("expected fallback plan");
+    }
 
     expect(plan.reason).toBe("fallback");
     expect(plan.steps).toHaveLength(1);
@@ -92,7 +94,13 @@ describe("createChatKernel", () => {
 
     await kernel.perceive({ traceId: "trace-dup" });
     const firstPlan = await kernel.plan();
+    if (!firstPlan) {
+      throw new Error("expected first plan");
+    }
     const secondPlan = await kernel.plan();
+    if (!secondPlan) {
+      throw new Error("expected second plan");
+    }
 
     const extractMessages = (plan: any) => plan.steps[0]?.args?.messages ?? [];
 

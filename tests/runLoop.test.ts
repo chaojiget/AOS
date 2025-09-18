@@ -23,6 +23,18 @@ function isFinalEvent(entry: EmittedEntry): entry is FinalEventEntry {
   return entry.event.type === "final";
 }
 
+function isPlanEvent(
+  entry: EmittedEntry,
+): entry is { event: Extract<CoreEvent, { type: "plan" }>; span?: EmitSpanOptions } {
+  return entry.event.type === "plan";
+}
+
+function isAskEvent(
+  entry: EmittedEntry,
+): entry is { event: Extract<CoreEvent, { type: "ask" }>; span?: EmitSpanOptions } {
+  return entry.event.type === "ask";
+}
+
 describe("runLoop", () => {
   it("executes plan steps and resolves when review passes", async () => {
     const emitted: EmittedEntry[] = [];
@@ -64,7 +76,7 @@ describe("runLoop", () => {
     expect(result.reason).toBe("completed");
     expect(result.final).toBe("HI THERE");
     expect(emitted.some((item) => item.event.type === "plan")).toBeTruthy();
-    const planEvent = emitted.find((item) => item.event.type === "plan");
+    const planEvent = emitted.find(isPlanEvent);
     expect(planEvent?.span?.spanId).toBe("plan-1");
     expect(planEvent?.span?.parentSpanId).toBe("trace-run-loop");
 
@@ -118,7 +130,7 @@ describe("runLoop", () => {
     expect(finalEvent?.event.reason).toBe("no-plan");
     expect(finalEvent?.span?.spanId).toBe("trace-fallback");
 
-    const planEvent = emitted.find((item) => item.event.type === "plan");
+    const planEvent = emitted.find(isPlanEvent);
     expect(planEvent?.span?.spanId).toBe("plan-1");
 
     const toolEvent = emitted.find(
@@ -200,7 +212,10 @@ describe("runLoop", () => {
         if (call.name === "llm.chat") {
           plannerCallCount += 1;
           if (plannerCallCount === 1) {
-            return { ok: true, data: { content: JSON.stringify(planPayload) } } satisfies ToolResult;
+            return {
+              ok: true,
+              data: { content: JSON.stringify(planPayload) },
+            } satisfies ToolResult;
           }
           return { ok: true, data: { content: "ignored" } } satisfies ToolResult;
         }
@@ -210,7 +225,11 @@ describe("runLoop", () => {
             data: { server: call.args.server, tool: call.args.tool, value: "context" },
           } satisfies ToolResult;
         }
-        return { ok: false, code: "unexpected", message: `unexpected tool: ${call.name}` } satisfies ToolResult;
+        return {
+          ok: false,
+          code: "unexpected",
+          message: `unexpected tool: ${call.name}`,
+        } satisfies ToolResult;
       },
     });
 
@@ -377,7 +396,7 @@ describe("runLoop", () => {
     expect(result.review?.score).toBe(1);
     expect(result.final).toEqual({ text: "完成了", raw: { content: "完成了" } });
 
-    const planEvent = emitted.find((entry) => entry.event.type === "plan");
+    const planEvent = emitted.find(isPlanEvent);
     expect(planEvent?.event.steps).toHaveLength(2);
   });
 
@@ -400,7 +419,11 @@ describe("runLoop", () => {
           },
         } satisfies ToolResult;
       }
-      return { ok: false, code: "unexpected", message: `unexpected call ${call.name}` } satisfies ToolResult;
+      return {
+        ok: false,
+        code: "unexpected",
+        message: `unexpected call ${call.name}`,
+      } satisfies ToolResult;
     };
 
     const kernel = createChatKernel({
@@ -419,7 +442,7 @@ describe("runLoop", () => {
 
     expect(result.reason).toBe("ask");
     expect(result.actions[0]?.ask?.question).toBe("需要更多细节");
-    const askEvent = emitted.find((entry) => entry.event.type === "ask");
+    const askEvent = emitted.find(isAskEvent);
     expect(askEvent?.event.question).toBe("需要更多细节");
   });
 

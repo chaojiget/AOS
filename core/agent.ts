@@ -48,6 +48,7 @@ export interface ToolCall<TArgs = any> {
 export interface ToolContext {
   trace_id: string;
   span_id?: string;
+  parent_span_id?: string;
   metadata?: Record<string, any>;
 }
 
@@ -77,6 +78,7 @@ export type CoreEvent =
       result?: any;
       cost?: number;
       latency_ms?: number;
+      status?: "started" | "succeeded" | "failed";
     }
   | { type: "ask"; question: string; origin_step?: string }
   | { type: "score"; value: number; passed: boolean; notes?: string[] }

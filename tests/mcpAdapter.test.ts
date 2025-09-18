@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 
-async function createRegistry(entries: any[]): Promise<{ path: string; cleanup: () => Promise<void> }> {
+async function createRegistry(
+  entries: any[],
+): Promise<{ path: string; cleanup: () => Promise<void> }> {
   const dir = await mkdtemp(join(tmpdir(), "mcp-registry-"));
   const filePath = join(dir, "mcp.registry.json");
   await writeFile(filePath, JSON.stringify(entries), "utf8");
@@ -37,7 +39,9 @@ describe("MCP adapter", () => {
       expect(client).not.toBe(null);
       const result = await client!.invoke("offline", "ping", { value: 1 }, { trace_id: "test" });
       expect(result.ok).toBe(false);
-      expect(result.code.startsWith("mcp.")).toBe(true);
+      if (!result.ok) {
+        expect(result.code.startsWith("mcp.")).toBe(true);
+      }
     } finally {
       await registry.cleanup();
     }
@@ -50,14 +54,14 @@ describe("MCP adapter", () => {
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (input: any, init?: any) => {
-      const targetUrl = typeof input === "string" ? input : input?.url ?? "";
+      const targetUrl = typeof input === "string" ? input : (input?.url ?? "");
       if (targetUrl === "http://mock.mcp.test/rpc") {
         const bodyValue =
           typeof init?.body === "string"
             ? init.body
             : init?.body instanceof Uint8Array
               ? Buffer.from(init.body).toString("utf8")
-              : init?.body?.toString?.() ?? "";
+              : (init?.body?.toString?.() ?? "");
         const payload = bodyValue ? JSON.parse(bodyValue) : {};
         const id = payload.id ?? null;
         const method = payload.method;
@@ -93,7 +97,11 @@ describe("MCP adapter", () => {
           );
         }
         return new Response(
-          JSON.stringify({ jsonrpc: "2.0", id, error: { code: "mcp.unsupported", message: "bad" } }),
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id,
+            error: { code: "mcp.unsupported", message: "bad" },
+          }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -131,13 +139,19 @@ describe("MCP adapter", () => {
       const { createDefaultToolInvoker } = await import("../adapters/core");
       const invoker = createDefaultToolInvoker();
 
-      const remoteDefault = await invoker({ name: "ping", args: { value: 7 } }, { trace_id: "abc" });
+      const remoteDefault = await invoker(
+        { name: "ping", args: { value: 7 } },
+        { trace_id: "abc" },
+      );
       expect(remoteDefault.ok).toBe(true);
       if (remoteDefault.ok) {
         expect(remoteDefault.data).toEqual({ echoed: 7 });
       }
 
-      const remotePrefixed = await invoker({ name: "mock.ping", args: { value: 9 } }, { trace_id: "def" });
+      const remotePrefixed = await invoker(
+        { name: "mock.ping", args: { value: 9 } },
+        { trace_id: "def" },
+      );
       expect(remotePrefixed.ok).toBe(true);
       if (remotePrefixed.ok) {
         expect(remotePrefixed.data).toEqual({ echoed: 9 });

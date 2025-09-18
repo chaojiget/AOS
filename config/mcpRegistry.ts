@@ -33,9 +33,7 @@ export interface AddServerResult {
 
 const DEFAULT_REGISTRY: MCPRegistry = { servers: [] };
 
-export async function readMCPRegistry(
-  options: LoadRegistryOptions = {},
-): Promise<MCPRegistry> {
+export async function readMCPRegistry(options: LoadRegistryOptions = {}): Promise<MCPRegistry> {
   const registryPath = resolveRegistryPath(options.registryPath);
   try {
     const contents = await fs.readFile(registryPath, "utf8");
@@ -55,9 +53,7 @@ export async function readMCPRegistry(
   }
 }
 
-export async function addOrUpdateMCPServer(
-  options: AddServerOptions,
-): Promise<AddServerResult> {
+export async function addOrUpdateMCPServer(options: AddServerOptions): Promise<AddServerResult> {
   const registryPath = resolveRegistryPath(options.registryPath);
   const registry = await readMCPRegistry({ registryPath });
 

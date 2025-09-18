@@ -20,10 +20,13 @@ interface InternalRunEntry extends RunEntry {
 
 const runs = new Map<string, InternalRunEntry>();
 
-export function registerRun(runId: string, options: {
-  bus: EventBus;
-  logger: EpisodeLogger;
-}): RunEntry {
+export function registerRun(
+  runId: string,
+  options: {
+    bus: EventBus;
+    logger: EpisodeLogger;
+  },
+): RunEntry {
   const existing = runs.get(runId);
   if (existing?.cleanupTimer) {
     clearTimeout(existing.cleanupTimer);

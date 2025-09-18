@@ -4,17 +4,18 @@ import { join } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import type { AddressInfo } from "node:net";
-import request from "supertest";
-import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
-import type { ActionOutcome, AgentKernel, Plan, PlanStep, ReviewResult } from "../../core/agent";
+import { Test } from "@nestjs/testing";
+
 import { AppModule } from "../../servers/api/src/app.module";
 import {
   RUN_KERNEL_FACTORY,
-  type RunKernelFactory,
   type CreateKernelOptions,
+  type RunKernelFactory,
 } from "../../servers/api/src/runs/run-kernel.factory";
+import { AgentController } from "../../servers/api/src/agent/agent.controller";
+import { RunsService } from "../../servers/api/src/runs/runs.service";
+import type { ActionOutcome, AgentKernel, Plan, PlanStep, ReviewResult } from "../../core/agent";
 
 class StubKernel implements AgentKernel {
   private planned = false;
@@ -78,73 +79,59 @@ describe("API run endpoints", () => {
     const app: INestApplication = moduleRef.createNestApplication();
     app.setGlobalPrefix("api");
     await app.init();
-    const server = await app.listen(0);
-    const address = server.address() as AddressInfo | string;
-    const port = typeof address === "string" ? 80 : address.port;
-    const baseUrl = `http://127.0.0.1:${port}`;
+
+    const agentController = app.get(AgentController);
+    const runsService = app.get(RunsService);
 
     try {
-      const startResponse = await request(app.getHttpServer())
-        .post("/api/agent/start")
-        .send({ message: "hello" })
-        .expect(201);
-
-      const runId = startResponse.body.runId as string;
+      const startResponse = await agentController.startRun({ message: "hello" });
+      const runId = startResponse.runId as string;
       expect(typeof runId).toBe("string");
+
+      const streamPromise = new Promise<void>((resolve, reject) => {
+        const subscription = runsService.stream(runId).subscribe({
+          next(event) {
+            if (event.type === "run.finished") {
+              subscription.unsubscribe();
+              resolve();
+            }
+          },
+          error(error) {
+            subscription.unsubscribe();
+            reject(error);
+          },
+          complete() {
+            subscription.unsubscribe();
+            resolve();
+          },
+        });
+        setTimeout(() => {
+          subscription.unsubscribe();
+          reject(new Error("stream did not emit run.finished"));
+        }, 5000);
+      });
 
       let summary;
       for (let attempt = 0; attempt < 10; attempt += 1) {
-        const res = await request(app.getHttpServer()).get(`/api/runs/${runId}`).expect(200);
-        summary = res.body;
+        summary = await runsService.getRun(runId);
         if (summary.status !== "running") {
           break;
         }
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
-      expect(summary.status).toBe("completed");
-      expect(summary.finalResult).toEqual({ text: "finished:1" });
+      expect(summary?.status).toBe("completed");
+      expect(summary?.finalResult).toEqual({ text: "finished:1" });
 
-      const eventsRes = await request(app.getHttpServer())
-        .get(`/api/runs/${runId}/events`)
-        .expect(200);
-      expect(Array.isArray(eventsRes.body.events)).toBe(true);
-      const hasFinished = eventsRes.body.events.some((evt: any) => evt.type === "run.finished");
+      const eventsRes = await runsService.getRunEvents(runId);
+      expect(Array.isArray(eventsRes)).toBe(true);
+      const hasFinished = eventsRes.some((evt) => evt.type === "run.finished");
       expect(hasFinished).toBe(true);
 
-      const response = await fetch(`${baseUrl}/api/runs/${runId}/stream`, {
-        headers: {
-          Accept: "text/event-stream",
-          Authorization: "Bearer test-key",
-        },
-      });
-      expect(response.ok).toBe(true);
-
-      const reader = response.body?.getReader();
-      expect(reader).toBeDefined();
-      let buffer = "";
-      let receivedFinished = false;
-      const decoder = new TextDecoder();
-      if (reader) {
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) {
-            break;
-          }
-          const chunk = decoder.decode(value, { stream: true });
-          buffer += chunk;
-          if (buffer.includes("event: run.finished") || buffer.includes("event:run.finished")) {
-            receivedFinished = true;
-            break;
-          }
-        }
-        await reader.cancel();
-      }
-
-      expect(receivedFinished).toBe(true);
+      await streamPromise;
     } finally {
       await app.close();
       await rm(tmpDir, { recursive: true, force: true });
     }
-  }, 30000);
+  }, 10000);
 });

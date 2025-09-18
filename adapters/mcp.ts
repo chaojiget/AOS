@@ -56,7 +56,12 @@ export interface MCPClient {
   listTools(serverId?: string): Promise<MCPToolSummary[]>;
   resources(serverId?: string): Promise<MCPResourceSummary[]>;
   listResources(serverId?: string): Promise<MCPResourceSummary[]>;
-  invoke(serverId: string, tool: string, args: any, options?: MCPInvokeOptions): Promise<ToolResult>;
+  invoke(
+    serverId: string,
+    tool: string,
+    args: any,
+    options?: MCPInvokeOptions,
+  ): Promise<ToolResult>;
   close(): Promise<void>;
 }
 
@@ -77,13 +82,19 @@ interface MCPTransportError {
 type MCPTransportResult = MCPTransportOk | MCPTransportError;
 
 class MCPConnectionError extends Error {
-  constructor(readonly code: string, message: string) {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
     super(message);
   }
 }
 
 class MCPServerError extends Error {
-  constructor(message: string, public readonly data: any) {
+  constructor(
+    message: string,
+    public readonly data: any,
+  ) {
     super(message);
     this.name = "MCPServerError";
   }
@@ -118,10 +129,13 @@ function stableStringify(value: any): string {
     if (val && typeof val === "object" && !Array.isArray(val)) {
       return Object.keys(val)
         .sort()
-        .reduce((acc, key) => {
-          acc[key] = val[key];
-          return acc;
-        }, {} as Record<string, any>);
+        .reduce(
+          (acc, key) => {
+            acc[key] = val[key];
+            return acc;
+          },
+          {} as Record<string, any>,
+        );
     }
     return val;
   });
@@ -145,8 +159,10 @@ class ReplayStore {
 
   private async load() {
     try {
-      const module = await import("../runtime/replay");
-      const events = await module.replayEpisode(this.options.traceId, { dir: this.options.dir });
+      const replayModule = await import("../runtime/replay");
+      const events = await replayModule.replayEpisode(this.options.traceId, {
+        dir: this.options.dir,
+      });
       for (const event of events) {
         if (event.type !== "mcp.result") continue;
         const data = event.data as any;
@@ -220,7 +236,10 @@ class ReplayStore {
 class HttpMCPConnection implements MCPServerConnection {
   private nextId = 0;
 
-  constructor(private readonly config: MCPServerConfig & { url: string }, private readonly fetchImpl: typeof fetch) {}
+  constructor(
+    private readonly config: MCPServerConfig & { url: string },
+    private readonly fetchImpl: typeof fetch,
+  ) {}
 
   private async request(method: string, params: any = {}): Promise<any> {
     const id = `rpc-${++this.nextId}`;
@@ -332,8 +351,7 @@ class HttpMCPConnection implements MCPServerConnection {
             ok: true,
             data: result.data,
             cost: typeof result.cost === "number" ? result.cost : undefined,
-            latency_ms:
-              typeof result.latency_ms === "number" ? result.latency_ms : undefined,
+            latency_ms: typeof result.latency_ms === "number" ? result.latency_ms : undefined,
           } satisfies MCPTransportOk;
         }
         const errorDetail = result.error ?? result;
@@ -361,7 +379,9 @@ class HttpMCPConnection implements MCPServerConnection {
           ok: false,
           code: typeof detail.code === "string" ? detail.code : "mcp.server_error",
           message:
-            typeof detail.message === "string" ? detail.message : error.message ?? "MCP server error",
+            typeof detail.message === "string"
+              ? detail.message
+              : (error.message ?? "MCP server error"),
           retryable: typeof detail.retryable === "boolean" ? detail.retryable : undefined,
         } satisfies MCPTransportError;
       }
@@ -376,7 +396,10 @@ class HttpMCPConnection implements MCPServerConnection {
 
 class WebSocketMCPConnection implements MCPServerConnection {
   private socket: WebSocket | null = null;
-  private pending = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void }>();
+  private pending = new Map<
+    string,
+    { resolve: (value: any) => void; reject: (error: Error) => void }
+  >();
   private nextId = 0;
   private connecting: Promise<void> | null = null;
 
@@ -511,8 +534,7 @@ class WebSocketMCPConnection implements MCPServerConnection {
           ok: true,
           data: result.data,
           cost: typeof result.cost === "number" ? result.cost : undefined,
-          latency_ms:
-            typeof result.latency_ms === "number" ? result.latency_ms : undefined,
+          latency_ms: typeof result.latency_ms === "number" ? result.latency_ms : undefined,
         } satisfies MCPTransportOk;
       }
       const error = result.error ?? result;
@@ -561,7 +583,10 @@ class WebSocketMCPConnection implements MCPServerConnection {
 class StdioMCPConnection implements MCPServerConnection {
   private readonly proc: ChildProcessWithoutNullStreams;
   private readonly rl: ReturnType<typeof createInterface>;
-  private readonly pending = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void }>();
+  private readonly pending = new Map<
+    string,
+    { resolve: (value: any) => void; reject: (error: Error) => void }
+  >();
   private nextId = 0;
   private closed = false;
 
@@ -587,11 +612,7 @@ class StdioMCPConnection implements MCPServerConnection {
     this.proc.on("close", (code, signal) => {
       this.closed = true;
       const detail =
-        typeof code === "number"
-          ? ` (code ${code})`
-          : signal
-            ? ` (signal ${signal})`
-            : "";
+        typeof code === "number" ? ` (code ${code})` : signal ? ` (signal ${signal})` : "";
       this.rejectAll(new MCPConnectionError("process_exit", `MCP stdio server exited${detail}`));
     });
 
@@ -674,8 +695,7 @@ class StdioMCPConnection implements MCPServerConnection {
           ok: true,
           data: result.data,
           cost: typeof result.cost === "number" ? result.cost : undefined,
-          latency_ms:
-            typeof result.latency_ms === "number" ? result.latency_ms : undefined,
+          latency_ms: typeof result.latency_ms === "number" ? result.latency_ms : undefined,
         } satisfies MCPTransportOk;
       }
       const error = result.error ?? result;
@@ -758,7 +778,12 @@ class MCPClientImpl implements MCPClient {
     return this.resources(serverId);
   }
 
-  async invoke(serverId: string, tool: string, args: any, options?: MCPInvokeOptions): Promise<ToolResult> {
+  async invoke(
+    serverId: string,
+    tool: string,
+    args: any,
+    options?: MCPInvokeOptions,
+  ): Promise<ToolResult> {
     const connection = this.connections.get(serverId);
     if (!connection) {
       return {
@@ -879,7 +904,9 @@ export async function loadMCPRegistry(registryPath?: string): Promise<MCPRegistr
       cmd: typeof item.cmd === "string" ? item.cmd : undefined,
       args: Array.isArray(item.args) ? item.args.map((arg: any) => String(arg)) : undefined,
       env:
-        item.env && typeof item.env === "object" ? normaliseObject(item.env as Record<string, unknown>) : undefined,
+        item.env && typeof item.env === "object"
+          ? normaliseObject(item.env as Record<string, unknown>)
+          : undefined,
       default: Boolean(item.default),
     };
     servers.push(server);
@@ -925,7 +952,9 @@ export async function createMCPClient(options: MCPClientOptions = {}): Promise<M
 
   const replayTraceId = options.replayTraceId ?? process.env.AOS_REPLAY_TRACE_ID;
   const replayDir = options.replayDir ?? process.env.AOS_REPLAY_DIR;
-  const replay = replayTraceId ? new ReplayStore({ traceId: replayTraceId, dir: replayDir }) : undefined;
+  const replay = replayTraceId
+    ? new ReplayStore({ traceId: replayTraceId, dir: replayDir })
+    : undefined;
 
   return new MCPClientImpl(connections, defaultServer, replay);
 }
@@ -959,15 +988,21 @@ function buildReplayKey(serverId: string, toolName: string, args: unknown): stri
   return JSON.stringify({ server: serverId, tool: toolName, args });
 }
 
-function publishEvent(bus: EventBus | undefined, envelope: EventEnvelope): Promise<EventEnvelope | void> {
+type PartialEnvelope<T> = Omit<EventEnvelope<T>, "id" | "ts" | "version"> &
+  Partial<Pick<EventEnvelope<T>, "id" | "ts" | "version">>;
+
+function publishEvent<T>(
+  bus: EventBus | undefined,
+  envelope: PartialEnvelope<T>,
+): Promise<EventEnvelope<T> | void> {
   if (!bus) {
     return Promise.resolve();
   }
-  const enriched: EventEnvelope = {
-    id: randomUUID(),
-    ts: new Date().toISOString(),
-    version: 1,
+  const enriched: EventEnvelope<T> = {
     ...envelope,
+    id: envelope.id ?? randomUUID(),
+    ts: envelope.ts ?? new Date().toISOString(),
+    version: envelope.version ?? 1,
   };
   return bus.publish(enriched);
 }

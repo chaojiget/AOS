@@ -1,101 +1,86 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import "reflect-metadata";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NextApiRequest, NextApiResponse } from "next";
 import { describe, expect, it } from "vitest";
+import { Test } from "@nestjs/testing";
+import type { INestApplication } from "@nestjs/common";
 
-import analyzeHandler from "../../pages/api/skills/analyze";
-import candidatesHandler from "../../pages/api/skills/candidates";
+import { AppModule } from "../../servers/api/src/app.module";
 import { resetSkillsStore } from "../../packages/skills/storage";
+import { SkillsController } from "../../servers/api/src/skills/skills.controller";
 
-interface MockResponseState {
-  statusCode: number;
-  body?: any;
-}
-
-function createMockResponse(): { res: NextApiResponse; state: MockResponseState } {
-  const state: MockResponseState = { statusCode: 0 };
-  const res = {
-    status(code: number) {
-      state.statusCode = code;
-      return this;
-    },
-    json(payload: any) {
-      state.body = payload;
-      return this;
-    },
-    setHeader() {
-      return this;
-    },
-  } as unknown as NextApiResponse;
-  return { res, state };
-}
-
-describe("/api/skills/analyze", () => {
+describe("skills API", () => {
   const originalEnv = { ...process.env };
 
-  async function withTempFiles(fn: (dir: string) => Promise<void>): Promise<void> {
-    const dir = await mkdtemp(join(tmpdir(), "skills-analyze-"));
-    process.env.AOS_EVENTS_PATH = join(dir, "events.json");
-    process.env.AOS_SKILLS_PATH = join(dir, "skills.json");
+  it("analyzes tool events and exposes candidate skills", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "aos-skills-api-"));
+    const eventsPath = join(tmpDir, "events.json");
+    const skillsPath = join(tmpDir, "skills.json");
+    const dbPath = join(tmpDir, "db.sqlite");
+    const episodesDir = join(tmpDir, "episodes");
+
+    process.env.AOS_EVENTS_PATH = eventsPath;
+    process.env.AOS_SKILLS_PATH = skillsPath;
+    process.env.AOS_DB_PATH = dbPath;
+    process.env.AOS_EPISODES_DIR = episodesDir;
+    process.env.AOS_API_KEY = "";
+
     await resetSkillsStore({ skills: [], persist: true });
+
+    const events = [
+      {
+        id: "evt-1",
+        trace_id: "trace-1",
+        tool_name: "md.render",
+        timestamp: "2024-01-01T00:00:00.000Z",
+        call_id: "call-1",
+        success: true,
+      },
+      {
+        id: "evt-2",
+        trace_id: "trace-2",
+        tool_name: "md.render",
+        timestamp: "2024-01-01T00:01:00.000Z",
+        call_id: "call-2",
+        success: true,
+      },
+      {
+        id: "evt-3",
+        trace_id: "trace-3",
+        tool_name: "md.render",
+        timestamp: "2024-01-01T00:02:00.000Z",
+        call_id: "call-3",
+        success: false,
+      },
+    ];
+
+    await writeFile(eventsPath, JSON.stringify(events, null, 2), "utf8");
+
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const app: INestApplication = moduleRef.createNestApplication();
+    app.setGlobalPrefix("api");
+    await app.init();
+
+    const skillsController = app.get(SkillsController);
+
     try {
-      await fn(dir);
+      const analyzeRes = await skillsController.analyzeSkills();
+
+      expect(analyzeRes.ok).toBe(true);
+      expect(analyzeRes.analyzed).toBe(3);
+      expect(Array.isArray(analyzeRes.candidates)).toBe(true);
+      expect(analyzeRes.candidates[0]?.id).toBe("md.render");
+      expect(analyzeRes.candidates[0]?.used_count).toBe(3);
+
+      const candidatesRes = await skillsController.listCandidates();
+      expect(Array.isArray(candidatesRes.candidates)).toBe(true);
+      expect(candidatesRes.candidates[0]?.review_status).toBe("pending_review");
     } finally {
+      await app.close();
+      await rm(tmpDir, { recursive: true, force: true });
       await resetSkillsStore();
       process.env = { ...originalEnv };
     }
-  }
-
-  it("triggers the skills pipeline and exposes candidate skills", async () => {
-    await withTempFiles(async () => {
-      const events = [
-        {
-          id: "evt-1",
-          trace_id: "trace-1",
-          tool_name: "md.render",
-          timestamp: "2024-01-01T00:00:00.000Z",
-          call_id: "call-1",
-          success: true,
-        },
-        {
-          id: "evt-2",
-          trace_id: "trace-2",
-          tool_name: "md.render",
-          timestamp: "2024-01-01T00:01:00.000Z",
-          call_id: "call-2",
-          success: true,
-        },
-        {
-          id: "evt-3",
-          trace_id: "trace-3",
-          tool_name: "md.render",
-          timestamp: "2024-01-01T00:02:00.000Z",
-          call_id: "call-3",
-          success: false,
-        },
-      ];
-
-      await writeFile(process.env.AOS_EVENTS_PATH!, JSON.stringify(events, null, 2), "utf8");
-
-      const req = { method: "POST" } as NextApiRequest;
-      const { res, state } = createMockResponse();
-
-      await analyzeHandler(req, res);
-
-      expect(state.statusCode).toBe(202);
-      expect(state.body?.ok).toBe(true);
-      expect(Array.isArray(state.body?.candidates)).toBe(true);
-      expect(state.body?.candidates?.[0]?.id).toBe("md.render");
-      expect(state.body?.candidates?.[0]?.used_count).toBe(3);
-
-      const candidatesReq = { method: "GET" } as NextApiRequest;
-      const { res: resCandidates, state: stateCandidates } = createMockResponse();
-      await candidatesHandler(candidatesReq, resCandidates);
-
-      expect(stateCandidates.statusCode).toBe(200);
-      expect(Array.isArray(stateCandidates.body?.candidates)).toBe(true);
-      expect(stateCandidates.body?.candidates?.[0]?.review_status).toBe("pending_review");
-    });
   });
 });

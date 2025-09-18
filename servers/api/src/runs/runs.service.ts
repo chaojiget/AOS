@@ -17,6 +17,11 @@ import { runs, runEvents } from "../database/schema";
 import type { RunKernelFactory } from "./run-kernel.factory";
 import { RUN_KERNEL_FACTORY } from "./run-kernel.factory";
 
+type RunInsertRow = typeof runs.$inferInsert;
+type RunRowType = typeof runs.$inferSelect;
+type RunPatch = Partial<Omit<RunRowType, "id">>;
+type RunEventInsertRow = typeof runEvents.$inferInsert;
+
 export type RunStatus = "running" | "completed" | "awaiting_input" | "no_plan" | "failed";
 
 export interface RunSummary {
@@ -105,22 +110,24 @@ export class RunsService {
     const runId = request.traceId && request.traceId.length > 0 ? request.traceId : randomUUID();
     const now = new Date();
 
-    await this.database.db
-      .insert(runs)
-      .values({
-        id: runId,
-        status: "running",
-        task: request.message || undefined,
-        input: request.message || undefined,
-        reason: null,
-        finalResult: null,
-        startedAt: now,
-        createdAt: now,
-        updatedAt: now,
-        stepCount: 0,
-      })
-      .onConflictDoNothing()
-      .run();
+    const runRecord: RunInsertRow = {
+      id: runId,
+      status: "running" as const,
+      task: request.message || undefined,
+      input: request.message || undefined,
+      reason: null,
+      finalResult: null,
+      startedAt: now,
+      createdAt: now,
+      updatedAt: now,
+      stepCount: 0,
+    };
+
+    if (this.database.isMemoryMode()) {
+      this.database.insertRun(runRecord);
+    } else {
+      await this.database.db!.insert(runs).values(runRecord).onConflictDoNothing().run();
+    }
 
     this.recordSyntheticEvent(runId, "run.started", { runId, message: request.message }).catch(
       (error) => {
@@ -139,7 +146,9 @@ export class RunsService {
   }
 
   async getRun(runId: string): Promise<RunSummary> {
-    const row = this.database.db.select().from(runs).where(eq(runs.id, runId)).get();
+    const row = this.database.isMemoryMode()
+      ? this.database.getRun(runId)
+      : this.database.db!.select().from(runs).where(eq(runs.id, runId)).get();
     if (!row) {
       throw new NotFoundException(`run ${runId} not found`);
     }
@@ -147,17 +156,18 @@ export class RunsService {
   }
 
   async getRunEvents(runId: string, since?: number): Promise<RunEventDto[]> {
-    const filter =
-      typeof since === "number" && Number.isFinite(since)
-        ? and(eq(runEvents.runId, runId), gt(runEvents.ts, since))
-        : eq(runEvents.runId, runId);
-
-    const rows = this.database.db
-      .select()
-      .from(runEvents)
-      .where(filter)
-      .orderBy(runEvents.ts)
-      .all();
+    const rows = this.database.isMemoryMode()
+      ? this.database.listRunEvents(runId, since)
+      : this.database
+          .db!.select()
+          .from(runEvents)
+          .where(
+            typeof since === "number" && Number.isFinite(since)
+              ? and(eq(runEvents.runId, runId), gt(runEvents.ts, new Date(since)))
+              : eq(runEvents.runId, runId),
+          )
+          .orderBy(runEvents.ts)
+          .all();
 
     return rows.map((row) => this.mapEvent(row));
   }
@@ -250,18 +260,20 @@ export class RunsService {
     const finishedAt = new Date();
     const finalJson = result.final != null ? JSON.stringify(result.final) : null;
 
-    await this.database.db
-      .update(runs)
-      .set({
-        status,
-        reason: result.reason,
-        finalResult: finalJson,
-        finishedAt,
-        updatedAt: finishedAt,
-        stepCount: result.actions.length,
-      })
-      .where(eq(runs.id, runId))
-      .run();
+    const completionPatch: RunPatch = {
+      status,
+      reason: result.reason,
+      finalResult: finalJson,
+      finishedAt,
+      updatedAt: finishedAt,
+      stepCount: result.actions.length,
+    };
+
+    if (this.database.isMemoryMode()) {
+      this.database.updateRun(runId, completionPatch);
+    } else {
+      await this.database.db!.update(runs).set(completionPatch).where(eq(runs.id, runId)).run();
+    }
 
     await this.recordSyntheticEvent(runId, "run.finished", {
       runId,
@@ -277,16 +289,18 @@ export class RunsService {
   private async handleRunFailure(runId: string, error: unknown): Promise<void> {
     const finishedAt = new Date();
     const message = error instanceof Error ? error.message : "unknown error";
-    await this.database.db
-      .update(runs)
-      .set({
-        status: "failed",
-        reason: message,
-        finishedAt,
-        updatedAt: finishedAt,
-      })
-      .where(eq(runs.id, runId))
-      .run();
+    const failurePatch: RunPatch = {
+      status: "failed",
+      reason: message,
+      finishedAt,
+      updatedAt: finishedAt,
+    };
+
+    if (this.database.isMemoryMode()) {
+      this.database.updateRun(runId, failurePatch);
+    } else {
+      await this.database.db!.update(runs).set(failurePatch).where(eq(runs.id, runId)).run();
+    }
 
     await this.recordSyntheticEvent(runId, "run.failed", {
       runId,
@@ -323,29 +337,32 @@ export class RunsService {
     const timestamp = envelope.ts ? new Date(envelope.ts) : new Date();
     const payloadJson = envelope.data != null ? JSON.stringify(envelope.data) : null;
 
-    await this.database.db
-      .insert(runEvents)
-      .values({
-        id: envelope.id,
-        runId,
-        ts: Number.isNaN(timestamp.getTime()) ? new Date() : timestamp,
-        eventType: envelope.type,
-        topic: envelope.topic ?? null,
-        level: envelope.level ?? null,
-        payload: payloadJson,
-        spanId: envelope.span_id ?? null,
-        parentSpanId: envelope.parent_span_id ?? null,
-        version: envelope.version ?? null,
-        lineNumber: envelope.ln ?? null,
-      })
-      .onConflictDoNothing()
-      .run();
+    const eventRecord: RunEventInsertRow = {
+      id: envelope.id,
+      runId,
+      ts: Number.isNaN(timestamp.getTime()) ? new Date() : timestamp,
+      eventType: envelope.type,
+      topic: envelope.topic ?? null,
+      level: envelope.level ?? null,
+      payload: payloadJson,
+      spanId: envelope.span_id ?? null,
+      parentSpanId: envelope.parent_span_id ?? null,
+      version: envelope.version ?? null,
+      lineNumber: envelope.ln ?? null,
+    };
 
-    await this.database.db
-      .update(runs)
-      .set({ updatedAt: new Date() })
-      .where(eq(runs.id, runId))
-      .run();
+    if (this.database.isMemoryMode()) {
+      this.database.insertRunEvent(eventRecord);
+      this.database.updateRun(runId, { updatedAt: new Date() });
+    } else {
+      await this.database.db!.insert(runEvents).values(eventRecord).onConflictDoNothing().run();
+
+      await this.database
+        .db!.update(runs)
+        .set({ updatedAt: new Date() })
+        .where(eq(runs.id, runId))
+        .run();
+    }
 
     const streamEvent: StreamEvent = {
       type: envelope.type,

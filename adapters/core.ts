@@ -200,14 +200,14 @@ export function createDefaultToolInvoker(options: DefaultToolInvokerOptions = {}
   const enableRemote = options.enableRemoteMcp ?? true;
 
   const mcpClientPromise: Promise<MCPClient | null> = enableRemote
-    ? options.mcpClientPromise ??
+    ? (options.mcpClientPromise ??
       createMCPClient()
         .then((client) => client)
         .catch((error) => {
           const message = error instanceof Error ? error.message : String(error);
           console.warn(`failed to initialise MCP client: ${message}`);
           return null;
-        })
+        }))
     : Promise.resolve(null);
 
   return async (call: ToolCall, ctx: ToolContext) => {
@@ -254,9 +254,10 @@ async function invokeLocalTool(call: ToolCall): Promise<ToolResult> {
   }
 }
 
-function resolveMcpRoute(client: MCPClient, toolName: string):
-  | { serverId: string; toolName: string }
-  | null {
+function resolveMcpRoute(
+  client: MCPClient,
+  toolName: string,
+): { serverId: string; toolName: string } | null {
   const trimmed = toolName.trim();
   if (!trimmed) {
     return null;
@@ -323,10 +324,7 @@ class ChatKernel implements AgentKernel {
 
     const filteredHistory = baseHistory.filter(
       (msg) =>
-        !(
-          msg.role === DEFAULT_SYSTEM_PROMPT.role &&
-          msg.content === DEFAULT_SYSTEM_PROMPT.content
-        ),
+        !(msg.role === DEFAULT_SYSTEM_PROMPT.role && msg.content === DEFAULT_SYSTEM_PROMPT.content),
     );
 
     this.history = [DEFAULT_SYSTEM_PROMPT, ...filteredHistory];
@@ -505,29 +503,20 @@ class ChatKernel implements AgentKernel {
 
     if (asks.length > 0) {
       notes.push(
-        `等待用户补充信息：${asks
-          .map((ask) => ask.ask?.question ?? ask.step.id)
-          .join("; ")}`,
+        `等待用户补充信息：${asks.map((ask) => ask.ask?.question ?? ask.step.id).join("; ")}`,
       );
     }
 
     for (const failure of failures) {
-      const message = failure.result.ok
-        ? ""
-        : failure.result.message ?? "unknown error";
+      const message = failure.result.ok ? "" : (failure.result.message ?? "unknown error");
       notes.push(`步骤 ${failure.step.id} 失败：${message}`);
     }
 
     const previousFailures = actions.filter(
-      (action) =>
-        this.stepRevision.get(action.step.id) !== revision && !action.result.ok,
+      (action) => this.stepRevision.get(action.step.id) !== revision && !action.result.ok,
     );
     if (previousFailures.length > 0) {
-      notes.push(
-        `历史失败步骤：${previousFailures
-          .map((item) => item.step.id)
-          .join(", ")}`,
-      );
+      notes.push(`历史失败步骤：${previousFailures.map((item) => item.step.id).join(", ")}`);
     }
 
     const score = total > 0 ? successCount / total : 0;
@@ -568,8 +557,7 @@ class ChatKernel implements AgentKernel {
       .filter(
         (msg) =>
           !(
-            msg.role === DEFAULT_SYSTEM_PROMPT.role &&
-            msg.content === DEFAULT_SYSTEM_PROMPT.content
+            msg.role === DEFAULT_SYSTEM_PROMPT.role && msg.content === DEFAULT_SYSTEM_PROMPT.content
           ),
       )
       .map((msg) => {
@@ -610,7 +598,7 @@ class ChatKernel implements AgentKernel {
         : [];
     const reason = typeof parsed?.reason === "string" ? parsed.reason : undefined;
     const notes = Array.isArray(parsed?.notes)
-      ? parsed.notes.filter((item) => typeof item === "string")
+      ? (parsed.notes as unknown[]).filter((note): note is string => typeof note === "string")
       : undefined;
 
     const steps: PlanStep[] = [];
@@ -636,7 +624,8 @@ class ChatKernel implements AgentKernel {
       ) {
         (args as any).messages = combinedHistory;
       }
-      const description = typeof (item as any).description === "string" ? (item as any).description : undefined;
+      const description =
+        typeof (item as any).description === "string" ? (item as any).description : undefined;
       steps.push({ id, op, args, description });
     }
 
@@ -682,7 +671,7 @@ class ChatKernel implements AgentKernel {
     const question =
       typeof (args as any)?.question === "string"
         ? (args as any).question
-        : this.options.message ?? "请补充更多信息";
+        : (this.options.message ?? "请补充更多信息");
     const detail = (args as any)?.detail;
     return { question, origin_step: step.id, detail };
   }
@@ -704,7 +693,12 @@ class ChatKernel implements AgentKernel {
     const mcpSpec = this.parseMcpOperation(op);
     if (mcpSpec) {
       const args = step.args ?? {};
-      if (args && typeof args === "object" && "server" in (args as any) && "tool" in (args as any)) {
+      if (
+        args &&
+        typeof args === "object" &&
+        "server" in (args as any) &&
+        "tool" in (args as any)
+      ) {
         return { name: "mcp.invoke", args } satisfies ToolCall;
       }
       return {

@@ -21,7 +21,7 @@ export class McpService {
   constructor(private readonly database: DatabaseService) {}
 
   async register(payload: RegisterMcpPayload) {
-    const now = Date.now();
+    const now = new Date();
     const id = payload.id?.trim() || randomUUID();
     const record = {
       id,
@@ -35,24 +35,30 @@ export class McpService {
       updatedAt: now,
     } satisfies typeof mcpConfigs.$inferInsert;
 
-    await this.database.db
-      .insert(mcpConfigs)
-      .values(record)
-      .onConflictDoUpdate({
-        target: mcpConfigs.id,
-        set: {
-          name: record.name,
-          transport: record.transport,
-          baseUrl: record.baseUrl,
-          auth: record.auth,
-          enabled: record.enabled,
-          metadata: record.metadata,
-          updatedAt: record.updatedAt,
-        },
-      })
-      .run();
+    if (this.database.isMemoryMode()) {
+      this.database.upsertMcpConfig(record);
+    } else {
+      await this.database
+        .db!.insert(mcpConfigs)
+        .values(record)
+        .onConflictDoUpdate({
+          target: mcpConfigs.id,
+          set: {
+            name: record.name,
+            transport: record.transport,
+            baseUrl: record.baseUrl,
+            auth: record.auth,
+            enabled: record.enabled,
+            metadata: record.metadata,
+            updatedAt: record.updatedAt,
+          },
+        })
+        .run();
+    }
 
-    const stored = this.database.db.select().from(mcpConfigs).where(eq(mcpConfigs.id, id)).get();
+    const stored = this.database.isMemoryMode()
+      ? this.database.getMcpConfig(id)
+      : this.database.db!.select().from(mcpConfigs).where(eq(mcpConfigs.id, id)).get();
 
     if (!stored) {
       return null;

@@ -142,12 +142,18 @@ describe("createDefaultToolInvoker with MCP integration", () => {
         const payload = typeof init?.body === "string" ? JSON.parse(init.body) : null;
         fetchCalls.push({ url: String(url), body: payload });
         if (init?.method === "POST") {
-          return jsonResponse({ ok: true, data: { source: "default", args: payload?.args ?? null } });
+          return jsonResponse({
+            ok: true,
+            data: { source: "default", args: payload?.args ?? null },
+          });
         }
         return jsonResponse({ tools: [] });
       };
 
-      const result = await invoker({ name: "ping", args: { hello: "world" } }, { trace_id: "trace-default" });
+      const result = await invoker(
+        { name: "ping", args: { hello: "world" } },
+        { trace_id: "trace-default" },
+      );
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.data).toEqual({ source: "default", args: { hello: "world" } });
@@ -163,7 +169,10 @@ describe("createDefaultToolInvoker with MCP integration", () => {
     clearMcpEnv();
     const { createDefaultToolInvoker } = await import("../adapters/core");
     const invoker = createDefaultToolInvoker();
-    const result = await invoker({ name: "echo", args: { foo: "bar" } }, { trace_id: "trace-local" });
+    const result = await invoker(
+      { name: "echo", args: { foo: "bar" } },
+      { trace_id: "trace-local" },
+    );
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data).toEqual({ foo: "bar" });
@@ -219,7 +228,10 @@ describe("createDefaultToolInvoker with MCP integration", () => {
         return jsonResponse({ tools: [] });
       };
 
-      const result = await invoker({ name: "echo", args: { hi: "there" } }, { trace_id: "trace-fallback" });
+      const result = await invoker(
+        { name: "echo", args: { hi: "there" } },
+        { trace_id: "trace-fallback" },
+      );
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.data).toEqual({ hi: "there" });
@@ -229,4 +241,3 @@ describe("createDefaultToolInvoker with MCP integration", () => {
     }
   });
 });
-

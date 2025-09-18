@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test.describe("Chat stream interactions", () => {
   test("replays SSE events and supports filtering", async ({ page }) => {
-    await page.route("**/api/run", async (route) => {
+    await page.route("**/api/run", async (route: any) => {
       await route.fulfill({
         status: 200,
         headers: { "content-type": "application/json" },
@@ -75,7 +75,7 @@ test.describe("Chat stream interactions", () => {
     const emitEvents = async () => {
       const now = new Date().toISOString();
       await page.evaluate(
-        ([timestamp]) => {
+        ([timestamp]: [string]) => {
           const control = (window as any).__AOS_STREAM_CONTROL__;
           control.emit({
             id: "evt-plan",
@@ -151,7 +151,7 @@ test.describe("Chat stream interactions", () => {
     await expect(confirmationModal).toBeHidden();
 
     await page.evaluate(
-      ([timestamp]) => {
+      ([timestamp]: [string]) => {
         const control = (window as any).__AOS_STREAM_CONTROL__;
         control.emit({
           id: "evt-final",

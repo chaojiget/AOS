@@ -24,7 +24,8 @@ interface AbTestRecord {
 const DEFAULT_MIN_USAGE = Number(process.env.AOS_SKILL_EVAL_MIN_USAGE ?? 3);
 const DEFAULT_MIN_WIN_RATE = Number(process.env.AOS_SKILL_EVAL_MIN_WIN ?? 0.6);
 const EVALS_PATH = process.env.AOS_EVALS_PATH ?? join(process.cwd(), "runtime", "evals.json");
-const AB_TESTS_PATH = process.env.AOS_AB_TESTS_PATH ?? join(process.cwd(), "runtime", "ab_tests.json");
+const AB_TESTS_PATH =
+  process.env.AOS_AB_TESTS_PATH ?? join(process.cwd(), "runtime", "ab_tests.json");
 
 async function readRecords<T>(path: string): Promise<T[]> {
   try {
@@ -66,7 +67,10 @@ async function recordEvaluation(
     timestamp,
     used_count: skill.used_count,
     win_rate: skill.win_rate,
-    status: skill.win_rate >= thresholds.minWinRate && skill.used_count >= thresholds.minUsage ? "passed" : "failed",
+    status:
+      skill.win_rate >= thresholds.minWinRate && skill.used_count >= thresholds.minUsage
+        ? "passed"
+        : "failed",
     thresholds: { min_usage: thresholds.minUsage, min_win_rate: thresholds.minWinRate },
   };
   await appendRecord<EvaluationRecord>(EVALS_PATH, evaluation);

@@ -55,7 +55,9 @@ const SkillsPage: NextPage = () => {
       setState({ isLoading: false, error: null, overview });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "An unexpected error occurred while loading skills";
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred while loading skills";
       setState({ isLoading: false, error: message, overview: emptyOverview });
     }
   }, []);
@@ -105,7 +107,11 @@ const SkillsPage: NextPage = () => {
     const usageLabel = `${skill.usedCount} ${skill.usedCount === 1 ? "use" : "uses"}`;
     const reviewLabel = skill.reviewStatus.replace("_", " ");
     return (
-      <li key={skill.id} className={`${insetSurfaceClass} flex flex-col gap-3 p-5`} data-testid="skill-card">
+      <li
+        key={skill.id}
+        className={`${insetSurfaceClass} flex flex-col gap-3 p-5`}
+        data-testid="skill-card"
+      >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
             <h2 className={`${headingClass} text-base`}>{skill.name}</h2>
@@ -166,7 +172,9 @@ const SkillsPage: NextPage = () => {
         {skills.length === 0 ? (
           <p className={subtleTextClass}>{options.emptyLabel}</p>
         ) : (
-          <ul className="flex flex-col gap-4">{skills.map((skill) => renderSkillCard(skill, options))}</ul>
+          <ul className="flex flex-col gap-4">
+            {skills.map((skill) => renderSkillCard(skill, options))}
+          </ul>
         )}
       </section>
     );
@@ -223,7 +231,8 @@ const SkillsPage: NextPage = () => {
               {renderSection("Candidate skills", state.overview.candidates, {
                 showToggle: false,
                 description: "Skills awaiting manual review before rollout.",
-                emptyLabel: "No candidate skills available. Trigger an analysis run to populate this list.",
+                emptyLabel:
+                  "No candidate skills available. Trigger an analysis run to populate this list.",
               })}
               {renderSection("Enabled skills", state.overview.enabled, {
                 showToggle: true,

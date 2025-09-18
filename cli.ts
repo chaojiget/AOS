@@ -130,7 +130,10 @@ function resolveCliStreams(options: RunCliOptions): CliStreams {
   return { stdout, stderr };
 }
 
-async function handleMcpCommand(args: string[], context: { streams: CliStreams; cwd: string }): Promise<number> {
+async function handleMcpCommand(
+  args: string[],
+  context: { streams: CliStreams; cwd: string },
+): Promise<number> {
   const [subcommand, ...rest] = args;
   if (!subcommand || subcommand === "help") {
     context.streams.stdout.write("Usage: mcp add --transport <type> <id> <url> [--default]\n");
@@ -143,7 +146,7 @@ async function handleMcpCommand(args: string[], context: { streams: CliStreams; 
   }
 
   const parsed = parseMcpAddArgs(rest);
-  if (parsed.error) {
+  if ("error" in parsed) {
     context.streams.stderr.write(`${parsed.error}\n`);
     return 1;
   }
@@ -157,7 +160,9 @@ async function handleMcpCommand(args: string[], context: { streams: CliStreams; 
   });
 
   if (result.action === "created") {
-    context.streams.stdout.write(`已添加 MCP 端点 "${parsed.id}" (transport: ${parsed.transport})。\n`);
+    context.streams.stdout.write(
+      `已添加 MCP 端点 "${parsed.id}" (transport: ${parsed.transport})。\n`,
+    );
   } else if (result.action === "updated") {
     context.streams.stdout.write(`已更新 MCP 端点 "${parsed.id}" 的配置。\n`);
   } else {
