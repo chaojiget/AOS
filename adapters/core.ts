@@ -313,6 +313,8 @@ class ChatKernel implements AgentKernel {
   private actions: ActionOutcome[] = [];
   private readonly history: ChatMessage[];
   private readonly stepRevision = new Map<string, number>();
+  private readonly plannerInstruction =
+    "你是一名善于拆解任务的规划助手，需要把复杂目标分解为一系列可以调用工具或 MCP 能力的步骤。";
 
   constructor(private readonly options: ChatKernelOptions) {
     const baseHistory = Array.isArray(options.history)
@@ -345,133 +347,59 @@ class ChatKernel implements AgentKernel {
         ? [{ role: "user", content: this.options.message } satisfies ChatMessage]
         : []),
     ];
-
-    const plannerCall: ToolCall = {
-      name: "planner.plan",
-      args: {
-        goal: this.options.message ?? "",
-        history: combinedHistory,
-        revision: this.planCount,
-      },
+    const revision = this.planCount;
+    const buildFallbackPlan = (notes?: string[]): Plan => {
+      const fallbackStep: PlanStep = {
+        id: `${this.options.traceId}-r${revision}-s1`,
+        op: "llm.chat",
+        args: { messages: combinedHistory },
+        description: "fallback chat response",
+      } satisfies PlanStep;
+      this.stepRevision.set(fallbackStep.id, revision);
+      return {
+        revision,
+        reason: "fallback",
+        notes: notes && notes.length ? notes : undefined,
+        steps: [fallbackStep],
+      } satisfies Plan;
     };
 
-    const plannerContext = {
-      trace_id: this.options.traceId,
-      span_id: `plan-${this.planCount}-planner`,
-    };
+    const planMessages = this.buildPlanningMessages(combinedHistory);
 
     let plannerResult: ToolResult | undefined;
     try {
-      plannerResult = await this.options.toolInvoker(plannerCall, plannerContext);
+      plannerResult = await this.options.toolInvoker(
+        { name: "llm.chat", args: { messages: planMessages, temperature: 0 } },
+        { trace_id: this.options.traceId, span_id: `plan-${revision}` },
+      );
     } catch (err) {
-      plannerResult = {
-        ok: false,
-        code: "planner.invoke_failed",
-        message: err instanceof Error ? err.message : "planner invocation failed",
-      } satisfies ToolError;
+      const message = err instanceof Error ? err.message : String(err);
+      return buildFallbackPlan([`plan invocation failed: ${message}`]);
     }
 
-    const ensurePlannerData = (result: ToolResult | undefined): any => {
-      if (!result) return undefined;
-      if (!result.ok) {
-        return { error: result.message };
-      }
-
-      const data = result.data;
-      if (typeof data === "string") {
-        try {
-          return JSON.parse(data);
-        } catch {
-          return { steps: [], notes: ["planner returned non-JSON string"] };
-        }
-      }
-      return data;
-    };
-
-    const plannerData = ensurePlannerData(plannerResult);
-
-    const plannerStepsSource = Array.isArray(plannerData?.steps)
-      ? plannerData.steps
-      : Array.isArray(plannerData)
-        ? plannerData
-        : Array.isArray(plannerData?.plan?.steps)
-          ? plannerData.plan.steps
-          : [];
-
-    const steps: PlanStep[] = [];
-    for (let index = 0; index < plannerStepsSource.length; index += 1) {
-      const raw = plannerStepsSource[index];
-      if (!raw || typeof raw.op !== "string" || !raw.op.trim()) {
-        continue;
-      }
-
-      const args =
-        raw.args && typeof raw.args === "object" ? { ...raw.args } : {};
-
-      if (
-        raw.op === "llm.chat" &&
-        !Array.isArray(args.messages) &&
-        typeof args.prompt !== "string"
-      ) {
-        args.messages = combinedHistory;
-      }
-
-      const stepId =
-        typeof raw.id === "string" && raw.id.trim()
-          ? raw.id
-          : `${this.options.traceId}-r${this.planCount}-s${index + 1}`;
-
-      const step: PlanStep = {
-        id: stepId,
-        op: raw.op,
-        args,
-        ...(typeof raw.description === "string" && raw.description.trim()
-          ? { description: raw.description }
-          : {}),
-      } satisfies PlanStep;
-
-      this.stepRevision.set(step.id, this.planCount);
-      steps.push(step);
+    if (!plannerResult?.ok) {
+      const note =
+        plannerResult?.message && typeof plannerResult.message === "string"
+          ? plannerResult.message
+          : "plan invocation error";
+      return buildFallbackPlan([note]);
     }
 
-    if (steps.length > 0) {
-      const planNotes = Array.isArray(plannerData?.notes)
-        ? plannerData.notes.filter((note: unknown): note is string =>
-            typeof note === "string" && note.trim() !== "",
-          )
-        : undefined;
-
-      return {
-        revision: this.planCount,
-        reason:
-          typeof plannerData?.reason === "string"
-            ? plannerData.reason
-            : this.planCount === 1
-              ? "initial"
-              : "retry",
-        notes: planNotes,
-        steps,
-      } satisfies Plan;
+    const parsed = this.parsePlanResult(plannerResult.data, revision, combinedHistory);
+    if (!parsed.steps.length) {
+      return buildFallbackPlan(parsed.notes);
     }
 
-    const fallbackStep: PlanStep = {
-      id: `${this.options.traceId}-r${this.planCount}-s1`,
-      op: "llm.chat",
-      args: { messages: combinedHistory },
-      description: "fallback chat response",
-    } satisfies PlanStep;
-    this.stepRevision.set(fallbackStep.id, this.planCount);
-
-    const fallbackNotes: string[] = [];
-    if (plannerResult && !plannerResult.ok) {
-      fallbackNotes.push(`planner failed: ${plannerResult.message}`);
-    }
+    const steps = parsed.steps.map((step) => {
+      this.stepRevision.set(step.id, revision);
+      return step;
+    });
 
     return {
-      revision: this.planCount,
-      reason: "fallback",
-      notes: fallbackNotes.length ? fallbackNotes : undefined,
-      steps: [fallbackStep],
+      revision,
+      reason: parsed.reason ?? (revision === 1 ? "initial" : "retry"),
+      notes: parsed.notes,
+      steps,
     } satisfies Plan;
   }
 
@@ -486,15 +414,12 @@ class ChatKernel implements AgentKernel {
       return outcome;
     };
 
-    if (step.op === "ask.user" || step.op === "ask") {
-      const question =
-        typeof (step.args as any)?.question === "string"
-          ? (step.args as any).question
-          : "请补充更多信息";
+    if (this.isAskStep(step) || step.op === "ask.user" || step.op === "ask") {
+      const askData = this.buildAsk(step);
       const ask: AskRequest = {
-        question,
-        origin_step: step.id,
-        detail: (step.args as any)?.detail,
+        question: askData.question || "请补充更多信息",
+        origin_step: askData.origin_step,
+        detail: askData.detail,
       } satisfies AskRequest;
       return makeAskOutcome(ask);
     }
@@ -506,35 +431,7 @@ class ChatKernel implements AgentKernel {
       ...(revision ? { metadata: { revision } } : {}),
     };
 
-    const resolveCall = (): ToolCall | null => {
-      if (!step.op || typeof step.op !== "string") {
-        return null;
-      }
-
-      if (step.op.startsWith("mcp")) {
-        const normalised = step.op.replace(/^mcp(:\/\/)?/, "");
-        const separator = normalised.includes("/") ? "/" : ".";
-        const [server, tool] = normalised.split(separator, 2);
-        if (!server || !tool) {
-          return null;
-        }
-        return {
-          name: "mcp.invoke",
-          args: { server, tool, input: step.args },
-        } satisfies ToolCall;
-      }
-
-      if (step.op.startsWith("local.")) {
-        return {
-          name: step.op.slice("local.".length),
-          args: step.args,
-        } satisfies ToolCall;
-      }
-
-      return { name: step.op, args: step.args } satisfies ToolCall;
-    };
-
-    const call = resolveCall();
+    const call = this.resolveToolCall(step);
 
     if (!call) {
       const result: ToolError = {
@@ -664,6 +561,210 @@ class ChatKernel implements AgentKernel {
       return { text: JSON.stringify(data), raw: data };
     }
     return { error: latest.result };
+  }
+
+  private buildPlanningMessages(combinedHistory: ChatMessage[]): ChatMessage[] {
+    const conversation = combinedHistory
+      .filter(
+        (msg) =>
+          !(
+            msg.role === DEFAULT_SYSTEM_PROMPT.role &&
+            msg.content === DEFAULT_SYSTEM_PROMPT.content
+          ),
+      )
+      .map((msg) => {
+        const speaker = msg.role === "user" ? "用户" : msg.role === "assistant" ? "助手" : msg.role;
+        return `${speaker}: ${msg.content}`;
+      })
+      .join("\n");
+
+    const latestDemand = this.options.message?.trim() ?? "";
+    const promptSections = [
+      conversation ? `以下是最近的对话上下文：\n${conversation}` : null,
+      latestDemand ? `当前用户需求：${latestDemand}` : null,
+      "请针对需求生成一个结构化的执行计划，列出 1-5 个步骤。每个步骤包含 id、op、args、description 字段。",
+      "支持的 op 可以是 llm.chat、mcp-core.*、mcp-memory.* 或其他注册工具。输出必须是 JSON 对象或数组，必要时可包含 reason、notes。",
+    ].filter(Boolean);
+
+    return [
+      DEFAULT_SYSTEM_PROMPT,
+      { role: "system", content: this.plannerInstruction },
+      { role: "user", content: promptSections.join("\n\n") },
+    ];
+  }
+
+  private parsePlanResult(
+    data: any,
+    revision: number,
+    combinedHistory: ChatMessage[],
+  ): { steps: PlanStep[]; reason?: string; notes?: string[] } {
+    const parsed = this.extractPlanPayload(data);
+    if (!parsed) {
+      return { steps: [] };
+    }
+
+    const stepsInput = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.steps)
+        ? parsed.steps
+        : [];
+    const reason = typeof parsed?.reason === "string" ? parsed.reason : undefined;
+    const notes = Array.isArray(parsed?.notes)
+      ? parsed.notes.filter((item) => typeof item === "string")
+      : undefined;
+
+    const steps: PlanStep[] = [];
+    for (const [index, item] of stepsInput.entries()) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const op = typeof (item as any).op === "string" ? (item as any).op.trim() : "";
+      if (!op) {
+        continue;
+      }
+      const idRaw = (item as any).id;
+      const id =
+        typeof idRaw === "string" && idRaw.trim()
+          ? idRaw.trim()
+          : `${this.options.traceId}-step-${revision}-${index + 1}`;
+      const rawArgs = (item as any).args;
+      const args = rawArgs && typeof rawArgs === "object" ? { ...rawArgs } : {};
+      if (
+        op === "llm.chat" &&
+        !Array.isArray((args as any).messages) &&
+        typeof (args as any).prompt !== "string"
+      ) {
+        (args as any).messages = combinedHistory;
+      }
+      const description = typeof (item as any).description === "string" ? (item as any).description : undefined;
+      steps.push({ id, op, args, description });
+    }
+
+    return { steps, reason, notes };
+  }
+
+  private extractPlanPayload(data: any): any {
+    if (!data) return null;
+    if (Array.isArray(data)) return data;
+    if (typeof data === "object") {
+      if (Array.isArray((data as any).steps)) {
+        return data;
+      }
+      if (typeof (data as any).content === "string") {
+        return this.tryParseJson((data as any).content);
+      }
+    }
+    if (typeof data === "string") {
+      return this.tryParseJson(data);
+    }
+    return null;
+  }
+
+  private tryParseJson(text: string): any {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+    const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const jsonText = fenceMatch ? fenceMatch[1] : trimmed;
+    try {
+      return JSON.parse(jsonText);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  private isAskStep(step: PlanStep): boolean {
+    const op = step.op?.toLowerCase();
+    return op === "agent.ask" || op === "agent.request_clarification";
+  }
+
+  private buildAsk(step: PlanStep): { question: string; origin_step: string; detail?: any } {
+    const args = step.args ?? {};
+    const question =
+      typeof (args as any)?.question === "string"
+        ? (args as any).question
+        : this.options.message ?? "请补充更多信息";
+    const detail = (args as any)?.detail;
+    return { question, origin_step: step.id, detail };
+  }
+
+  private resolveToolCall(step: PlanStep): ToolCall | null {
+    const op = typeof step.op === "string" ? step.op.trim() : "";
+    if (!op) {
+      return null;
+    }
+
+    if (op === "mcp.invoke") {
+      return { name: op, args: step.args ?? {} } satisfies ToolCall;
+    }
+
+    if (op.startsWith("local.")) {
+      return { name: op.slice("local.".length), args: step.args ?? {} } satisfies ToolCall;
+    }
+
+    const mcpSpec = this.parseMcpOperation(op);
+    if (mcpSpec) {
+      const args = step.args ?? {};
+      if (args && typeof args === "object" && "server" in (args as any) && "tool" in (args as any)) {
+        return { name: "mcp.invoke", args } satisfies ToolCall;
+      }
+      return {
+        name: "mcp.invoke",
+        args: {
+          server: mcpSpec.server,
+          tool: mcpSpec.tool,
+          params: args,
+          input: args,
+        },
+      } satisfies ToolCall;
+    }
+
+    return { name: op, args: step.args ?? {} } satisfies ToolCall;
+  }
+
+  private parseMcpOperation(op: string): { server: string; tool: string } | null {
+    if (!op.startsWith("mcp")) {
+      return null;
+    }
+
+    if (op.startsWith("mcp://")) {
+      const remainder = op.slice("mcp://".length);
+      const slash = remainder.indexOf("/");
+      if (slash <= 0) {
+        return null;
+      }
+      const server = remainder.slice(0, slash);
+      const tool = remainder.slice(slash + 1);
+      return tool ? { server, tool } : null;
+    }
+
+    if (op.startsWith("mcp-")) {
+      const dot = op.indexOf(".");
+      if (dot <= 0) {
+        return null;
+      }
+      const server = op.slice(0, dot);
+      const tool = op.slice(dot + 1);
+      return tool ? { server, tool } : null;
+    }
+
+    if (op.startsWith("mcp.")) {
+      const remainder = op.slice("mcp.".length);
+      const dot = remainder.indexOf(".");
+      if (dot <= 0) {
+        return null;
+      }
+      const server = remainder.slice(0, dot);
+      const tool = remainder.slice(dot + 1);
+      return tool ? { server, tool } : null;
+    }
+
+    const dotIndex = op.indexOf(".");
+    if (dotIndex <= 0) {
+      return null;
+    }
+    const server = op.slice(0, dotIndex);
+    const tool = op.slice(dotIndex + 1);
+    return tool ? { server, tool } : null;
   }
 }
 

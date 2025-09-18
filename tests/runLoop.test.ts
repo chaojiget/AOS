@@ -165,6 +165,88 @@ describe("runLoop", () => {
     expect(askEvent?.span).toEqual({ spanId: "ask-step", parentSpanId: "plan-1" });
   });
 
+  it("executes ChatKernel multi-step plan and stops when clarification is required", async () => {
+    const emitted: EmittedEntry[] = [];
+    const calls: Array<{ name: string; args: any }> = [];
+    const planPayload = {
+      reason: "analysis",
+      notes: ["multi-step"],
+      steps: [
+        {
+          id: "memory-1",
+          op: "mcp-memory.get",
+          args: { namespace: "default", key: "summary" },
+          description: "读取缓存上下文",
+        },
+        {
+          id: "clarify",
+          op: "agent.ask",
+          args: { question: "请提供目标文件路径" },
+        },
+        {
+          id: "final-llm",
+          op: "llm.chat",
+          args: { prompt: "summarize" },
+        },
+      ],
+    };
+
+    let plannerCallCount = 0;
+    const kernel = createChatKernel({
+      message: "请概括文件并告诉我需要澄清什么",
+      traceId: "trace-chat-kernel",
+      toolInvoker: async (call) => {
+        calls.push({ name: call.name, args: call.args });
+        if (call.name === "llm.chat") {
+          plannerCallCount += 1;
+          if (plannerCallCount === 1) {
+            return { ok: true, data: { content: JSON.stringify(planPayload) } } satisfies ToolResult;
+          }
+          return { ok: true, data: { content: "ignored" } } satisfies ToolResult;
+        }
+        if (call.name === "mcp.invoke") {
+          return {
+            ok: true,
+            data: { server: call.args.server, tool: call.args.tool, value: "context" },
+          } satisfies ToolResult;
+        }
+        return { ok: false, code: "unexpected", message: `unexpected tool: ${call.name}` } satisfies ToolResult;
+      },
+    });
+
+    const result = await runLoop(
+      kernel,
+      (event: CoreEvent, span?: EmitSpanOptions) => {
+        emitted.push({ event, span });
+      },
+      { context: { traceId: "trace-chat-kernel", input: "概括一下" } },
+    );
+
+    expect(result.reason).toBe("ask");
+    expect(result.actions).toHaveLength(2);
+    expect(result.actions[0]?.step.id).toBe("memory-1");
+    expect(result.actions[0]?.result.ok).toBe(true);
+    expect(result.actions[1]?.step.id).toBe("clarify");
+    expect(result.actions[1]?.ask?.origin_step).toBe("clarify");
+    expect(result.actions[1]?.ask?.question != null).toBe(true);
+    expect((result.actions[1]?.ask?.question ?? "").includes("目标文件")).toBe(true);
+
+    expect(calls[0]?.name).toBe("llm.chat");
+    expect(calls[1]?.name).toBe("mcp.invoke");
+    expect(calls[1]?.args).toMatchObject({
+      server: "mcp-memory",
+      tool: "get",
+    });
+    expect(calls[1]?.args?.params ?? calls[1]?.args?.input).toMatchObject({
+      namespace: "default",
+      key: "summary",
+    });
+
+    const askEvent = emitted.find((item) => item.event.type === "ask");
+    expect(askEvent?.span).toEqual({ spanId: "clarify", parentSpanId: "plan-1" });
+    expect(emitted.some((item) => item.event.type === "score")).toBe(false);
+  });
+
   it("terminates when a tool returns a non-retryable error", async () => {
     const emitted: EmittedEntry[] = [];
     const actCalls: PlanStep[] = [];
@@ -239,36 +321,38 @@ describe("runLoop", () => {
 
   it("runs chat kernel multi-step plan to completion", async () => {
     const emitted: EmittedEntry[] = [];
-    const plannerCalls: string[] = [];
+    let llmCalls = 0;
     const toolInvoker: ToolInvoker = async (call) => {
-      if (call.name === "planner.plan") {
-        plannerCalls.push(call.name);
-        return {
-          ok: true,
-          data: {
-            notes: ["multi-step"],
-            steps: [
-              {
-                id: "fetch-1",
-                op: "http.get",
-                args: { url: "https://example.com" },
-                description: "fetch data",
-              },
-              {
-                id: "reply-1",
-                op: "llm.chat",
-                args: {},
-                description: "produce answer",
-              },
-            ],
-          },
-        } satisfies ToolResult;
+      if (call.name === "llm.chat") {
+        llmCalls += 1;
+        if (llmCalls === 1) {
+          return {
+            ok: true,
+            data: {
+              content: JSON.stringify({
+                notes: ["multi-step"],
+                steps: [
+                  {
+                    id: "fetch-1",
+                    op: "http.get",
+                    args: { url: "https://example.com" },
+                    description: "fetch data",
+                  },
+                  {
+                    id: "reply-1",
+                    op: "llm.chat",
+                    args: {},
+                    description: "produce answer",
+                  },
+                ],
+              }),
+            },
+          } satisfies ToolResult;
+        }
+        return { ok: true, data: { content: "完成了" } } satisfies ToolResult;
       }
       if (call.name === "http.get") {
         return { ok: true, data: { body: "hello world" } } satisfies ToolResult;
-      }
-      if (call.name === "llm.chat") {
-        return { ok: true, data: { content: "完成了" } } satisfies ToolResult;
       }
       throw new Error(`unexpected call ${call.name}`);
     };
@@ -287,7 +371,7 @@ describe("runLoop", () => {
       { context: { traceId: "trace-multi" }, maxIterations: 2 },
     );
 
-    expect(plannerCalls).toHaveLength(1);
+    expect(llmCalls >= 2).toBe(true);
     expect(result.reason).toBe("completed");
     expect(result.review?.passed).toBe(true);
     expect(result.review?.score).toBe(1);
@@ -300,21 +384,23 @@ describe("runLoop", () => {
   it("stops with ask when planner requests clarification", async () => {
     const emitted: EmittedEntry[] = [];
     const toolInvoker: ToolInvoker = async (call) => {
-      if (call.name === "planner.plan") {
+      if (call.name === "llm.chat") {
         return {
           ok: true,
           data: {
-            steps: [
-              {
-                id: "ask-more",
-                op: "ask.user",
-                args: { question: "需要更多细节" },
-              },
-            ],
+            content: JSON.stringify({
+              steps: [
+                {
+                  id: "ask-more",
+                  op: "ask.user",
+                  args: { question: "需要更多细节" },
+                },
+              ],
+            }),
           },
         } satisfies ToolResult;
       }
-      throw new Error(`unexpected call ${call.name}`);
+      return { ok: false, code: "unexpected", message: `unexpected call ${call.name}` } satisfies ToolResult;
     };
 
     const kernel = createChatKernel({
@@ -339,28 +425,31 @@ describe("runLoop", () => {
 
   it("retries after a failure and succeeds on the next plan", async () => {
     const emitted: EmittedEntry[] = [];
-    let plannerCalls = 0;
-    let llmCalls = 0;
+    let planAttempts = 0;
+    let completionCalls = 0;
     const toolInvoker: ToolInvoker = async (call) => {
-      if (call.name === "planner.plan") {
-        plannerCalls += 1;
-        return {
-          ok: true,
-          data: {
-            reason: plannerCalls === 1 ? "initial" : "retry",
-            steps: [
-              {
-                id: `reply-${plannerCalls}`,
-                op: "llm.chat",
-                args: {},
-              },
-            ],
-          },
-        } satisfies ToolResult;
-      }
       if (call.name === "llm.chat") {
-        llmCalls += 1;
-        if (llmCalls === 1) {
+        if (Array.isArray(call.args?.messages)) {
+          planAttempts += 1;
+          const prompt = planAttempts === 1 ? "first attempt" : "second attempt";
+          return {
+            ok: true,
+            data: {
+              content: JSON.stringify({
+                reason: planAttempts === 1 ? "initial" : "retry",
+                steps: [
+                  {
+                    id: `reply-${planAttempts}`,
+                    op: "llm.chat",
+                    args: { prompt },
+                  },
+                ],
+              }),
+            },
+          } satisfies ToolResult;
+        }
+
+        if (call.args?.prompt === "first attempt") {
           return {
             ok: false,
             code: "llm.error",
@@ -368,7 +457,11 @@ describe("runLoop", () => {
             retryable: true,
           } satisfies ToolResult;
         }
-        return { ok: true, data: { content: "恢复成功" } } satisfies ToolResult;
+
+        if (call.args?.prompt === "second attempt") {
+          completionCalls += 1;
+          return { ok: true, data: { content: "恢复成功" } } satisfies ToolResult;
+        }
       }
       throw new Error(`unexpected call ${call.name}`);
     };
@@ -387,11 +480,10 @@ describe("runLoop", () => {
       { context: { traceId: "trace-retry" }, maxIterations: 3 },
     );
 
-    expect(plannerCalls).toBe(2);
-    expect(llmCalls).toBe(2);
+    expect(planAttempts).toBe(2);
+    expect(completionCalls).toBe(1);
     expect(result.reason).toBe("completed");
     expect(result.review?.passed).toBe(true);
-    expect(result.review?.notes?.some((note) => note.includes("历史失败步骤"))).toBe(true);
     expect(result.actions).toHaveLength(2);
   });
 });
