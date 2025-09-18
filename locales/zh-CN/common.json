@@ -19,16 +19,23 @@
     "inputLabel": "聊天输入",
     "placeholder": "请向代理提问或发送指令…",
     "metrics": {
-      "traceId": "Trace ID",
+      "heading": "运行指标",
+      "traceId": "追踪 ID",
+      "progress": "进度",
       "latency": "延迟",
-      "cost": "成本"
+      "cost": "成本",
+      "tokens": "令牌数",
+      "streamingNotice": "状态会随运行事件流式更新。"
     },
     "submit": {
       "run": "运行",
-      "running": "运行中…"
+      "running": "运行中…",
+      "confirming": "等待确认"
     },
     "statusIndicator": {
       "running": "代理运行中",
+      "awaitingConfirmation": "等待确认",
+      "error": "运行出错",
       "ready": "就绪",
       "idle": "空闲"
     },
@@ -55,6 +62,51 @@
         "sent": "已发送"
       }
     }
+  },
+  "panels": {
+    "plan": {
+      "heading": "计划时间线",
+      "filter": "筛选计划步骤",
+      "collapse": "折叠",
+      "expand": "展开",
+      "empty": "尚无计划更新。",
+      "updatedAt": "更新时间 {value}",
+      "revision": "修订版 {value}",
+      "revisionUnknown": "修订版未知",
+      "reason": "原因：{reason}",
+      "reasonUnknown": "原因：无",
+      "stepCount": "步骤总数：{count}"
+    },
+    "skills": {
+      "heading": "工具与备注",
+      "filter": "筛选工具调用",
+      "collapse": "折叠",
+      "expand": "展开",
+      "empty": "暂无工具调用。",
+      "status": {
+        "started": "已开始",
+        "succeeded": "已完成",
+        "failed": "失败"
+      },
+      "metric": {
+        "na": "–"
+      },
+      "note": "备注",
+      "noteLabel": "备注（{level}）",
+      "scoreNote": "得分 {value}（通过：{passed}）",
+      "score": "评分更新"
+    }
+  },
+  "confirmation": {
+    "title": "确认敏感操作",
+    "subtitle": "代理在继续之前需要您的授权。",
+    "defaultPrompt": "是否批准当前操作？",
+    "systemNotice": "需要确认：{message}",
+    "approve": "允许",
+    "reject": "拒绝",
+    "approved": "用户已允许：{message}",
+    "denied": "用户已拒绝：{message}",
+    "deniedStatus": "运行被用户取消"
   },
   "roles": {
     "user": "用户",

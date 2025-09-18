@@ -1,14 +1,23 @@
-import { FormEventHandler, useCallback, useMemo, useState } from "react";
+import { FormEventHandler, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NextPage } from "next";
+
 import ChatMessageList, { type ChatHistoryMessage } from "../components/ChatMessageList";
 import LogFlowPanel from "../components/LogFlowPanel";
+import PlanTimeline, {
+  type PlanTimelineEvent,
+  type PlanTimelineStep,
+} from "../components/PlanTimeline";
+import SkillPanel, { type SkillEvent } from "../components/SkillPanel";
 import { useI18n } from "../lib/i18n/index";
 import {
   badgeClass,
   headerSurfaceClass,
   headingClass,
   insetSurfaceClass,
+  inputSurfaceClass,
   labelClass,
+  modalBackdropClass,
+  modalSurfaceClass,
   outlineButtonClass,
   pageContainerClass,
   panelSurfaceClass,
@@ -19,26 +28,38 @@ import {
 } from "../lib/theme";
 
 interface ChatSendResponse {
-  trace_id?: string;
-  msg_id?: string;
-  message?: {
-    msg_id?: string;
-    role?: string;
-    content?: string;
-    text?: string;
-    ts?: string;
-    trace_id?: string;
-    error?: string;
-  };
-  result?: { text?: string; msg_id?: string; ts?: string; error?: string };
-  output?: { text?: string; msg_id?: string; ts?: string; error?: string };
-  final?: { text?: string; msg_id?: string; ts?: string; error?: string };
-  metrics?: { latency_ms?: number; cost?: number };
+  trace_id: string;
+  result?: unknown;
+  reason?: string;
+  events?: Array<{
+    ts: string;
+    type: string;
+    span_id?: string;
+    parent_span_id?: string;
+    data?: any;
+  }>;
   error?: { message?: string } | null;
-  message_error?: string;
-  reason?: "completed" | "no-plan" | "ask" | "max-iterations";
-  review?: { notes?: string[]; score?: number; passed?: boolean } | null;
 }
+
+interface StreamEventEnvelope {
+  id: string;
+  ts: string;
+  type: string;
+  trace_id?: string;
+  span_id?: string;
+  parent_span_id?: string;
+  data?: any;
+}
+
+interface ConfirmationRequestState {
+  id: string;
+  ts: string;
+  message: string;
+  context?: any;
+  level?: string;
+}
+
+type RunStatus = "idle" | "running" | "awaiting-confirmation" | "completed" | "error";
 
 const generateLocalId = (): string => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -56,20 +77,487 @@ const serialiseHistoryForRequest = (messages: ChatHistoryMessage[]) =>
     ts: message.ts,
   }));
 
+const parseStreamPayload = (raw: string): StreamEventEnvelope | null => {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as StreamEventEnvelope;
+    if (parsed && typeof parsed === "object" && typeof parsed.type === "string") {
+      return {
+        id: parsed.id ?? generateLocalId(),
+        ts: parsed.ts ?? new Date().toISOString(),
+        type: parsed.type,
+        trace_id: parsed.trace_id,
+        span_id: parsed.span_id,
+        parent_span_id: parsed.parent_span_id,
+        data: parsed.data,
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const normaliseEventType = (type?: string): string => {
+  if (!type) return "";
+  if (type.startsWith("agent.")) {
+    return type.slice(6);
+  }
+  return type;
+};
+
+const summarisePlanStep = (step: any): PlanTimelineStep => {
+  const title =
+    typeof step?.title === "string"
+      ? step.title
+      : typeof step?.op === "string"
+        ? step.op
+        : typeof step?.id === "string"
+          ? step.id
+          : "step";
+  const summarySource =
+    typeof step?.description === "string"
+      ? step.description
+      : typeof step?.args?.summary === "string"
+        ? step.args.summary
+        : typeof step?.args?.prompt === "string"
+          ? step.args.prompt
+          : undefined;
+  const summary = summarySource
+    ? summarySource.length > 280
+      ? `${summarySource.slice(0, 277)}...`
+      : summarySource
+    : undefined;
+  return {
+    id: typeof step?.id === "string" ? step.id : generateLocalId(),
+    title,
+    summary,
+  };
+};
+
+const summariseArgs = (args: any): string | undefined => {
+  if (!args) return undefined;
+  if (typeof args === "string") {
+    return args.length > 160 ? `${args.slice(0, 157)}...` : args;
+  }
+  if (typeof args === "object") {
+    if (typeof args.prompt === "string") {
+      const prompt = args.prompt.trim();
+      return prompt.length > 160 ? `${prompt.slice(0, 157)}...` : prompt;
+    }
+    if (typeof args.query === "string") {
+      const query = args.query.trim();
+      return query.length > 160 ? `${query.slice(0, 157)}...` : query;
+    }
+    try {
+      const json = JSON.stringify(args);
+      return json.length > 160 ? `${json.slice(0, 157)}...` : json;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+};
+
+const summariseResult = (result: any): string | undefined => {
+  if (result == null) return undefined;
+  if (typeof result === "string") {
+    const trimmed = result.trim();
+    return trimmed.length > 160 ? `${trimmed.slice(0, 157)}...` : trimmed;
+  }
+  if (typeof result === "object") {
+    if (typeof result.text === "string") {
+      const text = result.text.trim();
+      return text.length > 160 ? `${text.slice(0, 157)}...` : text;
+    }
+    if (typeof result.content === "string") {
+      const text = result.content.trim();
+      return text.length > 160 ? `${text.slice(0, 157)}...` : text;
+    }
+    if (typeof result.message === "string") {
+      const text = result.message.trim();
+      return text.length > 160 ? `${text.slice(0, 157)}...` : text;
+    }
+    try {
+      const json = JSON.stringify(result);
+      return json.length > 160 ? `${json.slice(0, 157)}...` : json;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+};
+
+const extractNumeric = (value: any): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return null;
+};
+
+const extractTokens = (payload: any): number | null => {
+  if (!payload || typeof payload !== "object") return null;
+  const direct = extractNumeric((payload as any).tokens);
+  if (direct !== null) return direct;
+  const nestedTotal = extractNumeric((payload as any).tokens?.total);
+  if (nestedTotal !== null) return nestedTotal;
+  const usageTotal = extractNumeric((payload as any).usage?.total_tokens);
+  if (usageTotal !== null) return usageTotal;
+  const usageTotalAlt = extractNumeric((payload as any).usage?.total);
+  if (usageTotalAlt !== null) return usageTotalAlt;
+  return null;
+};
+
 const HomePage: NextPage = () => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [input, setInput] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
+  const [runStatus, setRunStatus] = useState<RunStatus>("idle");
   const [traceId, setTraceId] = useState<string | undefined>(undefined);
-  const [latestResponse, setLatestResponse] = useState<any>(null);
   const [chatHistory, setChatHistory] = useState<ChatHistoryMessage[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "logflow">("chat");
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [cost, setCost] = useState<number | null>(null);
   const [finalOutput, setFinalOutput] = useState<any>(null);
+  const [lastEvent, setLastEvent] = useState<StreamEventEnvelope | null>(null);
+  const [planEvents, setPlanEvents] = useState<PlanTimelineEvent[]>([]);
+  const [planFilter, setPlanFilter] = useState("");
+  const [planCollapsed, setPlanCollapsed] = useState(false);
+  const [skillEvents, setSkillEvents] = useState<SkillEvent[]>([]);
+  const [skillFilter, setSkillFilter] = useState("");
+  const [skillCollapsed, setSkillCollapsed] = useState(false);
+  const [confirmationRequest, setConfirmationRequest] = useState<ConfirmationRequestState | null>(
+    null,
+  );
+  const [progressPct, setProgressPct] = useState<number | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const retryTimerRef = useRef<number | null>(null);
+  const retryAttemptRef = useRef(0);
+  const currentTraceRef = useRef<string | undefined>(undefined);
 
   const draftInput = useMemo(() => input.trim(), [input]);
+
+  const resetForRun = useCallback(() => {
+    setPlanEvents([]);
+    setSkillEvents([]);
+    setFinalOutput(null);
+    setLastEvent(null);
+    setPlanFilter("");
+    setSkillFilter("");
+    setPlanCollapsed(false);
+    setSkillCollapsed(false);
+    setConfirmationRequest(null);
+    setProgressPct(null);
+    setRunError(null);
+  }, []);
+
+  const closeStream = useCallback(() => {
+    if (retryTimerRef.current != null && typeof window !== "undefined") {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    retryAttemptRef.current = 0;
+  }, []);
+
+  useEffect(() => () => closeStream(), [closeStream]);
+
+  const handleStreamEvent = useCallback(
+    (event: StreamEventEnvelope) => {
+      if (!event || typeof event.type !== "string") {
+        return;
+      }
+      setLastEvent(event);
+      if (event.trace_id && event.trace_id !== traceId) {
+        setTraceId(event.trace_id);
+      }
+      const kind = normaliseEventType(event.type);
+
+      if (kind === "chat.msg" || kind === "chat.message") {
+        const payload = event.data ?? {};
+        const role = typeof payload.role === "string" ? payload.role : "assistant";
+        const content =
+          typeof payload.text === "string"
+            ? payload.text
+            : typeof payload.content === "string"
+              ? payload.content
+              : "";
+        const msgId = typeof payload.msg_id === "string" ? payload.msg_id : event.id;
+        const timestamp = event.ts ?? new Date().toISOString();
+        setChatHistory((history) => {
+          const next = [...history];
+          if (role === "user") {
+            for (let index = next.length - 1; index >= 0; index -= 1) {
+              const message = next[index];
+              if (message.role === "user" && !message.msgId) {
+                next[index] = {
+                  ...message,
+                  msgId,
+                  status: "done",
+                  ts: timestamp,
+                  content: content || message.content,
+                  traceId: event.trace_id ?? message.traceId,
+                };
+                return next;
+              }
+            }
+          }
+          const existingIndex = next.findIndex((item) => item.msgId === msgId);
+          if (existingIndex >= 0) {
+            next[existingIndex] = {
+              ...next[existingIndex],
+              content: content || next[existingIndex].content,
+              status: "done",
+              ts: timestamp,
+              traceId: event.trace_id ?? next[existingIndex].traceId,
+            };
+            return next;
+          }
+          const message: ChatHistoryMessage = {
+            id: msgId ?? generateLocalId(),
+            msgId,
+            role: role === "system" ? "system" : role === "user" ? "user" : "assistant",
+            content,
+            ts: timestamp,
+            status: "done",
+            traceId: event.trace_id,
+          };
+          return [...next, message];
+        });
+        return;
+      }
+
+      if (kind === "plan" || kind === "plan.updated") {
+        const data = event.data ?? {};
+        const steps = Array.isArray(data.steps) ? data.steps.map(summarisePlanStep) : [];
+        const revisionValue = typeof data.revision === "number" ? data.revision : undefined;
+        const reasonText = typeof data.reason === "string" ? data.reason : undefined;
+        const planEvent: PlanTimelineEvent = {
+          id: event.id,
+          ts: event.ts ?? new Date().toISOString(),
+          revision: revisionValue,
+          reason: reasonText,
+          steps,
+        };
+        setPlanEvents((existing) => {
+          const index = existing.findIndex((item) => item.id === planEvent.id);
+          if (index >= 0) {
+            const next = [...existing];
+            next[index] = planEvent;
+            return next;
+          }
+          return [...existing, planEvent].sort((a, b) => {
+            const aTime = new Date(a.ts).getTime();
+            const bTime = new Date(b.ts).getTime();
+            return aTime - bTime;
+          });
+        });
+        return;
+      }
+
+      if (kind === "progress") {
+        const pct = extractNumeric(event.data?.pct);
+        if (pct !== null) {
+          setProgressPct(Math.max(0, Math.min(1, pct)));
+        }
+        return;
+      }
+
+      if (kind.startsWith("tool")) {
+        const data = event.data ?? {};
+        const spanKey = event.span_id ?? event.id;
+        const status: SkillEvent["status"] =
+          kind === "tool.failed" ? "failed" : kind === "tool.started" ? "started" : "succeeded";
+        const name =
+          typeof data.name === "string"
+            ? data.name
+            : typeof data.tool === "string"
+              ? data.tool
+              : "tool";
+        const result = data.result ?? data.output ?? data.response;
+        const cost = extractNumeric(data.cost ?? result?.cost);
+        const latencyMs = extractNumeric(data.latency_ms ?? result?.latency_ms);
+        const tokens = extractTokens(result);
+        const argsSummary = summariseArgs(data.args);
+        const resultSummary = summariseResult(result ?? data.error ?? data.message);
+        setSkillEvents((previous) => {
+          let updated = false;
+          const next = previous.map((item) => {
+            if (item.type === "tool" && (item.id === spanKey || item.spanId === spanKey)) {
+              updated = true;
+              return {
+                ...item,
+                ts: event.ts ?? item.ts,
+                status,
+                name,
+                spanId: event.span_id ?? item.spanId,
+                argsSummary: argsSummary ?? item.argsSummary,
+                resultSummary: resultSummary ?? item.resultSummary,
+                cost: cost ?? item.cost ?? null,
+                latencyMs: latencyMs ?? item.latencyMs ?? null,
+                tokens: tokens ?? item.tokens ?? null,
+              };
+            }
+            return item;
+          });
+          if (!updated) {
+            const entry: SkillEvent = {
+              type: "tool",
+              id: spanKey ?? generateLocalId(),
+              ts: event.ts ?? new Date().toISOString(),
+              name,
+              status,
+              spanId: event.span_id,
+              argsSummary,
+              resultSummary,
+              cost: cost ?? null,
+              latencyMs: latencyMs ?? null,
+              tokens: tokens ?? null,
+            };
+            next.push(entry);
+          }
+          return next.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+        });
+        return;
+      }
+
+      if (kind === "reflect.note" || kind === "score" || kind === "ask" || kind === "log") {
+        const level =
+          kind === "reflect.note"
+            ? event.data?.level
+            : kind === "score"
+              ? "score"
+              : kind === "ask"
+                ? "ask"
+                : (event.data?.level ?? "log");
+        const text =
+          kind === "score"
+            ? t("panels.skills.scoreNote", {
+                value: event.data?.value ?? "–",
+                passed: String(event.data?.passed ?? ""),
+              })
+            : kind === "ask"
+              ? (event.data?.question ?? "")
+              : typeof event.data?.text === "string"
+                ? event.data.text
+                : (event.data?.message ?? "");
+        if (typeof text === "string" && text.trim().length > 0) {
+          setSkillEvents((previous) => {
+            if (previous.some((item) => item.id === event.id)) {
+              return previous;
+            }
+            const entry: SkillEvent = {
+              type: "note",
+              id: event.id,
+              ts: event.ts ?? new Date().toISOString(),
+              level: typeof level === "string" ? level : undefined,
+              text,
+            };
+            return [...previous, entry].sort(
+              (a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime(),
+            );
+          });
+        }
+        if (kind === "log" && event.data?.level === "error") {
+          setRunStatus("error");
+          setRunError(event.data?.message ?? t("chat.runFailure"));
+        }
+        return;
+      }
+
+      if (kind === "user.confirm.request") {
+        const prompt =
+          typeof event.data?.prompt === "string"
+            ? event.data.prompt
+            : typeof event.data?.message === "string"
+              ? event.data.message
+              : t("confirmation.defaultPrompt");
+        setConfirmationRequest({
+          id: event.id,
+          ts: event.ts ?? new Date().toISOString(),
+          message: prompt,
+          context: event.data,
+          level: event.data?.level,
+        });
+        setRunStatus("awaiting-confirmation");
+        setChatHistory((history) => [
+          ...history,
+          {
+            id: generateLocalId(),
+            role: "system",
+            content: t("confirmation.systemNotice", { message: prompt }),
+            ts: event.ts ?? new Date().toISOString(),
+            status: "pending",
+          },
+        ]);
+        return;
+      }
+
+      if (kind === "final" || kind === "run.finished") {
+        const outputs = event.data?.outputs ?? event.data?.result ?? event.data;
+        setFinalOutput(outputs);
+        setRunStatus("completed");
+        setProgressPct(1);
+        closeStream();
+        return;
+      }
+
+      if (kind === "error") {
+        setRunStatus("error");
+        setRunError(
+          typeof event.data?.message === "string" ? event.data.message : t("chat.runFailure"),
+        );
+        closeStream();
+      }
+    },
+    [closeStream, t, traceId],
+  );
+
+  const startStream = useCallback(
+    (runId: string) => {
+      if (typeof window === "undefined" || typeof window.EventSource === "undefined") {
+        return;
+      }
+      closeStream();
+      currentTraceRef.current = runId;
+      try {
+        const source = new window.EventSource(`/api/runs/${encodeURIComponent(runId)}/stream`);
+        eventSourceRef.current = source;
+        source.onopen = () => {
+          retryAttemptRef.current = 0;
+        };
+        source.onmessage = (evt) => {
+          const payload = parseStreamPayload(evt.data);
+          if (payload) {
+            handleStreamEvent(payload);
+          }
+        };
+        source.onerror = () => {
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
+          const attempt = retryAttemptRef.current + 1;
+          retryAttemptRef.current = attempt;
+          const delay = Math.min(15000, 1000 * Math.pow(2, attempt - 1));
+          if (typeof window !== "undefined") {
+            if (retryTimerRef.current != null) {
+              window.clearTimeout(retryTimerRef.current);
+            }
+            retryTimerRef.current = window.setTimeout(() => {
+              if (currentTraceRef.current === runId) {
+                startStream(runId);
+              }
+            }, delay);
+          }
+        };
+      } catch (error) {
+        console.error("failed to open run stream", error);
+      }
+    },
+    [closeStream, handleStreamEvent],
+  );
 
   const handleSaveConversation = useCallback(() => {
     const entries: Array<Record<string, unknown>> = chatHistory.map((message) => ({
@@ -119,9 +607,9 @@ const HomePage: NextPage = () => {
   }, [chatHistory, draftInput, traceId]);
 
   const handleRun = useCallback(async () => {
-    if (isRunning) return;
-    const prompt = input.trim();
-    if (!prompt) return;
+    if (!draftInput || runStatus === "running" || runStatus === "awaiting-confirmation") {
+      return;
+    }
 
     const previousHistory = chatHistory;
     const previousTraceId = traceId;
@@ -130,126 +618,85 @@ const HomePage: NextPage = () => {
     const userMessage: ChatHistoryMessage = {
       id: localId,
       role: "user",
-      content: prompt,
+      content: draftInput,
       ts: createdAt,
       status: "pending",
       traceId,
     };
-    const historyForRequest = [...previousHistory, userMessage];
 
-    setChatHistory(historyForRequest);
-    setIsRunning(true);
-    setRunError(null);
+    setChatHistory([...previousHistory, userMessage]);
+    setRunStatus("running");
+    resetForRun();
     setTraceId(undefined);
-    setLatestResponse(null);
-    setLatencyMs(null);
-    setCost(null);
-    setFinalOutput(null);
     setInput("");
-    const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+
     try {
       const serialisedHistory = serialiseHistoryForRequest(previousHistory);
       const messagesForRequest = serialisedHistory.map(({ role, content }) => ({ role, content }));
 
-      const response = await fetch("/api/chat/send", {
+      const response = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text: prompt,
+          message: draftInput,
           messages: messagesForRequest,
           history: serialisedHistory,
           ...(previousTraceId ? { trace_id: previousTraceId } : {}),
         }),
       });
+
       const data: ChatSendResponse | null = await response.json().catch(() => null);
-      if (!response.ok || !data || data.error || data.message_error) {
+      if (!response.ok || !data) {
         const errorMessage =
           (data?.error as { message?: string } | undefined)?.message ??
-          data?.message_error ??
-          data?.message?.content ??
           t("errors.requestFailed", { status: response.status });
         throw new Error(errorMessage);
       }
-      setLatestResponse(data);
-      const resolvedTraceId = data.trace_id ?? data.message?.trace_id ?? previousTraceId ?? traceId;
-      setTraceId(resolvedTraceId);
-      setFinalOutput(data.result ?? data.final ?? data.output ?? data.message ?? null);
 
-      const computedLatency =
-        data.metrics?.latency_ms ??
-        (typeof performance !== "undefined"
-          ? Math.round(performance.now() - startedAt)
-          : Date.now() - startedAt);
-      const computedCost = data.metrics?.cost ?? null;
-      setLatencyMs(typeof computedLatency === "number" ? computedLatency : null);
-      setCost(typeof computedCost === "number" ? computedCost : null);
-
-      const assistantPayload = (data.message ?? data.result ?? data.output ?? data.final ?? {}) as {
-        content?: string;
-        text?: string;
-        msg_id?: string;
-        ts?: string;
-        trace_id?: string;
-        error?: string;
-      };
-      const isCompleted = (data.reason ?? "completed") === "completed";
-      const assistantMsgId = assistantPayload.msg_id ?? data.msg_id ?? generateLocalId();
-      const assistantTs = assistantPayload.ts ?? new Date().toISOString();
-      const assistantErrorText =
-        typeof assistantPayload.error === "string"
-          ? assistantPayload.error
-          : undefined;
-      const assistantContentRaw =
-        typeof assistantPayload.content === "string"
-          ? assistantPayload.content
-          : typeof assistantPayload.text === "string"
-            ? assistantPayload.text
-            : assistantErrorText ??
-              (assistantPayload && typeof assistantPayload === "object"
-                ? JSON.stringify(assistantPayload)
-                : "");
-      const assistantContent =
-        typeof assistantContentRaw === "string" && assistantContentRaw.length > 0
-          ? assistantContentRaw
-          : assistantErrorText ?? "";
-
-      setChatHistory((history) => {
-        const updatedHistory: ChatHistoryMessage[] = history.map((message) =>
+      setChatHistory((history) =>
+        history.map((message) =>
           message.id === localId
             ? {
                 ...message,
-                msgId: data.msg_id ?? message.msgId,
-                traceId: resolvedTraceId,
-                status: "done" as const,
+                status: "sent",
               }
             : message,
-        );
-        const assistantMessage: ChatHistoryMessage = {
-          id: assistantMsgId ?? generateLocalId(),
-          msgId: assistantMsgId,
-          role: "assistant",
-          content: assistantContent,
-          ts: assistantTs,
-          status: isCompleted ? ("done" as const) : ("error" as const),
-          traceId: resolvedTraceId,
-          latencyMs: typeof computedLatency === "number" ? computedLatency : null,
-          cost: typeof computedCost === "number" ? computedCost : null,
-          error: isCompleted ? null : assistantContent || assistantErrorText || null,
-          failureReason: isCompleted ? null : data.reason ?? null,
-          reviewNotes: Array.isArray(data.review?.notes) ? data.review?.notes ?? [] : undefined,
-        };
-        return [...updatedHistory, assistantMessage];
-      });
+        ),
+      );
+
+      setTraceId(data.trace_id);
+      currentTraceRef.current = data.trace_id;
+
+      if (Array.isArray(data.events)) {
+        data.events.forEach((item, index) => {
+          const envelope: StreamEventEnvelope = {
+            id: `${item.span_id ?? "event"}-${index}-${generateLocalId()}`,
+            ts: item.ts,
+            type: item.type,
+            trace_id: data.trace_id,
+            span_id: item.span_id,
+            parent_span_id: item.parent_span_id,
+            data: item.data,
+          };
+          handleStreamEvent(envelope);
+        });
+      }
+
+      if (data.result !== undefined) {
+        setFinalOutput(data.result);
+      }
+
+      startStream(data.trace_id);
     } catch (err: any) {
       const errorMessage = err?.message ?? t("chat.runFailure");
       setRunError(errorMessage);
-      setFinalOutput(null);
+      setRunStatus("error");
       setChatHistory((history) => {
         const updated = history.map((message) =>
           message.id === localId
             ? {
                 ...message,
-                status: "error" as const,
+                status: "error",
                 error: errorMessage,
               }
             : message,
@@ -261,16 +708,14 @@ const HomePage: NextPage = () => {
             role: "system",
             content: t("chat.errorPrefix", { message: errorMessage }),
             ts: new Date().toISOString(),
-            status: "error" as const,
+            status: "error",
             error: errorMessage,
           },
         ];
       });
       setTraceId(previousTraceId);
-    } finally {
-      setIsRunning(false);
     }
-  }, [chatHistory, input, isRunning, t, traceId]);
+  }, [chatHistory, draftInput, handleStreamEvent, resetForRun, runStatus, startStream, t, traceId]);
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
     (event) => {
@@ -278,6 +723,35 @@ const HomePage: NextPage = () => {
       void handleRun();
     },
     [handleRun],
+  );
+
+  const handleDecision = useCallback(
+    (decision: "approve" | "reject") => {
+      if (!confirmationRequest) return;
+      setConfirmationRequest(null);
+      const now = new Date().toISOString();
+      setChatHistory((history) => [
+        ...history,
+        {
+          id: generateLocalId(),
+          role: "system",
+          content:
+            decision === "approve"
+              ? t("confirmation.approved", { message: confirmationRequest.message })
+              : t("confirmation.denied", { message: confirmationRequest.message }),
+          ts: now,
+          status: "done",
+        },
+      ]);
+      if (decision === "approve") {
+        setRunStatus("running");
+      } else {
+        setRunStatus("error");
+        setRunError(t("confirmation.deniedStatus"));
+        closeStream();
+      }
+    },
+    [closeStream, confirmationRequest, t],
   );
 
   const tabItems = useMemo(
@@ -288,17 +762,118 @@ const HomePage: NextPage = () => {
     [t],
   );
 
-  const statusText = runError
-    ? runError
-    : isRunning
-      ? t("chat.statusIndicator.running")
-      : chatHistory.length > 0
-        ? t("chat.statusIndicator.ready")
-        : t("chat.statusIndicator.idle");
+  const statusText = useMemo(() => {
+    if (runStatus === "error") {
+      return runError ?? t("chat.statusIndicator.error");
+    }
+    if (runStatus === "running") {
+      return t("chat.statusIndicator.running");
+    }
+    if (runStatus === "awaiting-confirmation") {
+      return t("chat.statusIndicator.awaitingConfirmation");
+    }
+    if (chatHistory.length > 0) {
+      return t("chat.statusIndicator.ready");
+    }
+    return t("chat.statusIndicator.idle");
+  }, [chatHistory.length, runError, runStatus, t]);
 
-  const statusTone = runError ? "text-orange-300" : isRunning ? "text-sky-200" : "text-slate-200";
+  const statusTone =
+    runStatus === "error"
+      ? "text-orange-300"
+      : runStatus === "running"
+        ? "text-sky-200"
+        : runStatus === "awaiting-confirmation"
+          ? "text-amber-200"
+          : "text-slate-200";
 
   const disableSave = !chatHistory.length && !draftInput;
+
+  const metrics = useMemo(() => {
+    let cost = 0;
+    let latency = 0;
+    let tokens = 0;
+    for (const event of skillEvents) {
+      if (event.type === "tool" && event.status !== "started") {
+        if (typeof event.cost === "number") cost += event.cost;
+        if (typeof event.latencyMs === "number") latency += event.latencyMs;
+        if (typeof event.tokens === "number") tokens += event.tokens;
+      }
+    }
+    return { cost, latency, tokens };
+  }, [skillEvents]);
+
+  const formatDateTime = useCallback(
+    (value: string) => {
+      try {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return value;
+        }
+        return new Intl.DateTimeFormat(locale, {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }).format(date);
+      } catch {
+        return value;
+      }
+    },
+    [locale],
+  );
+
+  const planLabels = useMemo(
+    () => ({
+      heading: t("panels.plan.heading"),
+      filterPlaceholder: t("panels.plan.filter"),
+      collapse: t("panels.plan.collapse"),
+      expand: t("panels.plan.expand"),
+      empty: t("panels.plan.empty"),
+      updatedAt: (value: string) => t("panels.plan.updatedAt", { value: formatDateTime(value) }),
+      revision: (value?: number) =>
+        value != null ? t("panels.plan.revision", { value }) : t("panels.plan.revisionUnknown"),
+      reason: (value?: string) =>
+        value && value.length > 0
+          ? t("panels.plan.reason", { reason: value })
+          : t("panels.plan.reasonUnknown"),
+      stepCount: (count: number) => t("panels.plan.stepCount", { count }),
+    }),
+    [formatDateTime, t],
+  );
+
+  const skillLabels = useMemo(
+    () => ({
+      heading: t("panels.skills.heading"),
+      filterPlaceholder: t("panels.skills.filter"),
+      collapse: t("panels.skills.collapse"),
+      expand: t("panels.skills.expand"),
+      empty: t("panels.skills.empty"),
+      status: {
+        started: t("panels.skills.status.started"),
+        succeeded: t("panels.skills.status.succeeded"),
+        failed: t("panels.skills.status.failed"),
+      },
+      metricLabels: {
+        latency: t("chat.metrics.latency"),
+        cost: t("chat.metrics.cost"),
+        tokens: t("chat.metrics.tokens"),
+      },
+      metrics: {
+        cost: (value?: number | null) =>
+          typeof value === "number" ? value.toFixed(4) : t("panels.skills.metric.na"),
+        latency: (value?: number | null) =>
+          typeof value === "number" ? `${value.toFixed(0)} ms` : t("panels.skills.metric.na"),
+        tokens: (value?: number | null) =>
+          typeof value === "number" ? value.toLocaleString() : t("panels.skills.metric.na"),
+      },
+      noteLabel: (level?: string) =>
+        level && level.length > 0
+          ? t("panels.skills.noteLabel", { level })
+          : t("panels.skills.note"),
+      scoreNote: t("panels.skills.score"),
+    }),
+    [t],
+  );
 
   return (
     <div className={shellClass} data-testid="chat-shell">
@@ -384,7 +959,7 @@ const HomePage: NextPage = () => {
                 </div>
               </div>
 
-              <ChatMessageList messages={chatHistory} isRunning={isRunning} />
+              <ChatMessageList messages={chatHistory} isRunning={runStatus === "running"} />
 
               {draftInput ? (
                 <div
@@ -423,15 +998,19 @@ const HomePage: NextPage = () => {
                     }
                   }}
                   placeholder={t("chat.placeholder")}
-                  className={`${insetSurfaceClass} min-h-[9rem] w-full resize-y border-slate-800/70 bg-slate-950/70 p-4 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400`}
+                  className={`${inputSurfaceClass} min-h-[9rem] w-full resize-y`}
                 />
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <button
                     type="submit"
-                    disabled={isRunning}
+                    disabled={runStatus === "running" || runStatus === "awaiting-confirmation"}
                     className={`${primaryButtonClass} w-full sm:w-auto`}
                   >
-                    {isRunning ? t("chat.submit.running") : t("chat.submit.run")}
+                    {runStatus === "running"
+                      ? t("chat.submit.running")
+                      : runStatus === "awaiting-confirmation"
+                        ? t("chat.submit.confirming")
+                        : t("chat.submit.run")}
                   </button>
                   <span className={`${subtleTextClass} text-sm`}>{statusText}</span>
                 </div>
@@ -446,27 +1025,39 @@ const HomePage: NextPage = () => {
               >
                 <div className="flex items-center justify-between gap-3">
                   <h3 id="run-stats-title" className={headingClass}>
-                    Run stats
+                    {t("chat.metrics.heading")}
                   </h3>
                   <span className={`${badgeClass} ${statusTone} bg-transparent normal-case`}>
                     {statusText}
                   </span>
                 </div>
-                <dl className="grid gap-4 sm:grid-cols-3">
+                <dl className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.traceId")}</dt>
                     <dd className="font-mono text-sm text-slate-200">{traceId ?? "–"}</dd>
                   </div>
                   <div className="space-y-2">
+                    <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.progress")}</dt>
+                    <dd className="text-sm text-slate-200">
+                      {typeof progressPct === "number" ? `${Math.round(progressPct * 100)}%` : "–"}
+                    </dd>
+                  </div>
+                  <div className="space-y-2">
                     <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.latency")}</dt>
                     <dd className="text-sm text-slate-200">
-                      {typeof latencyMs === "number" ? `${latencyMs.toFixed(0)} ms` : "–"}
+                      {metrics.latency > 0 ? `${metrics.latency.toFixed(0)} ms` : "–"}
                     </dd>
                   </div>
                   <div className="space-y-2">
                     <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.cost")}</dt>
                     <dd className="text-sm text-slate-200">
-                      {typeof cost === "number" ? cost.toFixed(4) : "–"}
+                      {metrics.cost > 0 ? metrics.cost.toFixed(4) : "–"}
+                    </dd>
+                  </div>
+                  <div className="space-y-2">
+                    <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.tokens")}</dt>
+                    <dd className="text-sm text-slate-200">
+                      {metrics.tokens > 0 ? metrics.tokens.toLocaleString() : "–"}
                     </dd>
                   </div>
                 </dl>
@@ -476,7 +1067,7 @@ const HomePage: NextPage = () => {
                   </p>
                 ) : (
                   <p className={`${subtleTextClass} text-xs`}>
-                    Status updates as new events stream in from the agent runtime.
+                    {t("chat.metrics.streamingNotice")}
                   </p>
                 )}
               </section>
@@ -490,13 +1081,41 @@ const HomePage: NextPage = () => {
                   <h3 id="raw-response-title" className={headingClass}>
                     {t("chat.latestResponse")}
                   </h3>
-                  {latestResponse ? (
+                  {lastEvent ? (
                     <span className={`${badgeClass} bg-sky-500/10 text-sky-100`}>updated</span>
                   ) : null}
                 </div>
                 <pre className="max-h-[28rem] overflow-auto rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 text-xs leading-relaxed text-slate-200">
-                  {latestResponse ? JSON.stringify(latestResponse, null, 2) : t("chat.noResponse")}
+                  {lastEvent ? JSON.stringify(lastEvent, null, 2) : t("chat.noResponse")}
                 </pre>
+              </section>
+
+              <section
+                className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
+                data-testid="plan-panel"
+              >
+                <PlanTimeline
+                  events={planEvents}
+                  filter={planFilter}
+                  collapsed={planCollapsed}
+                  onFilterChange={setPlanFilter}
+                  onToggleCollapse={() => setPlanCollapsed((value) => !value)}
+                  labels={planLabels}
+                />
+              </section>
+
+              <section
+                className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
+                data-testid="skill-panel-wrapper"
+              >
+                <SkillPanel
+                  events={skillEvents}
+                  filter={skillFilter}
+                  collapsed={skillCollapsed}
+                  onFilterChange={setSkillFilter}
+                  onToggleCollapse={() => setSkillCollapsed((value) => !value)}
+                  labels={skillLabels}
+                />
               </section>
             </div>
           </div>
@@ -506,6 +1125,44 @@ const HomePage: NextPage = () => {
           </section>
         )}
       </main>
+
+      {confirmationRequest ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
+          <div className={modalBackdropClass} aria-hidden="true" />
+          <div
+            className={modalSurfaceClass}
+            role="dialog"
+            aria-modal="true"
+            data-testid="confirmation-modal"
+          >
+            <div className="space-y-4">
+              <div>
+                <h2 className={`${headingClass} text-xl`}>{t("confirmation.title")}</h2>
+                <p className={`${subtleTextClass} text-sm`}>{t("confirmation.subtitle")}</p>
+              </div>
+              <div className={`${insetSurfaceClass} border border-amber-500/50 bg-amber-500/5 p-4`}>
+                <p className="text-sm text-amber-100">{confirmationRequest.message}</p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  className={`${outlineButtonClass} w-full sm:w-auto`}
+                  onClick={() => handleDecision("reject")}
+                >
+                  {t("confirmation.reject")}
+                </button>
+                <button
+                  type="button"
+                  className={`${primaryButtonClass} w-full sm:w-auto`}
+                  onClick={() => handleDecision("approve")}
+                >
+                  {t("confirmation.approve")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

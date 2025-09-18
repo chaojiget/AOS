@@ -19,16 +19,23 @@
     "inputLabel": "Chat input",
     "placeholder": "Ask the agent for a summary or instruction...",
     "metrics": {
+      "heading": "Run metrics",
       "traceId": "Trace ID",
+      "progress": "Progress",
       "latency": "Latency",
-      "cost": "Cost"
+      "cost": "Cost",
+      "tokens": "Tokens",
+      "streamingNotice": "Status updates as new events stream in from the agent runtime."
     },
     "submit": {
       "run": "Run",
-      "running": "Running…"
+      "running": "Running…",
+      "confirming": "Awaiting approval"
     },
     "statusIndicator": {
       "running": "Running agent",
+      "awaitingConfirmation": "Awaiting confirmation",
+      "error": "Run error",
       "ready": "Ready",
       "idle": "Idle"
     },
@@ -55,6 +62,51 @@
         "sent": "Sent"
       }
     }
+  },
+  "panels": {
+    "plan": {
+      "heading": "Plan timeline",
+      "filter": "Filter plan steps",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "empty": "No plan updates yet.",
+      "updatedAt": "Updated {value}",
+      "revision": "Revision {value}",
+      "revisionUnknown": "Revision –",
+      "reason": "Reason: {reason}",
+      "reasonUnknown": "Reason: n/a",
+      "stepCount": "Total steps: {count}"
+    },
+    "skills": {
+      "heading": "Tools & notes",
+      "filter": "Filter tool runs",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "empty": "No tool activity yet.",
+      "status": {
+        "started": "started",
+        "succeeded": "succeeded",
+        "failed": "failed"
+      },
+      "metric": {
+        "na": "–"
+      },
+      "note": "Note",
+      "noteLabel": "Note ({level})",
+      "scoreNote": "Score {value} (passed: {passed})",
+      "score": "Score update"
+    }
+  },
+  "confirmation": {
+    "title": "Approve sensitive action",
+    "subtitle": "The agent is requesting approval before continuing.",
+    "defaultPrompt": "Approve the pending operation?",
+    "systemNotice": "Confirmation required: {message}",
+    "approve": "Allow",
+    "reject": "Deny",
+    "approved": "User approved: {message}",
+    "denied": "User denied: {message}",
+    "deniedStatus": "Run cancelled by user"
   },
   "roles": {
     "user": "user",
