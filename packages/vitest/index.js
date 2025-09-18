@@ -176,6 +176,23 @@ function makeMatchers(received, negate = false) {
       const found = received.some((item) => deepEqual(item, expected));
       ensure(found, `Expected array ${negate ? "not " : ""}to contain ${format(expected)}`);
     },
+    toContain(expected) {
+      if (typeof received === "string") {
+        ensure(
+          received.includes(String(expected)),
+          `Expected string ${negate ? "not " : ""}to contain ${format(String(expected))}`,
+        );
+        return;
+      }
+      if (!Array.isArray(received)) {
+        throw new Error(`Expected an array or string but received ${format(received)}`);
+      }
+      const contains = received.includes(expected);
+      ensure(contains, `Expected array ${negate ? "not " : ""}to contain ${format(expected)}`);
+    },
+    toBeDefined() {
+      ensure(received !== undefined, `Expected value ${negate ? "to be undefined" : "to be defined"}`);
+    },
     toMatchObject(expected) {
       if (!isObject(received) || !isObject(expected)) {
         throw new Error("toMatchObject expects plain objects");
@@ -202,11 +219,66 @@ function makeMatchers(received, negate = false) {
   };
 }
 
+function createAsyncMatchers(promise, negate = false) {
+  if (!promise || typeof promise.then !== "function") {
+    throw new Error("expect(...).rejects requires a Promise");
+  }
+
+  const ensureRejected = async () => {
+    try {
+      await promise;
+      if (negate) {
+        return { resolved: true };
+      }
+      throw new Error("Expected promise to reject");
+    } catch (error) {
+      if (negate) {
+        throw new Error("Expected promise not to reject");
+      }
+      return { rejected: true, reason: error };
+    }
+  };
+
+  const wrap = (method) => async (...args) => {
+    const outcome = await ensureRejected();
+    if (!outcome.rejected) {
+      return;
+    }
+    const matchers = makeMatchers(outcome.reason, negate);
+    const fn = matchers[method];
+    if (typeof fn !== "function") {
+      throw new Error(`Async matcher ${method} is not supported`);
+    }
+    return fn.apply(matchers, args);
+  };
+
+  return {
+    toMatchObject: wrap("toMatchObject"),
+    toBe: wrap("toBe"),
+    toEqual: wrap("toEqual"),
+    toContain: wrap("toContain"),
+    toContainEqual: wrap("toContainEqual"),
+    toBeDefined: wrap("toBeDefined"),
+    toBeTruthy: wrap("toBeTruthy"),
+    toBeFalsy: wrap("toBeFalsy"),
+    toHaveLength: wrap("toHaveLength"),
+    toBeInstanceOf: wrap("toBeInstanceOf"),
+    get not() {
+      return createAsyncMatchers(promise, !negate);
+    },
+  };
+}
+
 export function expect(received) {
   const matchers = makeMatchers(received);
   Object.defineProperty(matchers, "not", {
     get() {
       return makeMatchers(received, true);
+    },
+  });
+  Object.defineProperty(matchers, "rejects", {
+    get() {
+      return createAsyncMatchers(received);
     },
   });
   return matchers;

@@ -38,6 +38,7 @@ export interface MCPResourceSummary {
 
 export interface MCPInvokeOptions {
   traceId?: string;
+  trace_id?: string;
 }
 
 export interface MCPClientOptions {
@@ -52,8 +53,11 @@ export interface MCPClient {
   hasServer(id: string): boolean;
   getDefaultServer(): string | undefined;
   tools(serverId?: string): Promise<MCPToolSummary[]>;
+  listTools(serverId?: string): Promise<MCPToolSummary[]>;
   resources(serverId?: string): Promise<MCPResourceSummary[]>;
+  listResources(serverId?: string): Promise<MCPResourceSummary[]>;
   invoke(serverId: string, tool: string, args: any, options?: MCPInvokeOptions): Promise<ToolResult>;
+  close(): Promise<void>;
 }
 
 interface MCPTransportOk {
@@ -78,10 +82,18 @@ class MCPConnectionError extends Error {
   }
 }
 
+class MCPServerError extends Error {
+  constructor(message: string, public readonly data: any) {
+    super(message);
+    this.name = "MCPServerError";
+  }
+}
+
 interface MCPServerConnection {
   listTools(): Promise<MCPToolSummary[]>;
   listResources(): Promise<MCPResourceSummary[]>;
   invoke(tool: string, args: any, options?: MCPInvokeOptions): Promise<MCPTransportResult>;
+  close(): Promise<void>;
 }
 
 function normaliseObject(value: Record<string, unknown>): Record<string, string> {
@@ -206,29 +218,31 @@ class ReplayStore {
 }
 
 class HttpMCPConnection implements MCPServerConnection {
+  private nextId = 0;
+
   constructor(private readonly config: MCPServerConfig & { url: string }, private readonly fetchImpl: typeof fetch) {}
 
-  private buildUrl(path: string): string {
-    try {
-      const base = new URL(this.config.url);
-      return new URL(path, base).toString();
-    } catch (error) {
-      throw new MCPConnectionError(
-        "invalid_url",
-        error instanceof Error ? error.message : "invalid MCP server URL",
-      );
-    }
-  }
-
-  private async fetchJson(path: string, init: RequestInit = {}): Promise<{ response: Response; payload: any }> {
+  private async request(method: string, params: any = {}): Promise<any> {
+    const id = `rpc-${++this.nextId}`;
     let response: Response;
+    const compatibility: Record<string, any> = {};
+    if (params && typeof params === "object") {
+      if ("arguments" in params) {
+        compatibility.args = (params as any).arguments;
+      }
+      if (typeof (params as any).context?.trace_id === "string") {
+        compatibility.trace_id = (params as any).context.trace_id;
+      }
+    }
+
     try {
-      response = await this.fetchImpl(this.buildUrl(path), {
-        ...init,
+      response = await this.fetchImpl(this.config.url, {
+        method: "POST",
         headers: {
+          "Content-Type": "application/json",
           Accept: "application/json",
-          ...(init.headers as Record<string, string> | undefined),
         },
+        body: JSON.stringify({ jsonrpc: "2.0", id, method, params, ...compatibility }),
       });
     } catch (error) {
       throw new MCPConnectionError(
@@ -237,27 +251,55 @@ class HttpMCPConnection implements MCPServerConnection {
       );
     }
 
-    const text = await response.text();
-    if (!text) {
-      return { response, payload: undefined };
+    let text = "";
+    try {
+      text = await response.text();
+    } catch (error) {
+      throw new MCPConnectionError(
+        "invalid_response",
+        error instanceof Error ? error.message : "failed to read MCP response",
+      );
     }
 
-    try {
-      return { response, payload: JSON.parse(text) };
-    } catch {
-      return { response, payload: { message: text } };
+    let payload: any = undefined;
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch (error) {
+        throw new MCPConnectionError(
+          "invalid_response",
+          error instanceof Error ? error.message : "failed to parse MCP response",
+        );
+      }
+    } else {
+      payload = undefined;
     }
+
+    if (!response.ok) {
+      const message =
+        typeof payload?.error?.message === "string"
+          ? payload.error.message
+          : `MCP HTTP error (${response.status})`;
+      throw new MCPConnectionError("http_error", message);
+    }
+
+    if (!payload || typeof payload !== "object") {
+      throw new MCPConnectionError("invalid_response", "empty MCP response payload");
+    }
+
+    if (payload.error) {
+      throw new MCPServerError(
+        typeof payload.error.message === "string" ? payload.error.message : "MCP server error",
+        payload.error,
+      );
+    }
+
+    return payload.result ?? payload;
   }
 
   async listTools(): Promise<MCPToolSummary[]> {
-    const { response, payload } = await this.fetchJson("/tools");
-    if (!response.ok) {
-      throw new MCPConnectionError(
-        "http_error",
-        `failed to list MCP tools (${response.status})`,
-      );
-    }
-    const tools = Array.isArray(payload?.tools) ? payload.tools : [];
+    const result = await this.request("tools/list");
+    const tools = Array.isArray(result?.tools) ? result.tools : [];
     return tools.map((item: any) => ({
       name: String(item?.name ?? ""),
       description: typeof item?.description === "string" ? item.description : undefined,
@@ -266,14 +308,8 @@ class HttpMCPConnection implements MCPServerConnection {
   }
 
   async listResources(): Promise<MCPResourceSummary[]> {
-    const { response, payload } = await this.fetchJson("/resources");
-    if (!response.ok) {
-      throw new MCPConnectionError(
-        "http_error",
-        `failed to list MCP resources (${response.status})`,
-      );
-    }
-    const resources = Array.isArray(payload?.resources) ? payload.resources : [];
+    const result = await this.request("resources/list");
+    const resources = Array.isArray(result?.resources) ? result.resources : [];
     return resources.map((item: any) => ({
       uri: String(item?.uri ?? ""),
       mime: typeof item?.mime === "string" ? item.mime : undefined,
@@ -282,50 +318,59 @@ class HttpMCPConnection implements MCPServerConnection {
   }
 
   async invoke(tool: string, args: any, options?: MCPInvokeOptions): Promise<MCPTransportResult> {
-    const { response, payload } = await this.fetchJson("/invoke", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tool, args, trace_id: options?.traceId }),
-    });
+    const traceId = options?.traceId ?? options?.trace_id;
+    try {
+      const result = await this.request("tools/call", {
+        name: tool,
+        arguments: args,
+        context: traceId ? { trace_id: traceId } : undefined,
+      });
 
-    if (!response.ok) {
-      const error = payload?.error ?? payload ?? {};
-      const code =
-        typeof error.code === "string"
-          ? error.code
-          : typeof payload?.code === "string"
-            ? payload.code
-            : `http_${response.status}`;
-      const message =
-        typeof error.message === "string"
-          ? error.message
-          : typeof payload?.message === "string"
-            ? payload.message
-            : `MCP HTTP error (${response.status})`;
-      return { ok: false, code, message, retryable: response.status >= 500 };
-    }
-
-    if (payload && typeof payload.ok === "boolean") {
-      if (payload.ok) {
+      if (result && typeof result.ok === "boolean") {
+        if (result.ok) {
+          return {
+            ok: true,
+            data: result.data,
+            cost: typeof result.cost === "number" ? result.cost : undefined,
+            latency_ms:
+              typeof result.latency_ms === "number" ? result.latency_ms : undefined,
+          } satisfies MCPTransportOk;
+        }
+        const errorDetail = result.error ?? result;
         return {
-          ok: true,
-          data: payload.data,
-          cost: typeof payload.cost === "number" ? payload.cost : undefined,
-          latency_ms:
-            typeof payload.latency_ms === "number" ? payload.latency_ms : undefined,
-        } satisfies MCPTransportOk;
+          ok: false,
+          code: typeof errorDetail?.code === "string" ? errorDetail.code : "mcp.invoke_error",
+          message:
+            typeof errorDetail?.message === "string"
+              ? errorDetail.message
+              : "MCP invocation failed",
+          retryable:
+            typeof errorDetail?.retryable === "boolean" ? errorDetail.retryable : undefined,
+        } satisfies MCPTransportError;
       }
-      const error = payload.error ?? payload;
+
       return {
         ok: false,
-        code: typeof error?.code === "string" ? error.code : "mcp.invoke_error",
-        message:
-          typeof error?.message === "string" ? error.message : "MCP invocation failed",
-        retryable: typeof error?.retryable === "boolean" ? error.retryable : undefined,
+        code: "mcp.invalid_response",
+        message: "MCP response missing ok flag",
       } satisfies MCPTransportError;
+    } catch (error) {
+      if (error instanceof MCPServerError) {
+        const detail = error.data ?? {};
+        return {
+          ok: false,
+          code: typeof detail.code === "string" ? detail.code : "mcp.server_error",
+          message:
+            typeof detail.message === "string" ? detail.message : error.message ?? "MCP server error",
+          retryable: typeof detail.retryable === "boolean" ? detail.retryable : undefined,
+        } satisfies MCPTransportError;
+      }
+      throw error;
     }
+  }
 
-    return { ok: true, data: payload } satisfies MCPTransportOk;
+  async close(): Promise<void> {
+    // HTTP connections are stateless; nothing to dispose.
   }
 }
 
@@ -457,7 +502,8 @@ class WebSocketMCPConnection implements MCPServerConnection {
   }
 
   async invoke(tool: string, args: any, options?: MCPInvokeOptions): Promise<MCPTransportResult> {
-    const response = await this.send({ type: "invoke", tool, args, trace_id: options?.traceId });
+    const traceId = options?.traceId ?? options?.trace_id;
+    const response = await this.send({ type: "invoke", tool, args, trace_id: traceId });
     const result = response?.result ?? response;
     if (result && typeof result.ok === "boolean") {
       if (result.ok) {
@@ -478,6 +524,37 @@ class WebSocketMCPConnection implements MCPServerConnection {
       } satisfies MCPTransportError;
     }
     return { ok: true, data: result } satisfies MCPTransportOk;
+  }
+
+  async close(): Promise<void> {
+    const socket = this.socket;
+    this.socket = null;
+    this.connecting = null;
+    if (!socket) {
+      this.rejectAll(new MCPConnectionError("connection_closed", "WebSocket closed"));
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        socket.removeEventListener("close", finish);
+        socket.removeEventListener("error", finish);
+        resolve();
+      };
+      socket.addEventListener("close", finish);
+      socket.addEventListener("error", finish);
+      try {
+        socket.close();
+      } catch {
+        resolve();
+      }
+      const timer: ReturnType<typeof setTimeout> = setTimeout(resolve, 100);
+      if (typeof (timer as any)?.unref === "function") {
+        (timer as any).unref();
+      }
+    });
+
+    this.rejectAll(new MCPConnectionError("connection_closed", "WebSocket closed"));
   }
 }
 
@@ -588,7 +665,8 @@ class StdioMCPConnection implements MCPServerConnection {
   }
 
   async invoke(tool: string, args: any, options?: MCPInvokeOptions): Promise<MCPTransportResult> {
-    const response = await this.send({ type: "invoke", tool, args, trace_id: options?.traceId });
+    const traceId = options?.traceId ?? options?.trace_id;
+    const response = await this.send({ type: "invoke", tool, args, trace_id: traceId });
     const result = response?.result ?? response;
     if (result && typeof result.ok === "boolean") {
       if (result.ok) {
@@ -610,31 +688,30 @@ class StdioMCPConnection implements MCPServerConnection {
     }
     return { ok: true, data: result } satisfies MCPTransportOk;
   }
-}
 
-class NullMCPClient implements MCPClient {
-  isAvailable(): boolean {
-    return false;
-  }
-
-  hasServer(): boolean {
-    return false;
-  }
-
-  getDefaultServer(): string | undefined {
-    return undefined;
-  }
-
-  async tools(): Promise<MCPToolSummary[]> {
-    return [];
-  }
-
-  async resources(): Promise<MCPResourceSummary[]> {
-    return [];
-  }
-
-  async invoke(): Promise<ToolResult> {
-    return { ok: false, code: "mcp.unavailable", message: "no MCP servers configured" };
+  async close(): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    this.rejectAll(new MCPConnectionError("process_exit", "MCP stdio server closed"));
+    try {
+      this.rl.removeAllListeners();
+      this.rl.close();
+    } catch {
+      // ignore readline cleanup errors
+    }
+    try {
+      this.proc.removeAllListeners();
+      this.proc.stdin.end();
+    } catch {
+      // ignore
+    }
+    try {
+      this.proc.kill("SIGTERM");
+    } catch {
+      // ignore kill errors
+    }
   }
 }
 
@@ -665,12 +742,20 @@ class MCPClientImpl implements MCPClient {
     return connection.listTools();
   }
 
+  async listTools(serverId?: string): Promise<MCPToolSummary[]> {
+    return this.tools(serverId);
+  }
+
   async resources(serverId?: string): Promise<MCPResourceSummary[]> {
     const target = serverId ?? this.defaultServerId;
     if (!target) return [];
     const connection = this.connections.get(target);
     if (!connection) return [];
     return connection.listResources();
+  }
+
+  async listResources(serverId?: string): Promise<MCPResourceSummary[]> {
+    return this.resources(serverId);
   }
 
   async invoke(serverId: string, tool: string, args: any, options?: MCPInvokeOptions): Promise<ToolResult> {
@@ -730,11 +815,27 @@ class MCPClientImpl implements MCPClient {
       } satisfies ToolError;
     }
   }
+
+  async close(): Promise<void> {
+    const closures: Promise<void>[] = [];
+    for (const connection of this.connections.values()) {
+      try {
+        const result = connection.close();
+        closures.push(Promise.resolve(result));
+      } catch {
+        // Ignore connection close errors.
+      }
+    }
+    this.connections.clear();
+    if (closures.length > 0) {
+      await Promise.allSettled(closures);
+    }
+  }
 }
 
 export async function loadMCPRegistry(registryPath?: string): Promise<MCPRegistry> {
-  const resolvedPath =
-    registryPath ?? process.env.AOS_MCP_REGISTRY ?? join(process.cwd(), "mcp.registry.json");
+  const envRegistryPath = process.env.MCP_REGISTRY_PATH ?? process.env.AOS_MCP_REGISTRY;
+  const resolvedPath = registryPath ?? envRegistryPath ?? join(process.cwd(), "mcp.registry.json");
 
   let content: string;
   try {
@@ -757,7 +858,11 @@ export async function loadMCPRegistry(registryPath?: string): Promise<MCPRegistr
     );
   }
 
-  const rawServers = Array.isArray(parsed?.servers) ? parsed.servers : [];
+  const rawServers = Array.isArray(parsed?.servers)
+    ? parsed.servers
+    : Array.isArray(parsed)
+      ? parsed
+      : [];
   const servers: MCPServerConfig[] = [];
   for (const item of rawServers) {
     if (!item || typeof item.id !== "string" || typeof item.transport !== "string") {
@@ -784,8 +889,11 @@ export async function loadMCPRegistry(registryPath?: string): Promise<MCPRegistr
   return { servers, defaultServer };
 }
 
-export async function createMCPClient(options: MCPClientOptions = {}): Promise<MCPClient> {
+export async function createMCPClient(options: MCPClientOptions = {}): Promise<MCPClient | null> {
   const registry = await loadMCPRegistry(options.registryPath);
+  if (registry.servers.length === 0) {
+    return null;
+  }
   const fetchImpl = options.fetchImpl ?? fetch;
   const connections = new Map<string, MCPServerConnection>();
 
@@ -806,7 +914,7 @@ export async function createMCPClient(options: MCPClientOptions = {}): Promise<M
   }
 
   if (connections.size === 0) {
-    return new NullMCPClient();
+    return null;
   }
 
   const defaultFromRegistry = registry.defaultServer;
