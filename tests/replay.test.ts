@@ -26,9 +26,9 @@ describe("replayEpisode", () => {
     const traceId = "trace-replay";
     const logger = new EpisodeLogger({ traceId, dir });
 
-    const first = await logger.append(createEvent(traceId, "agent.progress", { step: "act" }));
+    const first = await logger.append(createEvent(traceId, "run.progress", { step: "act" }));
     const second = await logger.append(
-      createEvent(traceId, "agent.final", { outputs: { answer: 42 } }),
+      createEvent(traceId, "run.finished", { outputs: { answer: 42 }, reason: "completed" }),
     );
 
     const seen: string[] = [];
@@ -42,7 +42,7 @@ describe("replayEpisode", () => {
     expect(events).toHaveLength(2);
     expect(events[0].ln).toBe(first.ln);
     expect(events[1].ln).toBe(second.ln);
-    expect(seen).toEqual(["agent.progress", "agent.final"]);
+    expect(seen).toEqual(["run.progress", "run.finished"]);
   });
 
   it("throws when the episode file is missing", async () => {

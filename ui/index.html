@@ -150,31 +150,47 @@
         }
       }
 
+      function handleEnvelopeEvent(evt) {
+        try {
+          const payload = JSON.parse(evt.data);
+          appendLogLine(JSON.stringify(payload));
+          status.textContent = `Streaming ${payload.type}`;
+        } catch (error) {
+          console.error("Failed to parse event", error);
+        }
+      }
+
       function subscribeToEvents(traceId) {
         closeStream();
-        const source = new EventSource(`/api/run/${traceId}/events`);
+        const source = new EventSource(`/api/runs/${traceId}/stream`);
         eventSource = source;
 
         source.addEventListener("open", () => {
           status.textContent = "Running...";
         });
 
-        source.addEventListener("event", (evt) => {
-          try {
-            const payload = JSON.parse(evt.data);
-            appendLogLine(JSON.stringify(payload));
-            status.textContent = "Streaming events...";
-          } catch (error) {
-            console.error("Failed to parse event", error);
-          }
+        const streamEvents = [
+          "run.started",
+          "run.progress",
+          "plan.updated",
+          "tool.succeeded",
+          "tool.failed",
+          "run.log",
+          "run.ask",
+          "run.score",
+        ];
+
+        streamEvents.forEach((eventName) => {
+          source.addEventListener(eventName, handleEnvelopeEvent);
         });
 
-        source.addEventListener("complete", async (evt) => {
+        source.addEventListener("run.finished", async (evt) => {
+          handleEnvelopeEvent(evt);
           try {
             const payload = JSON.parse(evt.data);
-            const reason = payload.reason ? ` (${payload.reason})` : "";
+            const reason = payload.data?.reason ? ` (${payload.data.reason})` : "";
             status.textContent = `Completed${reason}`;
-            finalOutput.textContent = JSON.stringify(payload.final ?? null, null, 2);
+            finalOutput.textContent = JSON.stringify(payload.data?.outputs ?? null, null, 2);
           } catch (error) {
             status.textContent = "Completed";
             console.error("Failed to parse completion payload", error);
@@ -184,17 +200,28 @@
           closeStream();
         });
 
-        source.addEventListener("run-error", (evt) => {
+        source.addEventListener("run.failed", async (evt) => {
+          handleEnvelopeEvent(evt);
           try {
             const payload = JSON.parse(evt.data);
-            status.textContent = `Failed: ${payload.message || "Unknown error"}`;
-            finalOutput.textContent = payload.message || "Run failed.";
+            const message = payload.data?.message || payload.message || "Run failed.";
+            status.textContent = `Failed: ${message}`;
+            finalOutput.textContent = message;
           } catch (error) {
             status.textContent = "Failed";
             finalOutput.textContent = "Run failed.";
-            console.error("Failed to parse error payload", error);
+            console.error("Failed to parse failure payload", error);
           }
           runButton.disabled = false;
+          await hydrateEpisode(traceId);
+          closeStream();
+        });
+
+        source.addEventListener("stream.end", () => {
+          if (runButton.disabled) {
+            status.textContent = "Stream closed";
+            runButton.disabled = false;
+          }
           closeStream();
         });
 

@@ -20,8 +20,10 @@ describe("EpisodeLogger", () => {
       data,
     });
 
-    const first = await logger.append(makeEvent("agent.plan", { revision: 1 }));
-    const second = await logger.append(makeEvent("agent.final", { final: { answer: "done" } }));
+    const first = await logger.append(makeEvent("plan.updated", { revision: 1 }));
+    const second = await logger.append(
+      makeEvent("run.finished", { outputs: { answer: "done" }, reason: "completed" }),
+    );
 
     expect(first.ln).toBe(1);
     expect(first.byte_offset).toBe(0);

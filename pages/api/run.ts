@@ -10,7 +10,13 @@ import {
   type RunLoopResult,
 } from "../../core/agent";
 import { EpisodeLogger } from "../../runtime/episode";
-import { EventBus, wrapCoreEvent, type EventEnvelope } from "../../runtime/events";
+import {
+  EventBus,
+  wrapCoreEvent,
+  createRunEvent,
+  type EventEnvelope,
+} from "../../runtime/events";
+import { markRunCompleted, markRunFailed, registerRun } from "../../runtime/runRegistry";
 
 interface RunResponse {
   trace_id: string;
@@ -105,7 +111,17 @@ export default async function handler(
     }
   });
 
+  registerRun(traceId, { bus, logger });
+
   try {
+    await bus.publish(
+      createRunEvent(traceId, "run.started", {
+        trace_id: traceId,
+        input: message,
+        history_length: history.length,
+      }),
+    );
+
     const emit = async (event: CoreEvent, span?: EmitSpanOptions): Promise<void> => {
       await bus.publish(wrapCoreEvent(traceId, event, span));
     };
@@ -120,7 +136,7 @@ export default async function handler(
       const envelope: EventEnvelope = {
         id: randomUUID(),
         ts: new Date().toISOString(),
-        type: "agent.chat.msg",
+        type: "chat.msg",
         version: 1,
         trace_id: traceId,
         data: {
@@ -162,6 +178,8 @@ export default async function handler(
       });
     }
 
+    markRunCompleted(traceId);
+
     res.status(200).json({
       trace_id: traceId,
       result: result.final,
@@ -177,6 +195,10 @@ export default async function handler(
   } catch (err) {
     console.error("request failed", err);
     const message = err instanceof Error ? err.message : "unknown error";
+    await bus.publish(
+      createRunEvent(traceId, "run.failed", { message, trace_id: traceId }),
+    );
+    markRunFailed(traceId);
     res.status(500).json({ error: "internal_error", message });
   }
 }

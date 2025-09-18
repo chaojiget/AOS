@@ -54,6 +54,35 @@ export interface WrapEventOptions extends EventMetadata {
   version?: number;
 }
 
+function mapCoreEventType(event: CoreEvent): string {
+  switch (event.type) {
+    case "plan":
+      return "plan.updated";
+    case "tool":
+      return event.result && event.result.ok === false ? "tool.failed" : "tool.succeeded";
+    case "progress":
+      return "run.progress";
+    case "final":
+      return "run.finished";
+    case "log":
+      return "run.log";
+    case "ask":
+      return "run.ask";
+    case "score":
+      return "run.score";
+    default:
+      return event.type;
+  }
+}
+
+function enrichEventData(event: CoreEvent): CoreEvent {
+  if (event.type === "tool") {
+    const status = event.result && event.result.ok === false ? "failed" : "succeeded";
+    return { ...event, status };
+  }
+  return event;
+}
+
 export function wrapCoreEvent(
   traceId: string,
   event: CoreEvent,
@@ -65,13 +94,33 @@ export function wrapCoreEvent(
   return {
     id: randomUUID(),
     ts: new Date().toISOString(),
-    type: `agent.${event.type}`,
+    type: mapCoreEventType(event),
     version: options.version ?? 1,
     trace_id: traceId,
     span_id: options.spanId,
     parent_span_id: options.parentSpanId,
     topic: options.topic,
     level,
-    data: event,
+    data: enrichEventData(event),
+  };
+}
+
+export function createRunEvent(
+  traceId: string,
+  type: string,
+  data: Record<string, unknown> = {},
+  options: WrapEventOptions = {},
+): EventEnvelope<Record<string, unknown>> {
+  return {
+    id: randomUUID(),
+    ts: new Date().toISOString(),
+    type,
+    version: options.version ?? 1,
+    trace_id: traceId,
+    span_id: options.spanId,
+    parent_span_id: options.parentSpanId,
+    topic: options.topic,
+    level: options.level,
+    data,
   };
 }

@@ -4,7 +4,7 @@ import type { BranchNode, LogFlowMessage } from "../types/logflow";
 
 describe("buildBranchTree", () => {
   const baseMessage = {
-    type: "agent.tool",
+    type: "tool.succeeded",
     ts: "2024-01-01T00:00:00.000Z",
     message: "",
     data: {},
@@ -82,7 +82,7 @@ describe("buildBranchTree", () => {
         id: "evt-1",
         ln: 1,
         span_id: "trace-root",
-        type: "agent.progress",
+        type: "run.progress",
         ts: now,
         message: "root progress",
         data: { step: "perceive" },
@@ -92,7 +92,7 @@ describe("buildBranchTree", () => {
         ln: 2,
         span_id: "plan-1",
         parent_span_id: "trace-root",
-        type: "agent.plan",
+        type: "plan.updated",
         ts: now,
         message: "plan",
         data: { revision: 1 },
@@ -102,7 +102,7 @@ describe("buildBranchTree", () => {
         ln: 3,
         span_id: "step-a",
         parent_span_id: "plan-1",
-        type: "agent.progress",
+        type: "run.progress",
         ts: now,
         message: "progress",
         data: { step: "act" },
@@ -112,7 +112,7 @@ describe("buildBranchTree", () => {
         ln: 4,
         span_id: "step-a",
         parent_span_id: "plan-1",
-        type: "agent.tool",
+        type: "tool.succeeded",
         ts: now,
         message: "tool",
         data: { name: "tool.echo" },
@@ -122,7 +122,7 @@ describe("buildBranchTree", () => {
         ln: 5,
         span_id: "step-b",
         parent_span_id: "plan-1",
-        type: "agent.tool",
+        type: "tool.succeeded",
         ts: now,
         message: "tool",
         data: { name: "tool.calc" },
@@ -136,6 +136,6 @@ describe("buildBranchTree", () => {
     expect(tree?.children.map((child) => child.span_id)).toEqual(["step-a", "step-b"]);
     const stepANode = tree?.children.find((child) => child.span_id === "step-a");
     expect(stepANode?.events).toHaveLength(2);
-    expect(stepANode?.events.map((evt) => evt.type)).toEqual(["agent.progress", "agent.tool"]);
+    expect(stepANode?.events.map((evt) => evt.type)).toEqual(["run.progress", "tool.succeeded"]);
   });
 });

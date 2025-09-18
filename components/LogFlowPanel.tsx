@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toLogFlowMessage } from "../lib/logflowMessages";
 import type {
   BranchNode,
   BranchResponse,
@@ -25,19 +26,30 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
   const [branch, setBranch] = useState<BranchResponse | null>(null);
   const latestSelectionRef = useRef<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const seenIdsRef = useRef<Set<string>>(new Set());
   const branchCards = useMemo(() => {
     if (!branch?.tree) return [];
     return flattenBranchNodes(branch.tree);
   }, [branch]);
 
   useEffect(() => {
+    const closeStream = () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
+
     if (!traceId) {
+      closeStream();
       setMessages([]);
       setSelectedMessage(null);
       setBranch(null);
       setMainlineState(initialRequestState);
       setBranchState(initialRequestState);
       latestSelectionRef.current = null;
+      seenIdsRef.current.clear();
       return;
     }
 
@@ -49,6 +61,8 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
     latestSelectionRef.current = null;
 
     const controller = new AbortController();
+    closeStream();
+    seenIdsRef.current = new Set();
 
     fetch(`/api/logflow/mainline?trace_id=${encodeURIComponent(traceId)}`, {
       signal: controller.signal,
@@ -63,6 +77,63 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
       .then((data) => {
         if (cancelled) return;
         setMessages(data.messages);
+        seenIdsRef.current = new Set(data.messages.map((msg) => msg.id));
+        if (typeof window !== "undefined") {
+          const source = new EventSource(`/api/runs/${traceId}/stream`);
+          eventSourceRef.current = source;
+
+          const handleEnvelope = (event: MessageEvent<string>) => {
+            try {
+              const envelope = JSON.parse(event.data);
+              if (!envelope || typeof envelope.id !== "string") {
+                return;
+              }
+              if (seenIdsRef.current.has(envelope.id)) {
+                return;
+              }
+              seenIdsRef.current.add(envelope.id);
+              const message = toLogFlowMessage(envelope);
+              setMessages((prev) => {
+                const next = [...prev, message];
+                next.sort((a, b) => a.ln - b.ln);
+                return next;
+              });
+            } catch (error) {
+              console.error("Failed to parse SSE event", error);
+            }
+          };
+
+          const eventNames = [
+            "run.started",
+            "run.progress",
+            "plan.updated",
+            "tool.succeeded",
+            "tool.failed",
+            "run.log",
+            "run.ask",
+            "run.score",
+            "run.finished",
+            "run.failed",
+          ];
+
+          eventNames.forEach((eventName) => {
+            source.addEventListener(eventName, handleEnvelope as EventListener);
+          });
+
+          const handleStreamEnd = () => {
+            if (eventSourceRef.current === source) {
+              source.close();
+              eventSourceRef.current = null;
+            }
+          };
+
+          source.addEventListener("stream.end", handleStreamEnd);
+          source.onerror = () => {
+            if (source.readyState === EventSource.CLOSED) {
+              handleStreamEnd();
+            }
+          };
+        }
       })
       .catch((err: any) => {
         if (cancelled) return;
@@ -77,6 +148,10 @@ export function LogFlowPanel({ traceId }: LogFlowPanelProps) {
     return () => {
       cancelled = true;
       controller.abort();
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
     };
   }, [traceId]);
 

@@ -215,7 +215,7 @@ describe("POST /api/run", () => {
 
       const lineNumbers = updatedEvents.map((event) => event.ln);
       expect(lineNumbers).toEqual([...lineNumbers].sort((a, b) => (a ?? 0) - (b ?? 0)));
-      const finalEvents = updatedEvents.filter((event) => event.type === "agent.final");
+      const finalEvents = updatedEvents.filter((event) => event.type === "run.finished");
       expect(finalEvents.length >= 1).toBe(true);
       const lastFinal = finalEvents.at(-1);
       expect((lastFinal?.data as any)?.reason).toBe("completed");
