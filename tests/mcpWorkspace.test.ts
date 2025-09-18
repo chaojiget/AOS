@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createDefaultToolInvoker } from "../adapters/core";
+import { createMcpAdapter } from "../adapters/mcp";
 import type {
   ActionOutcome,
   AgentKernel,
@@ -25,7 +26,7 @@ class WorkspaceKernel implements AgentKernel {
   constructor(private readonly toolInvoker: ToolInvoker, private readonly traceId: string) {}
 
   async perceive(): Promise<void> {
-    /* no-op */
+    // no-op
   }
 
   async plan(): Promise<Plan> {
@@ -75,7 +76,7 @@ async function createTempDir(prefix: string): Promise<string> {
   return mkdtemp(join(tmpdir(), prefix));
 }
 
-describe("mcp workspace server", () => {
+describe("mcp workspace registry", () => {
   it("records workspace operations and replays results", async () => {
     const workspaceRoot = await createTempDir("aos-workspace-");
     const episodesDir = await createTempDir("aos-episodes-");
@@ -99,8 +100,7 @@ describe("mcp workspace server", () => {
       });
 
       const kernel = new WorkspaceKernel(toolInvoker, traceId);
-      const emit = (event: CoreEvent, span?: EmitSpanOptions) =>
-        bus.publish(wrapCoreEvent(traceId, event, span));
+      const emit = (event: CoreEvent, span?: EmitSpanOptions) => bus.publish(wrapCoreEvent(traceId, event, span));
       const result = await runLoop(kernel, emit, { context: { traceId } });
 
       expect(result.reason).toBe("completed");
@@ -116,12 +116,12 @@ describe("mcp workspace server", () => {
         return data?.type === "tool" && data?.name === "file.write";
       });
       expect(writeToolEvent).toBeTruthy();
-    const writeResult = (writeToolEvent?.data as any)?.result as ToolResult | undefined;
-    expect(writeResult?.ok).toBe(true);
-    if (writeResult?.ok) {
-      expect(typeof (writeResult.data as any)?.bytes).toBe("number");
-      expect((writeResult.data as any).bytes > 0).toBe(true);
-    }
+      const writeResult = (writeToolEvent?.data as any)?.result as ToolResult | undefined;
+      expect(writeResult?.ok).toBe(true);
+      if (writeResult?.ok) {
+        expect(typeof (writeResult.data as any)?.bytes).toBe("number");
+        expect((writeResult.data as any).bytes > 0).toBe(true);
+      }
 
       const mcpResultEvent = recordedEvents.find(
         (event) => event.type === "mcp.result" && (event.data as any).tool === "file.write",
@@ -131,9 +131,7 @@ describe("mcp workspace server", () => {
       expect((mcpResultEvent?.data as any).path).toBe("notes/hello.txt");
 
       const replayed = await replayEpisode(traceId, { dir: episodesDir });
-      expect(replayed.map((event) => event.type)).toEqual(
-        recordedEvents.map((event) => event.type),
-      );
+      expect(replayed.map((event) => event.type)).toEqual(recordedEvents.map((event) => event.type));
       const replayWriteResult = replayed.find(
         (event) => event.type === "mcp.result" && (event.data as any).tool === "file.write",
       );
@@ -175,3 +173,97 @@ describe("mcp workspace server", () => {
   });
 });
 
+describe("mcp workspace adapter", () => {
+  it("records events, applies file side effects, and replays deterministically", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "mcp-workspace-"));
+    const traceId = "trace-mcp-workspace";
+    const events: EventEnvelope[] = [];
+    const bus = new EventBus();
+    bus.subscribe(async (event) => {
+      events.push(event);
+    });
+
+    const adapter = createMcpAdapter({ traceId, bus, core: { root: workspace } });
+
+    const writeArgs = { path: "notes/hello.txt", content: "hello mcp" } as const;
+    const writeResult = await adapter.call("mcp-core", "file.write", writeArgs);
+    if (!writeResult.ok) {
+      throw new Error(`expected write to succeed, received error: ${writeResult.code}`);
+    }
+    expect(writeResult.data.path).toBe("notes/hello.txt");
+    expect(writeResult.data.bytes).toBe(Buffer.byteLength(writeArgs.content, "utf8"));
+
+    const readResult = await adapter.call("mcp-core", "file.read", { path: writeArgs.path });
+    if (!readResult.ok) {
+      throw new Error(`expected read to succeed, received error: ${readResult.code}`);
+    }
+    expect(readResult.data.path).toBe("notes/hello.txt");
+    expect(readResult.data.content).toBe(writeArgs.content);
+
+    const listResult = await adapter.call("mcp-core", "file.list", { path: "notes" });
+    if (!listResult.ok) {
+      throw new Error(`expected list to succeed, received error: ${listResult.code}`);
+    }
+    expect(listResult.data.path).toBe("notes");
+    const entries = (listResult.data as { entries: Array<{ name: string }> }).entries;
+    const entryNames = entries.map((entry) => entry.name);
+    expect(entryNames).toContain("hello.txt");
+
+    const fileContent = await readFile(join(workspace, "notes", "hello.txt"), "utf8");
+    expect(fileContent).toBe(writeArgs.content);
+
+    const callEvents = events.filter((event) => event.type === "mcp.call");
+    const resultEvents = events.filter((event) => event.type === "mcp.result");
+    expect(callEvents).toHaveLength(3);
+    expect(resultEvents).toHaveLength(3);
+
+    const spanMatches = new Map<string, { call: EventEnvelope; result?: EventEnvelope }>();
+    for (const event of callEvents) {
+      if (event.span_id) {
+        spanMatches.set(event.span_id, { call: event });
+      }
+    }
+    for (const event of resultEvents) {
+      if (!event.span_id) continue;
+      const pair = spanMatches.get(event.span_id);
+      expect(pair).toBeDefined();
+      if (pair) {
+        pair.result = event;
+        const callData = pair.call.data as { args_hash: string };
+        const resultData = event.data as { args_hash: string; ok: boolean };
+        expect(resultData.args_hash).toBe(callData.args_hash);
+        expect(typeof resultData.ok).toBe("boolean");
+      }
+    }
+
+    await rm(join(workspace, "notes"), { recursive: true, force: true });
+
+    const replayBus = new EventBus();
+    const replayEvents: EventEnvelope[] = [];
+    replayBus.subscribe(async (event) => {
+      replayEvents.push(event);
+    });
+
+    const replayAdapter = createMcpAdapter({
+      traceId,
+      bus: replayBus,
+      mode: "replay",
+      recordedEvents: events,
+      core: { root: workspace },
+    });
+
+    const replayWrite = await replayAdapter.call("mcp-core", "file.write", writeArgs);
+    expect(replayWrite).toMatchObject({ ok: true, data: writeResult.data });
+
+    const replayRead = await replayAdapter.call("mcp-core", "file.read", { path: writeArgs.path });
+    expect(replayRead).toMatchObject({ ok: true, data: readResult.data });
+
+    const replayList = await replayAdapter.call("mcp-core", "file.list", { path: "notes" });
+    expect(replayList).toMatchObject({ ok: true, data: listResult.data });
+
+    expect(replayEvents.filter((event) => event.type === "mcp.call")).toHaveLength(3);
+    expect(replayEvents.filter((event) => event.type === "mcp.result")).toHaveLength(3);
+
+    await expect(stat(join(workspace, "notes", "hello.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
