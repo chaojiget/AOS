@@ -12,6 +12,8 @@ const COMPILER_OPTIONS = {
   skipLibCheck: true,
   sourceMap: false,
   jsx: ts.JsxEmit.ReactJSX,
+  experimentalDecorators: true,
+  emitDecoratorMetadata: true,
 };
 
 async function fileExists(url) {
