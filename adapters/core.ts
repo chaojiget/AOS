@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import {
   ToolInvoker,
   ToolCall,
@@ -12,8 +13,13 @@ import {
   ReviewResult,
 } from "../core/agent";
 import type { ChatMessage } from "../types/chat";
-import { createMcpRegistry, type CreateMcpRegistryOptions } from "./mcp";
 import { buildChatCompletionsUrl, loadLLMConfig } from "../config/llm";
+import {
+  createMCPClient,
+  type MCPClient,
+  createMcpRegistry,
+  type CreateMcpRegistryOptions,
+} from "./mcp";
 
 export const DEFAULT_SYSTEM_PROMPT = {
   role: "system",
@@ -43,6 +49,23 @@ async function handleHttpGet(args: any): Promise<ToolResult> {
       code: "http.error",
       message: err?.message ?? "request failed",
       retryable: true,
+    } satisfies ToolError;
+  }
+}
+
+async function handleFileRead(args: any): Promise<ToolResult> {
+  const path = args?.path;
+  if (!path) {
+    return { ok: false, code: "file.invalid_path", message: "path is required" };
+  }
+  try {
+    const content = await readFile(path, "utf8");
+    return { ok: true, data: { path, content } } satisfies ToolOk;
+  } catch (err: any) {
+    return {
+      ok: false,
+      code: "file.read_error",
+      message: err?.message ?? "failed to read file",
     } satisfies ToolError;
   }
 }
@@ -166,30 +189,97 @@ async function handleChat(args: any): Promise<ToolResult> {
   }
 }
 
-export interface DefaultToolInvokerOptions extends CreateMcpRegistryOptions {}
+export interface DefaultToolInvokerOptions extends CreateMcpRegistryOptions {
+  enableRemoteMcp?: boolean;
+  mcpClientPromise?: Promise<MCPClient | null>;
+}
 
 export function createDefaultToolInvoker(options: DefaultToolInvokerOptions = {}): ToolInvoker {
   const mcpRegistry = createMcpRegistry(options);
+  const enableRemote = options.enableRemoteMcp ?? true;
+
+  const mcpClientPromise: Promise<MCPClient | null> = enableRemote
+    ? options.mcpClientPromise ??
+      createMCPClient()
+        .then((client) => client)
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(`failed to initialise MCP client: ${message}`);
+          return null;
+        })
+    : Promise.resolve(null);
+
   return async (call: ToolCall, ctx: ToolContext) => {
-    const mcpResult = await mcpRegistry.invoke(call, ctx);
-    if (mcpResult !== null) {
-      return mcpResult;
+    const localResult = await mcpRegistry.invoke(call, ctx);
+    if (localResult !== null) {
+      return localResult;
     }
-    switch (call.name) {
-      case "echo":
-        return handleEcho(call.args);
-      case "http.get":
-        return handleHttpGet(call.args);
-      case "llm.chat":
-        return handleChat(call.args);
-      default:
-        return {
-          ok: false,
-          code: "tool.not_found",
-          message: `tool ${call.name} is not available`,
-        } satisfies ToolError;
+
+    if (enableRemote) {
+      const client = await mcpClientPromise;
+      if (client?.isAvailable()) {
+        const route = resolveMcpRoute(client, call.name);
+        if (route) {
+          const remoteResult = await client.invoke(route.serverId, route.toolName, call.args, {
+            traceId: ctx?.trace_id,
+          });
+          if (remoteResult.ok || !isToolNotFoundError(remoteResult)) {
+            return remoteResult;
+          }
+        }
+      }
     }
+
+    return invokeLocalTool(call);
   };
+}
+
+async function invokeLocalTool(call: ToolCall): Promise<ToolResult> {
+  switch (call.name) {
+    case "echo":
+      return handleEcho(call.args);
+    case "http.get":
+      return handleHttpGet(call.args);
+    case "file.read":
+      return handleFileRead(call.args);
+    case "llm.chat":
+      return handleChat(call.args);
+    default:
+      return {
+        ok: false,
+        code: "tool.not_found",
+        message: `tool ${call.name} is not available`,
+      } satisfies ToolError;
+  }
+}
+
+function resolveMcpRoute(client: MCPClient, toolName: string):
+  | { serverId: string; toolName: string }
+  | null {
+  const trimmed = toolName.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const firstDot = trimmed.indexOf(".");
+  if (firstDot > 0) {
+    const serverId = trimmed.slice(0, firstDot);
+    const innerTool = trimmed.slice(firstDot + 1);
+    if (innerTool && client.hasServer(serverId)) {
+      return { serverId, toolName: innerTool };
+    }
+  }
+  const defaultServer = client.getDefaultServer();
+  if (defaultServer) {
+    return { serverId: defaultServer, toolName: trimmed };
+  }
+  return null;
+}
+
+function isToolNotFoundError(result: ToolResult): boolean {
+  if (result.ok) {
+    return false;
+  }
+  return result.code === "tool.not_found" || result.code === "mcp.tool_not_found";
 }
 
 export function summarizeToolResult(result: ToolResult): any {
