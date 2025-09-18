@@ -17,10 +17,10 @@ const mockEpisodeId = `smoke-test-${Date.now()}`;
 const mockEpisode = {
   id: mockEpisodeId,
   ts: new Date().toISOString(),
-  type: "agent.final",
+  type: "run.finished",
   version: 1,
   trace_id: mockEpisodeId,
-  data: { type: "final", outputs: { text: "Smoke test completed successfully" } },
+  data: { outputs: { text: "Smoke test completed successfully" }, reason: "completed" },
 };
 
 await writeFile(join("episodes", `${mockEpisodeId}.jsonl`), JSON.stringify(mockEpisode) + "\n");

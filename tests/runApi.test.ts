@@ -93,7 +93,7 @@ describe("POST /api/run", () => {
         .split("\n")
         .filter(Boolean)
         .map((line) => JSON.parse(line) as Record<string, any>)
-        .filter((event) => event.type === "agent.chat.msg");
+        .filter((event) => event.type === "chat.msg");
 
       expect(chatEvents).toHaveLength(history.length + 2);
       const roles = chatEvents.map((event) => event.data.role);

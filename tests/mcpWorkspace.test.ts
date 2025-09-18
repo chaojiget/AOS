@@ -111,7 +111,7 @@ describe("mcp workspace registry", () => {
       expect(writtenContent).toBe("hello workspace");
 
       const writeToolEvent = recordedEvents.find((event) => {
-        if (event.type !== "agent.tool") return false;
+        if (event.type !== "tool.succeeded") return false;
         const data = event.data as any;
         return data?.type === "tool" && data?.name === "file.write";
       });

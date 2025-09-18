@@ -123,7 +123,7 @@ describe("POST /api/chat/send", () => {
     expect(assistantMessage?.trace_id).toBe(responseTraceId);
     expect(assistantMessage?.reply_to).toBe(responseMsgId);
     expect(Array.isArray(record.body?.events)).toBe(true);
-    expect(record.body?.events?.[0]?.type).toBe("chat.msg");
+    expect(record.body?.events?.[0]?.type).toBe("run.started");
 
     const events = await parseEpisode(responseTraceId);
     expect(events.length > 0).toBe(true);

@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { readEpisodeEvents, readEpisodeIndexEntries, toLogFlowMessage } from "../../../lib/logflow";
+import { readEpisodeEvents, readEpisodeIndexEntries } from "../../../lib/logflow";
+import { toLogFlowMessage } from "../../../lib/logflowMessages";
 import type { MainlineResponse } from "../../../types/logflow";
 
 const METHOD = "GET";

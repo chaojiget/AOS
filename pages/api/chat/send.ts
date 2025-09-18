@@ -5,7 +5,13 @@ import { join } from "node:path";
 import { createChatKernel, createDefaultToolInvoker } from "../../../adapters/core";
 import { runLoop, type CoreEvent, type EmitSpanOptions } from "../../../core/agent";
 import { EpisodeLogger } from "../../../runtime/episode";
-import { EventBus, type EventEnvelope, wrapCoreEvent } from "../../../runtime/events";
+import {
+  EventBus,
+  type EventEnvelope,
+  wrapCoreEvent,
+  createRunEvent,
+} from "../../../runtime/events";
+import { markRunCompleted, markRunFailed, registerRun } from "../../../runtime/runRegistry";
 
 type RunReason = "completed" | "no-plan" | "ask" | "max-iterations";
 
@@ -234,6 +240,8 @@ export default async function handler(
     }
   });
 
+  registerRun(traceId, { bus, logger });
+
   const chatMessageEnvelope: EventEnvelope = {
     id: randomUUID(),
     ts: new Date().toISOString(),
@@ -250,6 +258,14 @@ export default async function handler(
   };
 
   try {
+    await bus.publish(
+      createRunEvent(traceId, "run.started", {
+        trace_id: traceId,
+        input: text,
+        history_length: history.length,
+      }),
+    );
+
     await bus.publish(chatMessageEnvelope);
 
     const emit = async (event: CoreEvent, span?: EmitSpanOptions): Promise<void> => {
@@ -325,6 +341,8 @@ export default async function handler(
       data: assistantPayload,
     });
 
+    markRunCompleted(traceId);
+
     res.status(200).json({
       trace_id: traceId,
       msg_id: msgId,
@@ -343,6 +361,10 @@ export default async function handler(
   } catch (err) {
     console.error("chat send request failed", err);
     const message = err instanceof Error ? err.message : "unknown error";
+    await bus.publish(
+      createRunEvent(traceId, "run.failed", { message, trace_id: traceId }),
+    );
+    markRunFailed(traceId);
     res
       .status(500)
       .json({ error: "internal_error", message: `服务器内部错误：${message}` });
