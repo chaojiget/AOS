@@ -1,4 +1,11 @@
 import { readFile } from "node:fs/promises";
+import OpenAI, {
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  APIError,
+  OpenAIError,
+} from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import {
   ToolInvoker,
   ToolCall,
@@ -14,7 +21,8 @@ import {
   AskRequest,
 } from "../core/agent";
 import type { ChatMessage } from "../types/chat";
-import { buildChatCompletionsUrl, loadLLMConfig } from "../config/llm";
+import { loadLLMConfig } from "../config/llm";
+import type { LLMConfig } from "../config/llm";
 import {
   createMCPClient,
   type MCPClient,
@@ -27,12 +35,49 @@ export const DEFAULT_SYSTEM_PROMPT = {
   content: "你是一位中文助手，请始终使用简体中文回答。",
 } satisfies ChatMessage;
 
+// URL验证规则：防止内部网络扫描和潜在的SSRF攻击
+function validateUrl(urlString: string): void {
+  try {
+    const url = new URL(urlString);
+
+    // 只允许HTTPS协议
+    if (url.protocol !== "https:") {
+      throw new Error("仅允许HTTPS URLs");
+    }
+
+    // 检查是否为私有IP/内网地址 (IPv4)
+    if (url.hostname.match(/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|0\.)/)) {
+      throw new Error("不允许访问私有网络地址");
+    }
+
+    // 检查是否为IPv6私有地址
+    if (url.hostname.match(/^((::1)|(::ffff:(:0+)?192\.|::ffff:(:0+)?10\.|::ffff:(:0+)?172\.(1[6-9]|2\d|3[01])\.))/)) {
+      throw new Error("不允许访问IPv6私有地址");
+    }
+
+    // 检查localhost/本地host
+    if (["localhost", "127.0.0.1", "0.0.0.0"].includes(url.hostname.toLowerCase())) {
+      throw new Error("不允许访问本地主机");
+    }
+
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("无效的URL格式");
+  }
+}
+
 async function handleHttpGet(args: any): Promise<ToolResult> {
   const url = args?.url;
   if (!url) {
     return { ok: false, code: "http.invalid_url", message: "url is required" };
   }
+
   try {
+    // 验证URL安全性
+    validateUrl(url);
+
     const response = await fetch(url);
     const body = await response.text();
     return {
@@ -93,6 +138,115 @@ function normaliseMessages(args: any): ChatMessage[] {
   return messages;
 }
 
+const DEFAULT_LLM_TIMEOUT_MS = 30_000;
+
+interface OpenAiClientLike {
+  chat: {
+    completions: {
+      create(
+        params: {
+          model: string;
+          messages: ChatCompletionMessageParam[];
+          temperature: number;
+          max_tokens?: number;
+        },
+        options?: { timeout?: number },
+      ): Promise<any>;
+    };
+  };
+}
+
+type OpenAiFactory = (config: LLMConfig, timeoutMs: number) => OpenAiClientLike;
+
+const defaultOpenAiFactory: OpenAiFactory = (config, timeoutMs) =>
+  new OpenAI({
+    apiKey: config.apiKey,
+    baseURL: config.baseUrl,
+    organization: config.organization ?? undefined,
+    timeout: timeoutMs,
+  });
+
+let openAiFactory: OpenAiFactory = defaultOpenAiFactory;
+
+export function setOpenAiFactoryForTesting(factory?: OpenAiFactory): void {
+  openAiFactory = factory ?? defaultOpenAiFactory;
+}
+function resolveLlmTimeout(): number {
+  const raw = process.env.OPENAI_TIMEOUT_MS ?? process.env.LLM_TIMEOUT_MS;
+  if (!raw) {
+    return DEFAULT_LLM_TIMEOUT_MS;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LLM_TIMEOUT_MS;
+}
+
+function toOpenAiMessage(message: ChatMessage): ChatCompletionMessageParam {
+  switch (message.role) {
+    case "system":
+      return { role: "system", content: message.content } satisfies ChatCompletionMessageParam;
+    case "assistant":
+      return { role: "assistant", content: message.content } satisfies ChatCompletionMessageParam;
+    case "developer":
+      return { role: "developer", content: message.content } satisfies ChatCompletionMessageParam;
+    case "user":
+      return { role: "user", content: message.content } satisfies ChatCompletionMessageParam;
+    default:
+      return { role: "user", content: message.content } satisfies ChatCompletionMessageParam;
+  }
+}
+
+function mapOpenAiError(error: unknown): ToolError {
+  if (error instanceof APIConnectionTimeoutError) {
+    return {
+      ok: false,
+      code: "llm.timeout",
+      message: error.message,
+      retryable: true,
+    } satisfies ToolError;
+  }
+
+  if (error instanceof APIConnectionError) {
+    return {
+      ok: false,
+      code: "llm.network_error",
+      message: error.message,
+      retryable: true,
+    } satisfies ToolError;
+  }
+
+  if (error instanceof APIError) {
+    const status = typeof error.status === "number" ? error.status : 0;
+    const retryable = status >= 500 || status === 429;
+    const code =
+      status === 401 || status === 403
+        ? "llm.auth_error"
+        : status === 429
+          ? "llm.rate_limited"
+          : "llm.http_error";
+    return {
+      ok: false,
+      code,
+      message: error.message,
+      retryable,
+    } satisfies ToolError;
+  }
+
+  if (error instanceof OpenAIError) {
+    return {
+      ok: false,
+      code: "llm.error",
+      message: error.message,
+    } satisfies ToolError;
+  }
+
+  const message = error instanceof Error ? error.message : "unknown error";
+  return {
+    ok: false,
+    code: "llm.unknown_error",
+    message,
+  } satisfies ToolError;
+}
+
 async function handleChat(args: any): Promise<ToolResult> {
   let config;
   try {
@@ -115,78 +269,42 @@ async function handleChat(args: any): Promise<ToolResult> {
     } satisfies ToolError;
   }
 
-  const url = buildChatCompletionsUrl(config);
   const temperature = typeof args?.temperature === "number" ? args.temperature : 0;
   const maxTokens = typeof args?.max_tokens === "number" ? args.max_tokens : undefined;
+  const timeoutMs = resolveLlmTimeout();
+  const client = openAiFactory(config, timeoutMs);
+  const openAiMessages = messages.map(toOpenAiMessage);
+  const startedAt = Date.now();
 
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
-        ...(config.organization ? { "OpenAI-Organization": config.organization } : {}),
-      },
-      body: JSON.stringify({
+    const response = await client.chat.completions.create(
+      {
         model: config.model,
-        messages,
+        messages: openAiMessages,
         temperature,
         ...(maxTokens ? { max_tokens: maxTokens } : {}),
-      }),
-    });
+      },
+      { timeout: timeoutMs },
+    );
 
-    if (!response.ok) {
-      let detail: unknown;
-      try {
-        detail = await response.json();
-      } catch {
-        detail = await response.text();
-      }
-
-      const message =
-        typeof (detail as any)?.error?.message === "string"
-          ? (detail as any).error.message
-          : typeof detail === "string"
-            ? detail
-            : `request failed (${response.status})`;
-
-      return {
-        ok: false,
-        code: "llm.http_error",
-        message,
-        retryable: response.status >= 500,
-      } satisfies ToolError;
-    }
-
-    const payload = (await response.json()) as {
-      id?: string;
-      choices?: Array<{ message?: ChatMessage; finish_reason?: string }>;
-      model?: string;
-      usage?: Record<string, unknown>;
-    };
-
-    const choice = payload.choices?.[0];
+    const latencyMs = Date.now() - startedAt;
+    const choice = response.choices?.[0];
     const content = choice?.message?.content ?? "";
 
     return {
       ok: true,
       data: {
-        id: payload.id,
-        model: payload.model ?? config.model,
+        id: response.id,
+        model: response.model ?? config.model,
         content,
-        choices: payload.choices,
-        usage: payload.usage,
+        choices: response.choices,
+        usage: response.usage,
         finish_reason: choice?.finish_reason,
       },
+      latency_ms: latencyMs,
     } satisfies ToolOk;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    return {
-      ok: false,
-      code: "llm.network_error",
-      message,
-      retryable: true,
-    } satisfies ToolError;
+  } catch (error) {
+    return mapOpenAiError(error);
   }
 }
 
@@ -571,7 +689,7 @@ class ChatKernel implements AgentKernel {
       conversation ? `以下是最近的对话上下文：\n${conversation}` : null,
       latestDemand ? `当前用户需求：${latestDemand}` : null,
       "请针对需求生成一个结构化的执行计划，列出 1-5 个步骤。每个步骤包含 id、op、args、description 字段。",
-      "支持的 op 可以是 llm.chat、mcp-core.*、mcp-memory.* 或其他注册工具。输出必须是 JSON 对象或数组，必要时可包含 reason、notes。",
+      "支持的 op 可以是 llm.chat、echo、http.get、file.read、mcp-core.* 或其他注册工具。输出必须是 JSON 对象或数组，必要时可包含 reason、notes。",
     ].filter(Boolean);
 
     return [
@@ -682,14 +800,17 @@ class ChatKernel implements AgentKernel {
       return null;
     }
 
+    // Handle direct mcp.invoke calls
     if (op === "mcp.invoke") {
       return { name: op, args: step.args ?? {} } satisfies ToolCall;
     }
 
+    // Handle local.* prefixed operations
     if (op.startsWith("local.")) {
       return { name: op.slice("local.".length), args: step.args ?? {} } satisfies ToolCall;
     }
 
+    // Handle MCP operation formats (mcp://, mcp-*, mcp.*)
     const mcpSpec = this.parseMcpOperation(op);
     if (mcpSpec) {
       const args = step.args ?? {};
@@ -712,6 +833,8 @@ class ChatKernel implements AgentKernel {
       } satisfies ToolCall;
     }
 
+    // Default fallback - pass through as regular tool call
+    // This allows the tool invoker to handle unknown MCP operations
     return { name: op, args: step.args ?? {} } satisfies ToolCall;
   }
 

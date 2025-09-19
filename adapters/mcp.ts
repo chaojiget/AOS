@@ -580,6 +580,35 @@ class WebSocketMCPConnection implements MCPServerConnection {
   }
 }
 
+// 安全检查：防止命令注入攻击
+function validateCommand(command: string): void {
+  // 检查是否包含危险字符或模式
+  const dangerousPatterns = [
+    /[;&|`$(){}[\]<>]/,  // shell metacharacters
+    /\.\./,               // directory traversal
+    /^\s*rm\s/i,          // rm command
+    /^\s*rmdir\s/i,       // rmdir command
+    /^\s*del\s/i,         // Windows del command
+    /^\s*format\s/i,      // format command
+    /^\s*shutdown\s/i,    // shutdown command
+  ];
+
+  for (const pattern of dangerousPatterns) {
+    if (pattern.test(command)) {
+      throw new Error(`危险命令拒绝执行: ${command}`);
+    }
+  }
+}
+
+function validateArgs(args: string[]): void {
+  for (const arg of args) {
+    // 检查参数是否包含shell注入字符
+    if (/[;&|`$(){}[\]<>]/.test(arg)) {
+      throw new Error(`危险参数拒绝执行: ${arg}`);
+    }
+  }
+}
+
 class StdioMCPConnection implements MCPServerConnection {
   private readonly proc: ChildProcessWithoutNullStreams;
   private readonly rl: ReturnType<typeof createInterface>;
@@ -591,6 +620,12 @@ class StdioMCPConnection implements MCPServerConnection {
   private closed = false;
 
   constructor(private readonly config: MCPServerConfig & { cmd: string }) {
+    // 执行安全检查
+    validateCommand(this.config.cmd);
+    if (this.config.args) {
+      validateArgs(this.config.args);
+    }
+
     this.proc = spawn(this.config.cmd, this.config.args ?? [], {
       stdio: ["pipe", "pipe", "pipe"],
       env: this.config.env ? { ...process.env, ...normaliseObject(this.config.env) } : process.env,
@@ -1322,7 +1357,7 @@ export class McpAdapter {
     tool: string,
     argsHash: string,
     spanId: string,
-    options: McpCallOptions,
+    _options: McpCallOptions, // eslint-disable-next-line @typescript-eslint/no-unused-vars
   ): Promise<ToolResult> {
     const key = this.buildKey(serverId, tool, argsHash);
     const queue = this.recorded.get(key);

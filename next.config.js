@@ -4,7 +4,7 @@ import { I18N_CONFIG } from "./config/i18n.js";
 const baseConfig = {
   trailingSlash: true,
   skipTrailingSlashRedirect: true,
-  i18n: I18N_CONFIG,
+  // i18n配置将根据build模式动态决定
 };
 
 /**
@@ -17,10 +17,14 @@ const createConfig = (phase) => {
       ...baseConfig,
       distDir: "out",
       output: "export",
+      // 静态导出模式下不使用i18n（避免冲突）
     };
   }
 
-  return { ...baseConfig };
+  return {
+    ...baseConfig,
+    i18n: I18N_CONFIG, // 开发/正常模式下使用i18n
+  };
 };
 
 export default createConfig;
