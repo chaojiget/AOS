@@ -228,4 +228,14 @@ export class DatabaseService implements OnModuleDestroy {
     const match = this.memory.mcpConfigs.get(id);
     return match ? { ...match } : undefined;
   }
+
+  deleteMcpConfig(id: string): void {
+    if (!this.memory) return;
+    this.memory.mcpConfigs.delete(id);
+  }
+
+  listMcpConfigs(): McpRow[] {
+    if (!this.memory) return [];
+    return Array.from(this.memory.mcpConfigs.values()).map((row) => ({ ...row }));
+  }
 }

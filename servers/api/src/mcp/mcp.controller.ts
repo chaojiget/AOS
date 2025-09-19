@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Post } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Param, Post } from "@nestjs/common";
 import { McpService, type RegisterMcpPayload } from "./mcp.service";
 
 type Transport = RegisterMcpPayload["transport"];
@@ -48,5 +48,15 @@ export class McpController {
 
     const config = await this.service.register(payload);
     return { config };
+  }
+
+  @Delete(":id")
+  async remove(@Param("id") idParam: string) {
+    const id = typeof idParam === "string" ? idParam.trim() : "";
+    if (!id) {
+      throw new BadRequestException("id is required");
+    }
+    const configs = await this.service.delete(id);
+    return { configs };
   }
 }
