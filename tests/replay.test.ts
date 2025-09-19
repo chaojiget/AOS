@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EpisodeLogger } from "../runtime/episode";
 import { replayEpisode } from "../runtime/replay";
-import type { EventEnvelope } from "../runtime/events";
+import { wrapCoreEvent, type EventEnvelope } from "../runtime/events";
+import type { CoreEvent } from "../core/agent";
 
 describe("replayEpisode", () => {
   let counter = 0;
@@ -27,6 +28,13 @@ describe("replayEpisode", () => {
     const logger = new EpisodeLogger({ traceId, dir });
 
     const first = await logger.append(createEvent(traceId, "run.progress", { step: "act" }));
+    const alert = await logger.append(
+      createEvent(traceId, "guardian.alert", {
+        reason: "step-limit",
+        limit: 1,
+        metrics: { stepCount: 1, totalLatencyMs: 100, totalCost: 0.5 },
+      }),
+    );
     const second = await logger.append(
       createEvent(traceId, "run.finished", { outputs: { answer: 42 }, reason: "completed" }),
     );
@@ -39,10 +47,11 @@ describe("replayEpisode", () => {
       },
     });
 
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(3);
     expect(events[0].ln).toBe(first.ln);
-    expect(events[1].ln).toBe(second.ln);
-    expect(seen).toEqual(["run.progress", "run.finished"]);
+    expect(events[1].ln).toBe(alert.ln);
+    expect(events[2].ln).toBe(second.ln);
+    expect(seen).toEqual(["run.progress", "guardian.alert", "run.finished"]);
   });
 
   it("throws when the episode file is missing", async () => {
@@ -54,5 +63,25 @@ describe("replayEpisode", () => {
       caught = /episode not found/i.test(String(error));
     }
     expect(caught).toBe(true);
+  });
+});
+
+describe("event mapping", () => {
+  it("wraps terminated core events as run.terminated envelopes", () => {
+    const event: CoreEvent = {
+      type: "terminated",
+      reason: "cost-limit",
+      context: {
+        reason: "cost-limit",
+        limit: 10,
+        metrics: { stepCount: 3, totalLatencyMs: 120, totalCost: 11 },
+      },
+    };
+
+    const envelope = wrapCoreEvent("trace-wrap", event);
+    expect(envelope.type).toBe("run.terminated");
+    const data = envelope.data as CoreEvent;
+    expect(data.type).toBe("terminated");
+    expect((data as any).context.limit).toBe(10);
   });
 });

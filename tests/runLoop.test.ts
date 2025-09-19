@@ -10,6 +10,7 @@ import {
   type ToolResult,
   type CoreEvent,
   type EmitSpanOptions,
+  type ReviewResult,
 } from "../core/agent";
 
 type EmittedEntry = { event: CoreEvent; span?: EmitSpanOptions };
@@ -65,16 +66,17 @@ describe("runLoop", () => {
       },
     };
 
-    const result = await runLoop(
-      kernel,
-      (event: CoreEvent, span?: EmitSpanOptions) => {
-        emitted.push({ event, span });
-      },
-      { maxIterations: 3, context: { traceId: "trace-run-loop", input: "hi" } },
-    );
+  const result = await runLoop(
+    kernel,
+    (event: CoreEvent, span?: EmitSpanOptions) => {
+      emitted.push({ event, span });
+    },
+    { maxIterations: 3, context: { traceId: "trace-run-loop", input: "hi" } },
+  );
 
-    expect(result.reason).toBe("completed");
-    expect(result.final).toBe("HI THERE");
+  expect(result.reason).toBe("completed");
+  expect(result.final).toBe("HI THERE");
+  expect(result.metrics.stepCount).toBe(2);
     expect(emitted.some((item) => item.event.type === "plan")).toBeTruthy();
     const planEvent = emitted.find(isPlanEvent);
     expect(planEvent?.span?.spanId).toBe("plan-1");
@@ -508,5 +510,60 @@ describe("runLoop", () => {
     expect(result.reason).toBe("completed");
     expect(result.review?.passed).toBe(true);
     expect(result.actions).toHaveLength(2);
+  });
+
+  it("terminates when the configured step budget is reached", async () => {
+    const emitted: EmittedEntry[] = [];
+    let planned = false;
+    const kernel: AgentKernel = {
+      async perceive() {
+        /* no-op */
+      },
+      async plan(): Promise<Plan> {
+        if (planned) {
+          return { steps: [] };
+        }
+        planned = true;
+        return {
+          steps: [
+            { id: "limit-1", op: "tool.echo", args: { value: "first" } },
+            { id: "limit-2", op: "tool.echo", args: { value: "second" } },
+          ],
+        } satisfies Plan;
+      },
+      async act(step) {
+        const result: ToolResult<string> = {
+          ok: true,
+          data: step.args.value,
+          latency_ms: 25,
+          cost: 0.5,
+        };
+        return { step, result } satisfies ActionOutcome<string>;
+      },
+      async review() {
+        return { score: 0, passed: false } satisfies ReviewResult;
+      },
+      async renderFinal() {
+        return null;
+      },
+    } satisfies AgentKernel;
+
+    const result = await runLoop(
+      kernel,
+      (event: CoreEvent, span?: EmitSpanOptions) => {
+        emitted.push({ event, span });
+      },
+      { context: { traceId: "trace-budget" }, budget: { maxSteps: 1 } },
+    );
+
+    expect(result.reason).toBe("terminated");
+    expect(result.termination?.reason).toBe("step-limit");
+    expect(result.termination?.limit).toBe(1);
+    expect(result.metrics.stepCount).toBe(1);
+    expect(result.metrics.totalLatencyMs).toBe(25);
+    expect(result.metrics.totalCost).toBe(0.5);
+    const terminationEvent = emitted.find((entry) => entry.event.type === "terminated");
+    expect(terminationEvent).toBeTruthy();
+    expect((terminationEvent?.event as any).context?.metrics?.stepCount).toBe(1);
   });
 });

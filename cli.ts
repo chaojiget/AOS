@@ -71,6 +71,9 @@ function logEvent(event: CoreEvent) {
     case "log":
       console.log(`[${time}] ${event.level}`, event.message);
       break;
+    case "terminated":
+      console.log(`[${time}] terminated/${event.reason}`, event.context);
+      break;
   }
 }
 

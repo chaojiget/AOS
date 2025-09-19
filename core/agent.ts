@@ -83,6 +83,7 @@ export type CoreEvent =
   | { type: "ask"; question: string; origin_step?: string }
   | { type: "score"; value: number; passed: boolean; notes?: string[] }
   | { type: "final"; outputs: any; reason?: string }
+  | { type: "terminated"; reason: TerminationReason; context: RunTerminationContext }
   | { type: "log"; level: LogLevel; message: string; detail?: any }
   | {
       type: "chat.msg";
@@ -117,18 +118,41 @@ export interface AgentKernel {
 export interface RunLoopOptions {
   maxIterations?: number;
   context?: AgentContext;
+  budget?: RunLoopBudget;
 }
 
 export interface RunLoopResult {
   actions: ActionOutcome[];
   final?: any;
-  reason: "completed" | "no-plan" | "ask" | "max-iterations" | "non-retryable-error";
+  reason: "completed" | "no-plan" | "ask" | "max-iterations" | "non-retryable-error" | "terminated";
   review?: ReviewResult;
+  metrics: RunLoopMetrics;
+  termination?: RunTerminationContext;
 }
 
 const ensurePromise = async <T>(value: T | Promise<T>): Promise<T> => value;
 
 export type EmitSpanOptions = EventMetadata;
+
+export type TerminationReason = "step-limit" | "cost-limit" | "latency-limit";
+
+export interface RunLoopBudget {
+  maxSteps?: number;
+  maxCost?: number;
+  maxLatencyMs?: number;
+}
+
+export interface RunLoopMetrics {
+  stepCount: number;
+  totalCost: number;
+  totalLatencyMs: number;
+}
+
+export interface RunTerminationContext {
+  reason: TerminationReason;
+  limit: number;
+  metrics: RunLoopMetrics;
+}
 
 export async function runLoop(
   kernel: AgentKernel,
@@ -139,6 +163,41 @@ export async function runLoop(
   const actions: ActionOutcome[] = [];
   const context = options.context ?? { traceId: randomUUID() };
   const traceSpanId = context.traceId;
+  const budget = options.budget;
+  const metrics: RunLoopMetrics = { stepCount: 0, totalCost: 0, totalLatencyMs: 0 };
+
+  const recordOutcome = (outcome: ActionOutcome) => {
+    metrics.stepCount += 1;
+    if (outcome.result && outcome.result.ok) {
+      const { cost, latency_ms } = outcome.result;
+      if (typeof cost === "number" && Number.isFinite(cost)) {
+        metrics.totalCost += cost;
+      }
+      if (typeof latency_ms === "number" && Number.isFinite(latency_ms)) {
+        metrics.totalLatencyMs += latency_ms;
+      }
+    }
+  };
+
+  const checkBudgetLimits = (): RunTerminationContext | undefined => {
+    if (!budget) {
+      return undefined;
+    }
+    if (typeof budget.maxSteps === "number" && budget.maxSteps >= 0 && metrics.stepCount >= budget.maxSteps) {
+      return { reason: "step-limit", limit: budget.maxSteps, metrics: { ...metrics } };
+    }
+    if (typeof budget.maxCost === "number" && Number.isFinite(budget.maxCost) && metrics.totalCost >= budget.maxCost) {
+      return { reason: "cost-limit", limit: budget.maxCost, metrics: { ...metrics } };
+    }
+    if (
+      typeof budget.maxLatencyMs === "number" &&
+      Number.isFinite(budget.maxLatencyMs) &&
+      metrics.totalLatencyMs >= budget.maxLatencyMs
+    ) {
+      return { reason: "latency-limit", limit: budget.maxLatencyMs, metrics: { ...metrics } };
+    }
+    return undefined;
+  };
 
   await ensurePromise(kernel.perceive(context));
   await ensurePromise(
@@ -185,6 +244,7 @@ export async function runLoop(
       };
       const outcome = await kernel.act(fallbackStep);
       actions.push(outcome);
+      recordOutcome(outcome);
       await ensurePromise(
         emit(
           {
@@ -198,11 +258,21 @@ export async function runLoop(
           { spanId: fallbackStep.id, parentSpanId: planSpanId },
         ),
       );
+      const termination = checkBudgetLimits();
+      if (termination) {
+        await ensurePromise(
+          emit(
+            { type: "terminated", reason: termination.reason, context: termination },
+            { spanId: traceSpanId },
+          ),
+        );
+        return { actions, reason: "terminated", metrics, termination };
+      }
       const finalOutputs = await kernel.renderFinal(actions);
       await ensurePromise(
         emit({ type: "final", outputs: finalOutputs, reason: "no-plan" }, { spanId: traceSpanId }),
       );
-      return { actions, final: finalOutputs, reason: "no-plan" };
+      return { actions, final: finalOutputs, reason: "no-plan", metrics };
     }
 
     for (const step of steps) {
@@ -214,6 +284,7 @@ export async function runLoop(
       );
       const outcome = await kernel.act(step);
       actions.push(outcome);
+      recordOutcome(outcome);
       await ensurePromise(
         emit(
           {
@@ -247,7 +318,18 @@ export async function runLoop(
             { spanId: traceSpanId },
           ),
         );
-        return { actions, final: finalOutputs, reason: "non-retryable-error" };
+        return { actions, final: finalOutputs, reason: "non-retryable-error", metrics };
+      }
+
+      const termination = checkBudgetLimits();
+      if (termination) {
+        await ensurePromise(
+          emit(
+            { type: "terminated", reason: termination.reason, context: termination },
+            { spanId: traceSpanId },
+          ),
+        );
+        return { actions, reason: "terminated", metrics, termination };
       }
 
       if (outcome.ask) {
@@ -264,7 +346,7 @@ export async function runLoop(
             },
           ),
         );
-        return { actions, reason: "ask" };
+        return { actions, reason: "ask", metrics };
       }
     }
 
@@ -294,6 +376,7 @@ export async function runLoop(
         final: finalOutputs,
         reason: "completed",
         review: lastReview,
+        metrics,
       };
     }
   }
@@ -308,5 +391,5 @@ export async function runLoop(
       { spanId: traceSpanId },
     ),
   );
-  return { actions, reason: "max-iterations", review: lastReview };
+  return { actions, reason: "max-iterations", review: lastReview, metrics };
 }

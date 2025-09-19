@@ -64,6 +64,8 @@ function mapCoreEventType(event: CoreEvent): string {
       return "run.progress";
     case "final":
       return "run.finished";
+    case "terminated":
+      return "run.terminated";
     case "log":
       return "run.log";
     case "ask":

@@ -7,8 +7,9 @@ import {
   type CoreEvent,
   type EmitSpanOptions,
   type RunLoopResult,
+  type RunLoopBudget,
 } from "../../../../core/agent";
-import { EventBus, wrapCoreEvent, type EventEnvelope } from "../../../../runtime/events";
+import { EventBus, createRunEvent, wrapCoreEvent, type EventEnvelope } from "../../../../runtime/events";
 import { EpisodeLogger } from "../../../../runtime/episode";
 import type { ChatMessage } from "../../../../types/chat";
 import { DatabaseService } from "../database/database.service";
@@ -54,6 +55,7 @@ interface StartRunRequest {
   message: string;
   history: ChatMessage[];
   traceId?: string;
+  budget?: RunLoopBudget;
 }
 
 interface StreamEvent {
@@ -89,6 +91,64 @@ function normaliseHistory(raw: unknown): ChatMessage[] {
   return history;
 }
 
+function parseNumeric(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function normaliseBudget(raw: unknown): RunLoopBudget | undefined {
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const source = raw as Record<string, unknown>;
+  const budget: RunLoopBudget = {};
+
+  const stepKeys = ["maxSteps", "max_steps", "stepLimit", "step_limit", "steps"];
+  for (const key of stepKeys) {
+    const value = parseNumeric(source[key]);
+    if (value !== undefined) {
+      budget.maxSteps = value;
+      break;
+    }
+  }
+
+  const costKeys = ["maxCost", "max_cost", "costLimit", "cost_limit", "limit", "usd", "budget"];
+  for (const key of costKeys) {
+    const value = parseNumeric(source[key]);
+    if (value !== undefined) {
+      budget.maxCost = value;
+      break;
+    }
+  }
+
+  const latencyKeys = [
+    "maxLatencyMs",
+    "max_latency_ms",
+    "latencyLimitMs",
+    "latency_limit_ms",
+    "tool_latency_limit_ms",
+  ];
+  for (const key of latencyKeys) {
+    const value = parseNumeric(source[key]);
+    if (value !== undefined) {
+      budget.maxLatencyMs = value;
+      break;
+    }
+  }
+
+  return Object.keys(budget).length > 0 ? budget : undefined;
+}
+
 @Injectable()
 export class RunsService {
   private readonly logger = new Logger(RunsService.name);
@@ -105,6 +165,10 @@ export class RunsService {
       message: normaliseMessage(payload?.message ?? payload?.input ?? ""),
       history: normaliseHistory(payload?.messages ?? payload?.history),
       traceId: typeof payload?.trace_id === "string" ? payload.trace_id : undefined,
+      budget:
+        payload && typeof payload === "object"
+          ? normaliseBudget((payload as Record<string, unknown>).budget)
+          : undefined,
     };
 
     const runId = request.traceId && request.traceId.length > 0 ? request.traceId : randomUUID();
@@ -129,7 +193,11 @@ export class RunsService {
       await this.database.db!.insert(runs).values(runRecord).onConflictDoNothing().run();
     }
 
-    this.recordSyntheticEvent(runId, "run.started", { runId, message: request.message }).catch(
+    this.recordSyntheticEvent(runId, "run.started", {
+      runId,
+      message: request.message,
+      budget: request.budget ?? null,
+    }).catch(
       (error) => {
         this.logger.error(`failed to persist run.started event for ${runId}`, error as Error);
       },
@@ -248,7 +316,23 @@ export class RunsService {
     try {
       const result = await runLoop(kernel, emit, {
         context: { traceId: runId, input: request.message },
+        budget: request.budget,
       });
+      if (result.reason === "terminated" && result.termination) {
+        await eventBus.publish(
+          createRunEvent(
+            runId,
+            "guardian.alert",
+            {
+              runId,
+              reason: result.termination.reason,
+              limit: result.termination.limit,
+              metrics: result.termination.metrics,
+            },
+            { level: "warn" },
+          ),
+        );
+      }
       await this.handleRunCompletion(runId, result);
     } catch (error) {
       await this.handleRunFailure(runId, error);
@@ -259,14 +343,18 @@ export class RunsService {
     const status = this.mapRunStatus(result.reason);
     const finishedAt = new Date();
     const finalJson = result.final != null ? JSON.stringify(result.final) : null;
+    const resolvedReason =
+      result.reason === "terminated"
+        ? `terminated:${result.termination?.reason ?? "budget"}`
+        : result.reason;
 
     const completionPatch: RunPatch = {
       status,
-      reason: result.reason,
+      reason: resolvedReason,
       finalResult: finalJson,
       finishedAt,
       updatedAt: finishedAt,
-      stepCount: result.actions.length,
+      stepCount: result.metrics.stepCount,
     };
 
     if (this.database.isMemoryMode()) {
@@ -281,6 +369,8 @@ export class RunsService {
       reason: result.reason,
       review: result.review ?? null,
       final: result.final ?? null,
+      metrics: result.metrics,
+      termination: result.termination ?? null,
     });
 
     this.completeStream(runId);
