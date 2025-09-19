@@ -14,6 +14,7 @@
     "build": "next build",
     "start": "next start",
     "dev:api": "tsx watch servers/api/src/main.ts",
+    "dev:all": "node scripts/dev-all.mjs",
     "build:api": "tsc -p servers/api/tsconfig.build.json",
     "start:api": "node servers/api/dist/main.js",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx,.cjs,.mjs",

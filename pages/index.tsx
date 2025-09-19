@@ -529,12 +529,47 @@ const HomePage: NextPage = () => {
         source.onopen = () => {
           retryAttemptRef.current = 0;
         };
-        source.onmessage = (evt) => {
+
+        const relayEvent = (evt: MessageEvent) => {
+          if (typeof evt.data !== "string") {
+            return;
+          }
           const payload = parseStreamPayload(evt.data);
           if (payload) {
             handleStreamEvent(payload);
           }
         };
+
+        source.onmessage = relayEvent;
+
+        const forwardEvent: EventListener = (event) => {
+          relayEvent(event as MessageEvent);
+        };
+
+        const additionalEventTypes = [
+          "run.started",
+          "run.finished",
+          "run.failed",
+          "run.progress",
+          "run.log",
+          "run.ask",
+          "run.score",
+          "plan.updated",
+          "tool.started",
+          "tool.succeeded",
+          "tool.failed",
+          "agent.chat.msg",
+          "agent.chat.message",
+          "chat.msg",
+          "chat.message",
+          "user.confirm.request",
+          "heartbeat",
+        ];
+
+        additionalEventTypes.forEach((eventType) => {
+          source.addEventListener(eventType, forwardEvent);
+        });
+
         source.onerror = () => {
           if (eventSourceRef.current) {
             eventSourceRef.current.close();

@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy } from "@nestjs/common";
+import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type Database from "better-sqlite3";
@@ -30,7 +30,7 @@ export class DatabaseService implements OnModuleDestroy {
   readonly db: BetterSQLite3Database<typeof schema> | null = null;
   private readonly memory: MemoryStore | null = null;
 
-  constructor(private readonly config: ApiConfigService) {
+  constructor(@Inject(ApiConfigService) private readonly config: ApiConfigService) {
     const useMemory = process.env.AOS_USE_IN_MEMORY_DB === "1";
 
     if (!useMemory) {

@@ -1,4 +1,10 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  CanActivate,
+  ExecutionContext,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import type { Request } from "express";
 import { ApiConfigService } from "../config/api-config.service";
 
@@ -19,7 +25,7 @@ function extractBearerToken(value: string | string[] | undefined): string | null
 
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
-  constructor(private readonly config: ApiConfigService) {}
+  constructor(@Inject(ApiConfigService) private readonly config: ApiConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
     const expected = this.config.apiKey;

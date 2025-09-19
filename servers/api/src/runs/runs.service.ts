@@ -95,8 +95,8 @@ export class RunsService {
   private readonly streams = new Map<string, ReplaySubject<StreamEvent>>();
 
   constructor(
-    private readonly database: DatabaseService,
-    private readonly config: ApiConfigService,
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(ApiConfigService) private readonly config: ApiConfigService,
     @Inject(RUN_KERNEL_FACTORY) private readonly kernelFactory: RunKernelFactory,
   ) {}
 
