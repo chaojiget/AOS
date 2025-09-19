@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 import { mcpConfigs } from "../database/schema";
 
+type McpConfigRow = typeof mcpConfigs.$inferSelect;
+
 type Transport = "http" | "ws" | "stdio";
 
 export interface RegisterMcpPayload {
@@ -16,11 +18,23 @@ export interface RegisterMcpPayload {
   metadata?: Record<string, unknown> | null;
 }
 
+export interface McpConfig {
+  id: string;
+  name: string;
+  transport: Transport;
+  baseUrl: string | null;
+  enabled: boolean;
+  auth: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 @Injectable()
 export class McpService {
   constructor(private readonly database: DatabaseService) {}
 
-  async register(payload: RegisterMcpPayload) {
+  async register(payload: RegisterMcpPayload): Promise<McpConfig | null> {
     const now = new Date();
     const id = payload.id?.trim() || randomUUID();
     const record = {
@@ -64,17 +78,30 @@ export class McpService {
       return null;
     }
 
-    return {
-      id: stored.id,
-      name: stored.name,
-      transport: stored.transport,
-      baseUrl: stored.baseUrl,
-      enabled: !!stored.enabled,
-      auth: stored.auth ? this.parseJson(stored.auth) : null,
-      metadata: stored.metadata ? this.parseJson(stored.metadata) : null,
-      createdAt: new Date(stored.createdAt).toISOString(),
-      updatedAt: new Date(stored.updatedAt).toISOString(),
-    };
+    return this.mapRow(stored);
+  }
+
+  async delete(id: string): Promise<McpConfig[]> {
+    const trimmed = id.trim();
+
+    if (this.database.isMemoryMode()) {
+      if (trimmed) {
+        this.database.deleteMcpConfig(trimmed);
+      }
+      const rows = this.database.listMcpConfigs();
+      return this.mapRows(rows);
+    }
+
+    if (trimmed) {
+      await this.database
+        .db!
+        .delete(mcpConfigs)
+        .where(eq(mcpConfigs.id, trimmed))
+        .run();
+    }
+
+    const rows = this.database.db!.select().from(mcpConfigs).all();
+    return this.mapRows(rows);
   }
 
   private parseJson(raw: string): Record<string, unknown> | null {
@@ -84,5 +111,26 @@ export class McpService {
     } catch {
       return null;
     }
+  }
+
+  private mapRow(row: McpConfigRow): McpConfig {
+    return {
+      id: row.id,
+      name: row.name,
+      transport: row.transport as Transport,
+      baseUrl: row.baseUrl ?? null,
+      enabled: !!row.enabled,
+      auth: typeof row.auth === "string" ? this.parseJson(row.auth) : null,
+      metadata: typeof row.metadata === "string" ? this.parseJson(row.metadata) : null,
+      createdAt: new Date(row.createdAt).toISOString(),
+      updatedAt: new Date(row.updatedAt).toISOString(),
+    };
+  }
+
+  private mapRows(rows: McpConfigRow[]): McpConfig[] {
+    return rows
+      .slice()
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((row) => this.mapRow(row));
   }
 }
