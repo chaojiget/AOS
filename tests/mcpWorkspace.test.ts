@@ -128,6 +128,12 @@ describe("mcp workspace registry", () => {
         expect((writeResult.data as any).bytes > 0).toBe(true);
       }
 
+      const skillUsageEvents = recordedEvents.filter((event) => event.type === "skill.used");
+      expect(skillUsageEvents.length > 0).toBe(true);
+      expect(
+        skillUsageEvents.some((event) => (event.data as any)?.name === "file.write"),
+      ).toBe(true);
+
       const mcpResultEvent = recordedEvents.find(
         (event) => event.type === "mcp.result" && (event.data as any).tool === "file.write",
       );

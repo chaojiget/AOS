@@ -59,11 +59,20 @@ function mapCoreEventType(event: CoreEvent): string {
     case "plan":
       return "plan.updated";
     case "tool":
+      if (event.status === "started") {
+        return "tool.started";
+      }
+      if (event.status === "failed") {
+        return "tool.failed";
+      }
+      if (event.status === "succeeded") {
+        return "tool.succeeded";
+      }
       return event.result && event.result.ok === false ? "tool.failed" : "tool.succeeded";
     case "progress":
       return "run.progress";
     case "final":
-      return "run.finished";
+      return "final.answer";
     case "log":
       return "run.log";
     case "ask":
@@ -77,7 +86,8 @@ function mapCoreEventType(event: CoreEvent): string {
 
 function enrichEventData(event: CoreEvent): CoreEvent {
   if (event.type === "tool") {
-    const status = event.result && event.result.ok === false ? "failed" : "succeeded";
+    const status =
+      event.status ?? (event.result && event.result.ok === false ? "failed" : "succeeded");
     return { ...event, status };
   }
   return event;

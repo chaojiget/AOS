@@ -424,6 +424,38 @@ const HomePage: NextPage = () => {
         return;
       }
 
+      if (kind === "skill.used") {
+        const data = event.data ?? {};
+        const rawName = typeof data.name === "string" ? data.name.trim() : "";
+        const name = rawName || t("panels.skills.unnamedSkill");
+        const argsSummary = summariseArgs(data.args);
+        const source = typeof data.source === "string" ? data.source.trim() : "";
+        const pieces = [t("panels.skills.skillUsed", { name })];
+        if (source) {
+          pieces.push(source);
+        }
+        if (argsSummary) {
+          pieces.push(argsSummary);
+        }
+        const level = t("panels.skills.skillLevel");
+        setSkillEvents((previous) => {
+          if (previous.some((item) => item.id === event.id)) {
+            return previous;
+          }
+          const entry: SkillEvent = {
+            type: "note",
+            id: event.id,
+            ts: event.ts ?? new Date().toISOString(),
+            level,
+            text: pieces.join(" · "),
+          };
+          return [...previous, entry].sort(
+            (a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime(),
+          );
+        });
+        return;
+      }
+
       if (kind === "reflect.note" || kind === "score" || kind === "ask" || kind === "log") {
         const level =
           kind === "reflect.note"
@@ -496,9 +528,21 @@ const HomePage: NextPage = () => {
         return;
       }
 
-      if (kind === "final" || kind === "run.finished") {
+      if (kind === "final" || kind === "final.answer") {
         const outputs = event.data?.outputs ?? event.data?.result ?? event.data;
         setFinalOutput(outputs);
+        setRunStatus("completed");
+        setProgressPct(1);
+        if (kind === "final") {
+          closeStream();
+        }
+        return;
+      }
+
+      if (kind === "run.finished") {
+        const outputs =
+          event.data?.final ?? event.data?.outputs ?? event.data?.result ?? event.data;
+        setFinalOutput((previous) => previous ?? outputs);
         setRunStatus("completed");
         setProgressPct(1);
         closeStream();

@@ -80,6 +80,7 @@ export type CoreEvent =
       latency_ms?: number;
       status?: "started" | "succeeded" | "failed";
     }
+  | { type: "reflect.note"; text: string; level?: LogLevel; origin_step?: string }
   | { type: "ask"; question: string; origin_step?: string }
   | { type: "score"; value: number; passed: boolean; notes?: string[] }
   | { type: "final"; outputs: any; reason?: string }
@@ -183,6 +184,17 @@ export async function runLoop(
         op: "llm.chat",
         args: { prompt: context.input ?? "" },
       };
+      await ensurePromise(
+        emit(
+          {
+            type: "tool",
+            name: fallbackStep.op,
+            args: fallbackStep.args,
+            status: "started",
+          },
+          { spanId: fallbackStep.id, parentSpanId: planSpanId },
+        ),
+      );
       const outcome = await kernel.act(fallbackStep);
       actions.push(outcome);
       await ensurePromise(
@@ -192,8 +204,16 @@ export async function runLoop(
             name: fallbackStep.op,
             args: fallbackStep.args,
             result: outcome.result,
-            cost: outcome.result.ok ? outcome.result.cost : undefined,
-            latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
+            cost:
+              "cost" in outcome.result && typeof (outcome.result as any).cost === "number"
+                ? (outcome.result as any).cost
+                : undefined,
+            latency_ms:
+              "latency_ms" in outcome.result &&
+              typeof (outcome.result as any).latency_ms === "number"
+                ? (outcome.result as any).latency_ms
+                : undefined,
+            status: outcome.result.ok ? "succeeded" : "failed",
           },
           { spanId: fallbackStep.id, parentSpanId: planSpanId },
         ),
@@ -212,6 +232,17 @@ export async function runLoop(
           { spanId: step.id, parentSpanId: planSpanId },
         ),
       );
+      await ensurePromise(
+        emit(
+          {
+            type: "tool",
+            name: step.op,
+            args: step.args,
+            status: "started",
+          },
+          { spanId: step.id, parentSpanId: planSpanId },
+        ),
+      );
       const outcome = await kernel.act(step);
       actions.push(outcome);
       await ensurePromise(
@@ -221,8 +252,16 @@ export async function runLoop(
             name: step.op,
             args: step.args,
             result: outcome.result,
-            cost: outcome.result.ok ? outcome.result.cost : undefined,
-            latency_ms: outcome.result.ok ? outcome.result.latency_ms : undefined,
+            cost:
+              "cost" in outcome.result && typeof (outcome.result as any).cost === "number"
+                ? (outcome.result as any).cost
+                : undefined,
+            latency_ms:
+              "latency_ms" in outcome.result &&
+              typeof (outcome.result as any).latency_ms === "number"
+                ? (outcome.result as any).latency_ms
+                : undefined,
+            status: outcome.result.ok ? "succeeded" : "failed",
           },
           { spanId: step.id, parentSpanId: planSpanId },
         ),
@@ -269,6 +308,21 @@ export async function runLoop(
     }
 
     lastReview = await kernel.review(actions);
+    const reviewNotes = Array.isArray(lastReview.notes)
+      ? lastReview.notes.filter((note): note is string => typeof note === "string" && note.trim().length > 0)
+      : [];
+    for (const note of reviewNotes) {
+      await ensurePromise(
+        emit(
+          {
+            type: "reflect.note",
+            text: note,
+            level: lastReview.passed ? "info" : "warn",
+          },
+          { spanId: planSpanId, parentSpanId: traceSpanId },
+        ),
+      );
+    }
     await ensurePromise(
       emit(
         {

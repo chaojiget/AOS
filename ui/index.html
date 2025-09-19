@@ -173,15 +173,29 @@
           "run.started",
           "run.progress",
           "plan.updated",
+          "tool.started",
           "tool.succeeded",
           "tool.failed",
+          "reflect.note",
           "run.log",
           "run.ask",
           "run.score",
+          "skill.used",
         ];
 
         streamEvents.forEach((eventName) => {
           source.addEventListener(eventName, handleEnvelopeEvent);
+        });
+
+        source.addEventListener("final.answer", (evt) => {
+          handleEnvelopeEvent(evt);
+          try {
+            const payload = JSON.parse(evt.data);
+            status.textContent = "Final answer ready";
+            finalOutput.textContent = JSON.stringify(payload.data?.outputs ?? payload.data ?? null, null, 2);
+          } catch (error) {
+            console.error("Failed to parse final answer payload", error);
+          }
         });
 
         source.addEventListener("run.finished", async (evt) => {

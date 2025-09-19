@@ -88,6 +88,9 @@
         "succeeded": "succeeded",
         "failed": "failed"
       },
+      "skillLevel": "Skill",
+      "skillUsed": "Skill used: {name}",
+      "unnamedSkill": "unnamed skill",
       "metric": {
         "na": "–"
       },

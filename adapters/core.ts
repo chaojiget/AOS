@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import OpenAI, {
   APIConnectionError,
@@ -316,6 +317,7 @@ export interface DefaultToolInvokerOptions extends CreateMcpRegistryOptions {
 export function createDefaultToolInvoker(options: DefaultToolInvokerOptions = {}): ToolInvoker {
   const mcpRegistry = createMcpRegistry(options);
   const enableRemote = options.enableRemoteMcp ?? true;
+  const eventBus = options.eventBus;
 
   const mcpClientPromise: Promise<MCPClient | null> = enableRemote
     ? (options.mcpClientPromise ??
@@ -328,9 +330,41 @@ export function createDefaultToolInvoker(options: DefaultToolInvokerOptions = {}
         }))
     : Promise.resolve(null);
 
+  const publishSkillUsage = async (
+    call: ToolCall,
+    ctx: ToolContext,
+    result: ToolResult,
+    extra: Record<string, unknown> = {},
+  ) => {
+    if (!eventBus) {
+      return;
+    }
+    const latency =
+      typeof (result as any)?.latency_ms === "number" ? (result as any).latency_ms : undefined;
+    const cost = typeof (result as any)?.cost === "number" ? (result as any).cost : undefined;
+    await eventBus.publish({
+      id: randomUUID(),
+      ts: new Date().toISOString(),
+      type: "skill.used",
+      version: 1,
+      trace_id: ctx.trace_id,
+      span_id: ctx.span_id,
+      parent_span_id: ctx.parent_span_id,
+      data: {
+        name: call.name,
+        args: call.args,
+        ok: result.ok,
+        latency_ms: latency,
+        cost,
+        ...extra,
+      },
+    });
+  };
+
   return async (call: ToolCall, ctx: ToolContext) => {
     const localResult = await mcpRegistry.invoke(call, ctx);
     if (localResult !== null) {
+      await publishSkillUsage(call, ctx, localResult, { source: "registry" });
       return localResult;
     }
 
@@ -343,13 +377,20 @@ export function createDefaultToolInvoker(options: DefaultToolInvokerOptions = {}
             traceId: ctx?.trace_id,
           });
           if (remoteResult.ok || !isToolNotFoundError(remoteResult)) {
+            await publishSkillUsage(call, ctx, remoteResult, {
+              source: "remote",
+              server: route.serverId,
+              tool: route.toolName,
+            });
             return remoteResult;
           }
         }
       }
     }
 
-    return invokeLocalTool(call);
+    const fallbackResult = await invokeLocalTool(call);
+    await publishSkillUsage(call, ctx, fallbackResult, { source: "builtin" });
+    return fallbackResult;
   };
 }
 
