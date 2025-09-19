@@ -2,6 +2,10 @@ meta:
   id: aos-mvp-stage12
   title: Agent OS MVP 阶段一二需求说明
   owner: 超级个体工程局 · Agent OS 小组
+  related_docs:
+    - docs/需求全景规划.md
+    - docs/decision.md
+    - docs/需求草稿/Agent Os（aos）草稿需求·v1.md
   stakeholders:
     - name: 产品负责人
       role: product
