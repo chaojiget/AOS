@@ -63,6 +63,49 @@
       }
     }
   },
+  "guardian": {
+    "heading": "Guardian 守护",
+    "subtitle": "监控预算并及时处理运行期告警。",
+    "status": {
+      "loading": "加载中…",
+      "idle": "暂无数据",
+      "ok": "预算正常",
+      "warning": "接近上限",
+      "critical": "已超出预算",
+      "error": "暂不可用"
+    },
+    "budget": {
+      "limit": "预算上限",
+      "used": "已消耗",
+      "remaining": "剩余额度",
+      "updatedAt": "更新时间 {value}"
+    },
+    "alerts": {
+      "heading": "告警列表",
+      "loading": "正在订阅 Guardian 告警…",
+      "empty": "当前没有新的告警。",
+      "streamError": "无法连接 Guardian 告警流。",
+      "approve": "批准",
+      "reject": "拒绝",
+      "replay": "回放",
+      "submitted": "审批已提交",
+      "error": "提交失败",
+      "status": {
+        "open": "待处理",
+        "approved": "已批准",
+        "rejected": "已拒绝",
+        "resolved": "已关闭"
+      },
+      "severity": {
+        "info": "提示",
+        "warning": "警告",
+        "critical": "严重"
+      }
+    },
+    "error": {
+      "detail": "Guardian 错误：{message}"
+    }
+  },
   "panels": {
     "plan": {
       "heading": "计划时间线",

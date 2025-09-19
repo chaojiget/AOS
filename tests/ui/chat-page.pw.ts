@@ -7,6 +7,7 @@ test.describe("Chat page", () => {
 
     await expect(page.getByRole("heading", { name: /agentos · chat \+ logflow/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /run/i })).toBeVisible();
+    await expect(page.getByTestId("guardian-panel")).toBeVisible();
 
     const tokens = await page.evaluate(() => {
       const describeElement = (element: Element | null) => {
@@ -69,6 +70,7 @@ test.describe("Chat page", () => {
           document.querySelector('[data-testid="conversation-panel"]'),
         ),
         sidebarPanels: describeElement(document.querySelector('[data-testid="sidebar-panels"]')),
+        guardianPanel: describeElement(document.querySelector('[data-testid="guardian-panel"]')),
         runStatsPanel: describeElement(document.querySelector('[data-testid="run-stats-panel"]')),
         rawResponsePanel: describeElement(
           document.querySelector('[data-testid="raw-response-panel"]'),

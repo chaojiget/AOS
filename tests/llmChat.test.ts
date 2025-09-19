@@ -96,7 +96,8 @@ describe("llm.chat via OpenAI SDK", () => {
     if (result.ok) {
       expect(result.data.content).toBe("你好");
       expect(typeof result.latency_ms).toBe("number");
-      expect(result.latency_ms >= 0).toBe(true);
+      const latency = result.latency_ms ?? 0;
+      expect(latency >= 0).toBe(true);
     }
   });
 
