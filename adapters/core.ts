@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import OpenAI, {
   APIConnectionError,
@@ -158,6 +159,139 @@ interface OpenAiClientLike {
 
 type OpenAiFactory = (config: LLMConfig, timeoutMs: number) => OpenAiClientLike;
 
+export type ApprovalDecision = "approve" | "reject";
+
+export interface SensitiveToolApprovalRequest {
+  runId: string;
+  requestId: string;
+  call: ToolCall;
+  spanId?: string;
+}
+
+export interface SensitiveToolApprovalAdapter {
+  awaitApproval(request: SensitiveToolApprovalRequest): Promise<ApprovalDecision>;
+}
+
+const SENSITIVE_TOOL_NAMES = new Set([
+  "file.write",
+  "http.post",
+  "http.put",
+  "http.patch",
+  "http.delete",
+]);
+
+const SENSITIVE_TOOL_KEYWORDS = new Set([
+  "write",
+  "delete",
+  "update",
+  "publish",
+  "send",
+  "post",
+  "put",
+  "patch",
+  "exec",
+]);
+
+function normaliseToolName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function isSensitiveTool(name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return false;
+  }
+  const normalised = normaliseToolName(trimmed);
+  if (SENSITIVE_TOOL_NAMES.has(normalised)) {
+    return true;
+  }
+  const segments = normalised.split(".");
+  const last = segments[segments.length - 1];
+  if (SENSITIVE_TOOL_KEYWORDS.has(last)) {
+    return true;
+  }
+  return false;
+}
+
+async function requestSensitiveToolApproval(
+  call: ToolCall,
+  ctx: ToolContext,
+  options: DefaultToolInvokerOptions,
+): Promise<ApprovalDecision | null> {
+  if (!options.eventBus) {
+    return options.approvalAdapter ? "approve" : null;
+  }
+  const traceId = ctx.trace_id;
+  if (!traceId) {
+    return options.approvalAdapter ? "approve" : null;
+  }
+
+  const requestId = randomUUID();
+  const message = `检测到敏感工具 ${call.name}，请确认是否继续执行。`;
+  await options.eventBus.publish({
+    id: requestId,
+    ts: new Date().toISOString(),
+    type: "user.confirm.request",
+    version: 1,
+    trace_id: traceId,
+    span_id: ctx.span_id,
+    data: {
+      request_id: requestId,
+      tool: call.name,
+      args: call.args,
+      message,
+      level: "warn",
+    },
+  });
+
+  if (!options.approvalAdapter) {
+    return "approve";
+  }
+
+  try {
+    const decision = await options.approvalAdapter.awaitApproval({
+      runId: traceId,
+      requestId,
+      call,
+      spanId: ctx.span_id,
+    });
+    if (decision === "reject") {
+      await options.eventBus.publish({
+        id: randomUUID(),
+        ts: new Date().toISOString(),
+        type: "guardian.alert",
+        version: 1,
+        trace_id: traceId,
+        span_id: ctx.span_id,
+        data: {
+          request_id: requestId,
+          tool: call.name,
+          reason: "用户拒绝执行敏感操作",
+        },
+        level: "error",
+      });
+    }
+    return decision;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "approval rejected";
+    await options.eventBus.publish({
+      id: randomUUID(),
+      ts: new Date().toISOString(),
+      type: "guardian.alert",
+      version: 1,
+      trace_id: traceId,
+      span_id: ctx.span_id,
+      data: {
+        request_id: requestId,
+        tool: call.name,
+        reason,
+      },
+      level: "error",
+    });
+    return "reject";
+  }
+}
+
 const defaultOpenAiFactory: OpenAiFactory = (config, timeoutMs) =>
   new OpenAI({
     apiKey: config.apiKey,
@@ -311,6 +445,7 @@ async function handleChat(args: any): Promise<ToolResult> {
 export interface DefaultToolInvokerOptions extends CreateMcpRegistryOptions {
   enableRemoteMcp?: boolean;
   mcpClientPromise?: Promise<MCPClient | null>;
+  approvalAdapter?: SensitiveToolApprovalAdapter;
 }
 
 export function createDefaultToolInvoker(options: DefaultToolInvokerOptions = {}): ToolInvoker {
@@ -329,6 +464,19 @@ export function createDefaultToolInvoker(options: DefaultToolInvokerOptions = {}
     : Promise.resolve(null);
 
   return async (call: ToolCall, ctx: ToolContext) => {
+    if (isSensitiveTool(call.name)) {
+      const decision = await requestSensitiveToolApproval(call, ctx, options);
+      if (decision === "reject") {
+        const denialMessage = "用户拒绝执行敏感操作";
+        return {
+          ok: false,
+          code: "tool.denied",
+          message: denialMessage,
+          retryable: false,
+        } satisfies ToolError;
+      }
+    }
+
     const localResult = await mcpRegistry.invoke(call, ctx);
     if (localResult !== null) {
       return localResult;

@@ -59,6 +59,7 @@ interface ConfirmationRequestState {
   message: string;
   context?: any;
   level?: string;
+  tool?: string;
 }
 
 type RunStatus = "idle" | "running" | "awaiting-confirmation" | "completed" | "error";
@@ -475,12 +476,19 @@ const HomePage: NextPage = () => {
             : typeof event.data?.message === "string"
               ? event.data.message
               : t("confirmation.defaultPrompt");
+        const requestId =
+          typeof event.data?.request_id === "string"
+            ? event.data.request_id
+            : typeof event.id === "string"
+              ? event.id
+              : generateLocalId();
         setConfirmationRequest({
-          id: event.id,
+          id: requestId,
           ts: event.ts ?? new Date().toISOString(),
           message: prompt,
           context: event.data,
           level: event.data?.level,
+          tool: typeof event.data?.tool === "string" ? event.data.tool : undefined,
         });
         setRunStatus("awaiting-confirmation");
         setChatHistory((history) => [
@@ -762,31 +770,80 @@ const HomePage: NextPage = () => {
 
   const handleDecision = useCallback(
     (decision: "approve" | "reject") => {
-      if (!confirmationRequest) return;
-      setConfirmationRequest(null);
-      const now = new Date().toISOString();
-      setChatHistory((history) => [
-        ...history,
-        {
-          id: generateLocalId(),
-          role: "system",
-          content:
-            decision === "approve"
-              ? t("confirmation.approved", { message: confirmationRequest.message })
-              : t("confirmation.denied", { message: confirmationRequest.message }),
-          ts: now,
-          status: "done",
-        },
-      ]);
-      if (decision === "approve") {
-        setRunStatus("running");
-      } else {
-        setRunStatus("error");
-        setRunError(t("confirmation.deniedStatus"));
-        closeStream();
+      if (!confirmationRequest || !traceId) {
+        return;
       }
+      const pendingRequest = confirmationRequest;
+      setConfirmationRequest(null);
+      const requestBody = {
+        requestId: pendingRequest.id,
+        decision,
+      };
+
+      void (async () => {
+        try {
+          const response = await fetch(`/api/runs/${encodeURIComponent(traceId)}/approval`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
+          });
+
+          if (!response.ok) {
+            let errorMessage = t("chat.runFailure");
+            try {
+              const payload = await response.json();
+              if (typeof payload?.error?.message === "string") {
+                errorMessage = payload.error.message;
+              }
+            } catch {
+              // ignore json parse errors
+            }
+            throw new Error(errorMessage);
+          }
+
+          const now = new Date().toISOString();
+          setChatHistory((history) => [
+            ...history,
+            {
+              id: generateLocalId(),
+              role: "system",
+              content:
+                decision === "approve"
+                  ? t("confirmation.approved", { message: pendingRequest.message })
+                  : t("confirmation.denied", { message: pendingRequest.message }),
+              ts: now,
+              status: "done",
+            },
+          ]);
+
+          if (decision === "approve") {
+            setRunStatus("running");
+          } else {
+            setRunStatus("error");
+            setRunError(t("confirmation.deniedStatus"));
+            closeStream();
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error && error.message ? error.message : t("chat.runFailure");
+          setRunStatus("error");
+          setRunError(message);
+          setChatHistory((history) => [
+            ...history,
+            {
+              id: generateLocalId(),
+              role: "system",
+              content: t("chat.errorPrefix", { message }),
+              ts: new Date().toISOString(),
+              status: "error",
+              error: message,
+            },
+          ]);
+          closeStream();
+        }
+      })();
     },
-    [closeStream, confirmationRequest, t],
+    [closeStream, confirmationRequest, t, traceId],
   );
 
   const tabItems = useMemo(
