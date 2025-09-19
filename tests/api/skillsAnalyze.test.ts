@@ -8,6 +8,7 @@ import type { INestApplication } from "@nestjs/common";
 
 import { AppModule } from "../../servers/api/src/app.module";
 import { resetSkillsStore } from "../../packages/skills/storage";
+import { DatabaseService } from "../../servers/api/src/database/database.service";
 import { SkillsController } from "../../servers/api/src/skills/skills.controller";
 
 describe("skills API", () => {
@@ -25,8 +26,6 @@ describe("skills API", () => {
     process.env.AOS_DB_PATH = dbPath;
     process.env.AOS_EPISODES_DIR = episodesDir;
     process.env.AOS_API_KEY = "";
-
-    await resetSkillsStore({ skills: [], persist: true });
 
     const events = [
       {
@@ -63,6 +62,10 @@ describe("skills API", () => {
     await app.init();
 
     const skillsController = app.get(SkillsController);
+    const database = app.get(DatabaseService);
+    if (database.db) {
+      await resetSkillsStore(database.db, { skills: [] });
+    }
 
     try {
       const analyzeRes = await skillsController.analyzeSkills();
@@ -79,7 +82,9 @@ describe("skills API", () => {
     } finally {
       await app.close();
       await rm(tmpDir, { recursive: true, force: true });
-      await resetSkillsStore();
+      if (database.db) {
+        await resetSkillsStore(database.db, { skills: [] });
+      }
       process.env = { ...originalEnv };
     }
   });

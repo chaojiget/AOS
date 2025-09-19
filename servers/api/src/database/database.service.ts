@@ -14,6 +14,9 @@ type RunEventInsert = typeof schema.runEvents.$inferInsert;
 type RunEventRow = typeof schema.runEvents.$inferSelect;
 type McpInsert = typeof schema.mcpConfigs.$inferInsert;
 type McpRow = typeof schema.mcpConfigs.$inferSelect;
+type SkillRow = typeof schema.skills.$inferSelect;
+type SkillVersionRow = typeof schema.skillVersions.$inferSelect;
+type SkillRunRow = typeof schema.skillRuns.$inferSelect;
 
 type DatabaseMode = "sqlite" | "memory";
 
@@ -21,6 +24,9 @@ interface MemoryStore {
   runs: Map<string, RunRow>;
   runEvents: Map<string, RunEventRow[]>;
   mcpConfigs: Map<string, McpRow>;
+  skills: Map<string, SkillRow>;
+  skillVersions: Map<string, SkillVersionRow>;
+  skillRuns: Map<string, SkillRunRow>;
 }
 
 @Injectable()
@@ -60,6 +66,9 @@ export class DatabaseService implements OnModuleDestroy {
       runs: new Map<string, RunRow>(),
       runEvents: new Map<string, RunEventRow[]>(),
       mcpConfigs: new Map<string, McpRow>(),
+      skills: new Map<string, SkillRow>(),
+      skillVersions: new Map<string, SkillVersionRow>(),
+      skillRuns: new Map<string, SkillRunRow>(),
     };
   }
 
@@ -111,6 +120,63 @@ export class DatabaseService implements OnModuleDestroy {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS skills (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category TEXT,
+        tags_json TEXT,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        template_json TEXT,
+        used_count INTEGER NOT NULL DEFAULT 0,
+        win_rate REAL NOT NULL DEFAULT 0,
+        review_status TEXT NOT NULL DEFAULT 'draft',
+        last_analyzed_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        version INTEGER NOT NULL DEFAULT 0,
+        current_version_id TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS skill_versions (
+        id TEXT PRIMARY KEY,
+        skill_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category TEXT,
+        tags_json TEXT,
+        template_json TEXT,
+        used_count INTEGER NOT NULL DEFAULT 0,
+        win_rate REAL NOT NULL DEFAULT 0,
+        review_status TEXT NOT NULL DEFAULT 'draft',
+        last_analyzed_at INTEGER,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS skill_versions_unique ON skill_versions(skill_id, version);
+      CREATE INDEX IF NOT EXISTS skill_versions_skill_idx ON skill_versions(skill_id);
+
+      CREATE TABLE IF NOT EXISTS skill_runs (
+        id TEXT PRIMARY KEY,
+        skill_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        run_id TEXT NOT NULL,
+        total_count INTEGER NOT NULL,
+        success_count INTEGER NOT NULL,
+        failure_count INTEGER NOT NULL,
+        new_event_count INTEGER NOT NULL DEFAULT 0,
+        new_success_count INTEGER NOT NULL DEFAULT 0,
+        new_failure_count INTEGER NOT NULL DEFAULT 0,
+        last_event_at INTEGER,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS skill_runs_skill_idx ON skill_runs(skill_id);
+      CREATE INDEX IF NOT EXISTS skill_runs_run_idx ON skill_runs(run_id);
     `);
   }
 

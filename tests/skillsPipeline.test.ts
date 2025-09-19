@@ -59,7 +59,7 @@ describe("SkillAnalysisPipeline", () => {
 
   it("aggregates tool events and generates candidate skills", async () => {
     const eventsRepo = new InMemoryEventsRepository(baseEvents);
-    const skillsRepo = new InMemorySkillsRepository();
+    const skillsRepo = new InMemorySkillsRepository([]);
     const summariser = new HeuristicSkillSummariser();
     const pipeline = new SkillAnalysisPipeline(eventsRepo, skillsRepo, summariser, {
       minSamplesForReview: 2,
