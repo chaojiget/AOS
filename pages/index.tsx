@@ -91,6 +91,8 @@ type RunStatus = "idle" | "running" | "awaiting-confirmation" | "completed" | "e
 
 type GuardianStatusKey = GuardianBudgetStatus | "loading" | "idle" | "error";
 
+type PrimaryTab = "conversation" | "logs" | "settings";
+
 const GUARDIAN_STATUS_TONES: Record<GuardianStatusKey, string> = {
   ok: "bg-emerald-500/10 text-emerald-200",
   warning: "bg-amber-500/10 text-amber-200",
@@ -295,7 +297,7 @@ const HomePage: NextPage = () => {
   const [traceId, setTraceId] = useState<string | undefined>(undefined);
   const [chatHistory, setChatHistory] = useState<ChatHistoryMessage[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"chat" | "logflow">("chat");
+  const [activeTab, setActiveTab] = useState<PrimaryTab>("conversation");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const sidebarSheetMounted = useDrawerMount(sidebarOpen, DRAWER_TRANSITION_MS);
@@ -1493,10 +1495,12 @@ const HomePage: NextPage = () => {
   );
 
   const tabItems = useMemo(
-    () => [
-      { id: "chat" as const, label: t("layout.tabs.chat") },
-      { id: "logflow" as const, label: t("layout.tabs.logflow") },
-    ],
+    () =>
+      [
+        { id: "conversation", label: t("layout.tabs.conversation"), panelId: "conversation-panel" },
+        { id: "logs", label: t("layout.tabs.logs"), panelId: "logflow-panel" },
+        { id: "settings", label: t("layout.tabs.settings"), panelId: "settings-panel" },
+      ] satisfies Array<{ id: PrimaryTab; label: string; panelId: string }>,
     [t],
   );
 
@@ -2211,12 +2215,12 @@ const HomePage: NextPage = () => {
     </>
   );
 
-  const chatPanel = (
+  const conversationPanel = (
     <section
-      aria-labelledby="tab-chat conversation-title"
+      aria-labelledby="tab-conversation conversation-title"
       className={`${panelSurfaceClass} flex flex-col gap-6 p-6 sm:p-8`}
       data-testid="conversation-panel"
-      id="chat-panel"
+      id="conversation-panel"
       role="tabpanel"
     >
       <h3 id="conversation-title" className="sr-only">
@@ -2351,21 +2355,66 @@ const HomePage: NextPage = () => {
     </section>
   );
 
-  const logflowPanel = (
+  const logsPanel = (
     <section
       className={`${panelSurfaceClass} p-6 sm:p-8`}
       data-testid="logflow-panel"
       id="logflow-panel"
       role="tabpanel"
-      aria-labelledby="tab-logflow"
+      aria-labelledby="tab-logs"
     >
       <LogFlowPanel traceId={traceId} />
     </section>
   );
 
+  const settingsPanel = (
+    <section
+      aria-labelledby="tab-settings settings-title"
+      className={`${panelSurfaceClass} space-y-6 p-6 sm:p-8`}
+      data-testid="settings-panel"
+      id="settings-panel"
+      role="tabpanel"
+    >
+      <div className="space-y-3">
+        <h3 id="settings-title" className={headingClass}>
+          {t("settings.heading")}
+        </h3>
+        <p className={`${subtleTextClass} text-sm`}>{t("settings.description")}</p>
+      </div>
+      <div
+        className={`${insetSurfaceClass} border border-slate-800/70 bg-slate-950/50 p-6 text-center`}
+        role="status"
+        aria-live="polite"
+      >
+        <p className={`${subtleTextClass} text-sm`}>{t("settings.empty")}</p>
+      </div>
+    </section>
+  );
+
+  const renderSettingsAside = () => (
+    <section
+      aria-labelledby="settings-aside-title"
+      className={`${panelSurfaceClass} space-y-4 p-6 sm:p-7`}
+      data-testid="settings-aside"
+    >
+      <h3 id="settings-aside-title" className={headingClass}>
+        {t("settings.heading")}
+      </h3>
+      <p className={`${subtleTextClass} text-sm`}>{t("settings.empty")}</p>
+    </section>
+  );
+
   const sidebarDrawerId = "mobile-sidebar-drawer";
   const insightsDrawerId = "mobile-insights-drawer";
-  const activePanel = activeTab === "chat" ? chatPanel : logflowPanel;
+  const activePanel =
+    activeTab === "conversation"
+      ? conversationPanel
+      : activeTab === "logs"
+        ? logsPanel
+        : settingsPanel;
+  const renderActiveAside = () =>
+    activeTab === "settings" ? renderSettingsAside() : renderInsights();
+  const asideAriaLabel = activeTab === "settings" ? t("settings.heading") : t("guardian.heading");
 
   return (
     <div className={shellClass} data-testid="chat-shell">
@@ -2427,7 +2476,7 @@ const HomePage: NextPage = () => {
 
       <main className={`${pageContainerClass} space-y-8`} data-testid="chat-main">
         <nav
-          aria-label={`${t("layout.tabs.chat")} / ${t("layout.tabs.logflow")}`}
+          aria-label={t("layout.navigationLabel")}
           className={`${pillGroupClass} mx-auto max-w-md`}
           data-testid="chat-nav"
           role="tablist"
@@ -2435,7 +2484,6 @@ const HomePage: NextPage = () => {
           {tabItems.map((tab) => {
             const selected = activeTab === tab.id;
             const tabId = `tab-${tab.id}`;
-            const panelId = tab.id === "chat" ? "chat-panel" : "logflow-panel";
             return (
               <button
                 key={tab.id}
@@ -2443,7 +2491,7 @@ const HomePage: NextPage = () => {
                 onClick={() => setActiveTab(tab.id)}
                 role="tab"
                 id={tabId}
-                aria-controls={panelId}
+                aria-controls={tab.panelId}
                 aria-selected={selected}
                 tabIndex={selected ? 0 : -1}
                 className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${
@@ -2489,7 +2537,7 @@ const HomePage: NextPage = () => {
             aria-haspopup="dialog"
             data-testid="chat-insights-toggle"
           >
-            {t("guardian.heading")}
+            {asideAriaLabel}
           </button>
         </div>
 
@@ -2510,9 +2558,9 @@ const HomePage: NextPage = () => {
           <aside
             className="hidden xl:flex xl:flex-col xl:space-y-6"
             data-testid="chat-insights"
-            aria-label={t("guardian.heading")}
+            aria-label={asideAriaLabel}
           >
-            {renderInsights()}
+            {renderActiveAside()}
           </aside>
         </div>
 
@@ -2581,8 +2629,8 @@ const HomePage: NextPage = () => {
                 insightsOpen ? "translate-x-0" : "translate-x-full"
               }`}
               role="dialog"
-              aria-modal={insightsOpen}
-              aria-label={t("guardian.heading")}
+              aria-modal="true"
+              aria-label={asideAriaLabel}
               id={insightsDrawerId}
               tabIndex={-1}
               data-testid="chat-insights-sheet"
@@ -2592,17 +2640,16 @@ const HomePage: NextPage = () => {
                   type="button"
                   onClick={() => setInsightsOpen(false)}
                   className={`${outlineButtonClass} px-3 py-1 text-xs`}
-                  aria-label={`${t("guardian.heading")} ${t("panels.plan.collapse")}`}
+                  aria-label={`${asideAriaLabel} ${t("panels.plan.collapse")}`}
                 >
                   {t("panels.plan.collapse")}
                 </button>
               </div>
-              <div className="space-y-6">{renderInsights()}</div>
+              <div className="space-y-6">{renderActiveAside()}</div>
             </div>
           </div>
         ) : null}
       </main>
-<<<<<<< HEAD
       {helpOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-6"

@@ -1,13 +1,17 @@
 {
   "layout": {
-    "title": "AgentOS · Chat + LogFlow",
+    "title": "AgentOS · Conversation, Logs, Settings",
     "subtitle": "Submit a prompt to run the local agent, inspect timeline events, and explore task branches.",
     "tabs": {
       "chat": "Chat",
-      "logflow": "LogFlow"
+      "logflow": "LogFlow",
+      "conversation": "Conversation",
+      "logs": "Logs",
+      "settings": "Settings"
     },
     "productLabel": "AgentOS",
     "primaryNavLabel": "Primary navigation",
+    "navigationLabel": "Primary workspace sections",
     "nav": {
       "chat": "Chat",
       "episodes": "Episodes",
@@ -123,7 +127,7 @@
     }
   },
   "chat": {
-    "inputLabel": "Chat input",
+    "inputLabel": "Conversation input",
     "placeholder": "Ask the agent for a summary or instruction...",
     "inputShortcutHint": "Tip: Press Ctrl+Enter or ⌘+Enter to run the agent.",
     "metrics": {
@@ -279,5 +283,10 @@
   },
   "errors": {
     "requestFailed": "Request failed ({status})"
+  },
+  "settings": {
+    "heading": "Settings",
+    "description": "Adjust workspace preferences and manage integrations.",
+    "empty": "Settings are coming soon."
   }
 }
