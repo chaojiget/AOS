@@ -5,6 +5,10 @@ const baseConfig = {
   trailingSlash: true,
   skipTrailingSlashRedirect: true,
   // i18n配置将根据build模式动态决定
+  experimental: {
+    // 禁用Fast Refresh的一些严格检查以减少运行时错误
+    swcTraceProfiling: false,
+  },
 };
 
 /**
