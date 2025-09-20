@@ -1,6 +1,6 @@
 import type { FC } from "react";
 
-import { useI18n } from "../../lib/i18n";
+import { useI18n } from "../../lib/i18n/index";
 import {
   insetSurfaceClass,
   labelClass,
@@ -35,6 +35,10 @@ const FinalReplyCard: FC<FinalReplyCardProps> = ({
     return null;
   }
 
+  const historyLabel = t("conversation.finalReply.history", { count: historyCount });
+  const handleHistoryClick = onOpenHistory ?? (() => {});
+  const historyDisabled = !onOpenHistory;
+
   return (
     <div
       className={
@@ -68,15 +72,15 @@ const FinalReplyCard: FC<FinalReplyCardProps> = ({
                 {t("conversation.finalReply.locate")}
               </button>
             ) : null}
-            {onOpenHistory ? (
-              <button
-                type="button"
-                onClick={onOpenHistory}
-                className={`${outlineButtonClass} px-3 py-1 text-xs`}
-              >
-                {t("conversation.finalReply.history", { count: historyCount })}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={handleHistoryClick}
+              className={`${outlineButtonClass} px-3 py-1 text-xs`}
+              disabled={historyDisabled}
+              aria-disabled={historyDisabled}
+            >
+              {historyLabel}
+            </button>
           </div>
         </div>
         <p className={`${subtleTextClass} mt-2 whitespace-pre-wrap text-sm text-slate-100`}>

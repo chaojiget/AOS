@@ -240,6 +240,21 @@ export class RunsService {
     return this.mapRun(row);
   }
 
+  async awaitRunCompletion(runId: string, timeoutMs = 5000): Promise<RunStatus> {
+    const maxWaitUntil = timeoutMs > 0 ? Date.now() + timeoutMs : Number.POSITIVE_INFINITY;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const run = await this.getRun(runId);
+      if (this.isRunSettled(run.status)) {
+        return run.status;
+      }
+      if (Date.now() >= maxWaitUntil) {
+        return run.status;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
   async listRecentRuns(limit = 50): Promise<RunSummary[]> {
     if (limit <= 0) {
       return [];
@@ -512,6 +527,10 @@ export class RunsService {
       stream.complete();
       this.streams.delete(runId);
     }
+  }
+
+  private isRunSettled(status: RunStatus): boolean {
+    return !["running", "awaiting_input", "awaiting_confirmation"].includes(status);
   }
 
   private async recordSyntheticEvent(runId: string, type: string, data: any): Promise<void> {

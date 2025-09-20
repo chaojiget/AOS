@@ -4,6 +4,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
 
 const TS_EXTENSIONS = [".ts", ".tsx"];
+const STUB_MODULES = {
+  "next/router": new URL("../tests/stubs/next-router.ts", import.meta.url).href,
+  "next/link": new URL("../tests/stubs/next-link.tsx", import.meta.url).href,
+  "next/head": new URL("../tests/stubs/next-head.tsx", import.meta.url).href,
+  "next/document": new URL("../tests/stubs/next-document.tsx", import.meta.url).href,
+  vitest: new URL("../packages/vitest/index.js", import.meta.url).href,
+};
 const COMPILER_OPTIONS = {
   module: ts.ModuleKind.ESNext,
   target: ts.ScriptTarget.ES2022,
@@ -28,6 +35,10 @@ async function fileExists(url) {
 export async function resolve(specifier, context, defaultResolve) {
   if (specifier.startsWith("node:") || specifier.startsWith("data:")) {
     return defaultResolve(specifier, context, defaultResolve);
+  }
+
+  if (specifier in STUB_MODULES) {
+    return { url: STUB_MODULES[specifier], shortCircuit: true };
   }
 
   const attemptDefault = await defaultResolve(specifier, context, defaultResolve).catch((error) => {

@@ -21,6 +21,7 @@ export class ApiConfigService {
   private readonly episodesDirValue: string;
   private readonly allowedOriginsValue: AllowedOrigins;
   private readonly apiKeyValue: string | null;
+  private readonly waitForRunCompletionValue: boolean;
 
   constructor() {
     const env = process.env;
@@ -30,6 +31,7 @@ export class ApiConfigService {
     this.allowedOriginsValue = parseOrigins(env.AOS_API_CORS);
     const key = env.AOS_API_KEY?.trim();
     this.apiKeyValue = key && key.length > 0 ? key : null;
+    this.waitForRunCompletionValue = this.parseBoolean(env.AOS_WAIT_FOR_RUN_COMPLETION);
   }
 
   get port(): number {
@@ -50,5 +52,15 @@ export class ApiConfigService {
 
   get apiKey(): string | null {
     return this.apiKeyValue;
+  }
+
+  get waitForRunCompletion(): boolean {
+    return this.waitForRunCompletionValue;
+  }
+
+  private parseBoolean(value: string | undefined): boolean {
+    if (!value) return false;
+    const normalised = value.trim().toLowerCase();
+    return normalised === "1" || normalised === "true" || normalised === "yes";
   }
 }

@@ -95,6 +95,7 @@ export async function createTestApp(): Promise<TestAppContext> {
     AOS_DB_PATH: join(workDir, "db.sqlite"),
     AOS_EVENTS_PATH: join(workDir, "events.json"),
     AOS_API_KEY: "",
+    AOS_WAIT_FOR_RUN_COMPLETION: "1",
   };
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })

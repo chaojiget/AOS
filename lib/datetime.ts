@@ -30,7 +30,11 @@ export function formatRelativeTimestamp(isoString: string, locale: string): stri
   }
 
   const formatter = new Intl.RelativeTimeFormat(locale || "en", { numeric: "auto" });
-  return formatter.format(Math.round(diffInSeconds), unit);
+  const formatted = formatter.format(Math.round(diffInSeconds), unit);
+  if (locale?.startsWith("zh")) {
+    return formatted.replace(/秒钟/g, "秒");
+  }
+  return formatted;
 }
 
 export function formatFullTimestamp(isoString: string, locale: string): string {
