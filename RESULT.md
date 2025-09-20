@@ -24,6 +24,14 @@
 - UI 验收要点：1) 最终答复卡片在滚动聊天记录时持续固定在中栏顶部；2) 点击定位按钮会滚动并高亮答复气泡；3) 版本回溯面板展示按时间倒序的历史；#ASSUMPTION：复制按钮成功写入系统剪贴板（以浏览器开发者工具验证）。
 - 依赖：复用 `useLocalToast` 与现有聊天消息结构；假设浏览器环境支持 `navigator.clipboard`，并在缺失时退回 `document.execCommand`。
 
+### 本轮追加（日志落盘）
+
+- 业务目标：将运行时事件日志追加写入持久化介质（JSONL），确保 Episode/Run 结束后可离线回放与审计。
+- 范围：限定在 `runtime`、`servers/api` 与 `packages` 内与日志契约相关的模块，暂不改动前端 UI；继续沿用既有内存实现作为兜底。
+- 使用场景：主路径——触发一次运行后写入日志文件并在回放接口读取；异常路径——落盘失败时抛出结构化错误并由上层捕获，保证运行不崩溃。
+- UI 验收要点：#ASSUMPTION：后端返回的 Episode JSONL 可被 `pnpm replay` 成功解析；#ASSUMPTION：落盘路径在本地开发环境具备写权限（通过手动执行写入脚本验证）。
+- 依赖：依托 Node.js `fs`/`stream` 能力与现有 Episode schema，需确认 `runtime/episodes` 目录存在并可创建；#ASSUMPTION：无需额外数据库迁移即可满足第一阶段需求。
+
 ### 本轮计划（信息架构收敛 P0）
 
 - 业务目标：
