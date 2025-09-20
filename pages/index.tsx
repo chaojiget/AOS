@@ -2,12 +2,14 @@ import { FormEventHandler, useCallback, useEffect, useMemo, useRef, useState } f
 import type { NextPage } from "next";
 
 import ChatMessageList, { type ChatHistoryMessage } from "../components/ChatMessageList";
-import PlanTimeline from "../components/PlanTimeline";
-import SkillPanel from "../components/SkillPanel";
-import { useLocalToast } from "../components/useLocalToast";
 import LogFlowPanel from "../components/LogFlowPanel";
-import { type PlanTimelineEvent, type PlanTimelineStep } from "../components/PlanTimeline";
-import type { SkillEvent } from "../components/SkillPanel";
+import PlanTimeline, {
+  type PlanTimelineEvent,
+  type PlanTimelineStep,
+} from "../components/PlanTimeline";
+import SkillPanel, { type SkillEvent } from "../components/SkillPanel";
+import { useLocalToast } from "../components/useLocalToast";
+import { fetchEpisodeDetail, fetchEpisodes, type EpisodeListItem } from "../lib/episodes";
 import { useI18n } from "../lib/i18n/index";
 import {
   fetchGuardianBudget,
@@ -62,14 +64,6 @@ interface StreamEventEnvelope {
   data?: any;
 }
 
-interface EpisodeListItem {
-  trace_id: string;
-  status: string;
-  started_at: string;
-  finished_at?: string | null;
-  goal?: string | null;
-}
-
 interface ConfirmationRequestState {
   id: string;
   ts: string;
@@ -82,6 +76,16 @@ interface ConfirmationRequestState {
 type RunStatus = "idle" | "running" | "awaiting-confirmation" | "completed" | "error";
 
 type GuardianStatusKey = GuardianBudgetStatus | "loading" | "idle" | "error";
+
+type ToastTone = "success" | "error";
+
+type ToastState = {
+  id: string;
+  tone: ToastTone;
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+} | null;
 
 const GUARDIAN_STATUS_TONES: Record<GuardianStatusKey, string> = {
   ok: "bg-emerald-500/10 text-emerald-200",
@@ -103,6 +107,26 @@ const GUARDIAN_ALERT_STATUS_TONES: Record<GuardianAlert["status"], string> = {
   approved: "bg-emerald-500/10 text-emerald-200",
   rejected: "bg-rose-500/10 text-rose-200",
   resolved: "bg-slate-700/40 text-slate-100",
+};
+
+const EPISODE_SKELETON_ITEMS = new Array(6).fill(null);
+
+const TOAST_TONE_STYLES: Record<
+  ToastTone,
+  { container: string; heading: string; text: string; button: string }
+> = {
+  success: {
+    container: "border-emerald-500/40 bg-emerald-500/10",
+    heading: "text-emerald-200",
+    text: "text-emerald-100/90",
+    button: "text-emerald-100/80 hover:text-emerald-50",
+  },
+  error: {
+    container: "border-rose-500/40 bg-rose-500/10",
+    heading: "text-rose-200",
+    text: "text-rose-100/90",
+    button: "text-rose-100/80 hover:text-rose-50",
+  },
 };
 
 const generateLocalId = (): string => {
@@ -290,6 +314,11 @@ const HomePage: NextPage = () => {
   const [episodesLoading, setEpisodesLoading] = useState(false);
   const [episodesError, setEpisodesError] = useState<string | null>(null);
   const [episodeFilter, setEpisodeFilter] = useState("");
+  const [draftEpisode, setDraftEpisode] = useState<EpisodeListItem | null>(null);
+  const [activeEpisodeId, setActiveEpisodeId] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState>(null);
+  const [loadingEpisodeId, setLoadingEpisodeId] = useState<string | null>(null);
+  const [downloadingEpisodeId, setDownloadingEpisodeId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const retryTimerRef = useRef<number | null>(null);
   const retryAttemptRef = useRef(0);
@@ -297,19 +326,31 @@ const HomePage: NextPage = () => {
 
   const draftInput = useMemo(() => input.trim(), [input]);
 
+  const dismissToast = useCallback(() => setToast(null), []);
+
+  const showToast = useCallback(
+    (tone: ToastTone, message: string, actionLabel?: string, onAction?: () => void) => {
+      setToast({
+        id: generateLocalId(),
+        tone,
+        message,
+        actionLabel,
+        onAction,
+      });
+    },
+    [],
+  );
+
   const refreshEpisodes = useCallback(async () => {
     setEpisodesLoading(true);
     setEpisodesError(null);
     try {
-      const response = await fetch("/api/episodes");
-      if (!response.ok) {
-        throw new Error(`failed (${response.status})`);
-      }
-      const payload = await response.json();
-      const items: EpisodeListItem[] = payload?.data?.items ?? [];
+      const response = await fetchEpisodes();
+      const items = response?.data?.items ?? [];
       setEpisodes(items);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message =
+        error instanceof Error ? error.message : t("conversation.episodes.loadErrorFallback");
       setEpisodesError(message);
       showToast({
         title: t("toast.error.title"),
@@ -357,6 +398,15 @@ const HomePage: NextPage = () => {
   useEffect(() => {
     refreshEpisodes().catch(() => {});
   }, [refreshEpisodes]);
+
+  useEffect(() => {
+    if (traceId) {
+      setActiveEpisodeId(traceId);
+      if (draftEpisode && draftEpisode.trace_id !== traceId) {
+        setDraftEpisode(null);
+      }
+    }
+  }, [draftEpisode, traceId]);
 
   const appendSystemMessage = useCallback(
     (content: string, status: ChatHistoryMessage["status"] = "done") => {
@@ -907,8 +957,145 @@ const HomePage: NextPage = () => {
     });
   }, [chatHistory, draftInput, showToast, t, traceId]);
 
+  const handleCreateConversation = useCallback(() => {
+    closeStream();
+    resetForRun();
+    setChatHistory([]);
+    setTraceId(undefined);
+    currentTraceRef.current = undefined;
+    setRunStatus("idle");
+    setRunError(null);
+    setInput("");
+    dismissToast();
+
+    const draftId = `draft-${generateLocalId()}`;
+    const now = new Date().toISOString();
+    const placeholder: EpisodeListItem = {
+      trace_id: draftId,
+      status: "draft",
+      started_at: now,
+      finished_at: null,
+      goal: t("conversation.episodes.draftTitle"),
+      step_count: 0,
+      score: null,
+    };
+    setDraftEpisode(placeholder);
+    setActiveEpisodeId(draftId);
+    setEpisodeFilter("");
+  }, [closeStream, dismissToast, resetForRun, t]);
+
+  const handleLoadEpisode = useCallback(
+    async (targetTraceId: string) => {
+      dismissToast();
+      setLoadingEpisodeId(targetTraceId);
+      try {
+        const response = await fetchEpisodeDetail(targetTraceId);
+        const detail = response.data;
+        const events = Array.isArray(detail?.events) ? detail.events : [];
+
+        closeStream();
+        resetForRun();
+        setChatHistory([]);
+        setTraceId(targetTraceId);
+        currentTraceRef.current = targetTraceId;
+        setRunStatus("idle");
+        setRunError(null);
+        setInput("");
+
+        const sortedEvents = [...events].sort(
+          (a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime(),
+        );
+        sortedEvents.forEach((event) => {
+          const envelope: StreamEventEnvelope = {
+            id: event.id ?? generateLocalId(),
+            ts: event.ts,
+            type: event.type,
+            trace_id: targetTraceId,
+            span_id: event.span_id ?? undefined,
+            parent_span_id: event.parent_span_id ?? undefined,
+            data: event.data,
+          };
+          handleStreamEvent(envelope);
+        });
+        setRunStatus("idle");
+
+        setActiveEpisodeId(targetTraceId);
+        setDraftEpisode(null);
+        setEpisodes((items) => {
+          const next = [...items];
+          const index = next.findIndex((item) => item.trace_id === targetTraceId);
+          const fallback = index >= 0 ? next[index] : undefined;
+          const enrichedMetadata: EpisodeListItem = {
+            trace_id: detail?.trace_id ?? targetTraceId,
+            status: detail?.status ?? fallback?.status ?? "completed",
+            started_at: detail?.started_at ?? fallback?.started_at ?? new Date().toISOString(),
+            finished_at: detail?.finished_at ?? fallback?.finished_at,
+            goal: detail?.goal ?? fallback?.goal,
+            step_count: detail?.step_count ?? fallback?.step_count,
+            score: detail?.score ?? fallback?.score,
+          };
+          if (index >= 0) {
+            next[index] = { ...next[index], ...enrichedMetadata };
+          } else {
+            next.unshift(enrichedMetadata);
+          }
+          return next;
+        });
+
+        showToast("success", t("conversation.episodes.loadSuccess", { traceId: targetTraceId }));
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : t("conversation.episodes.loadError", { traceId: targetTraceId });
+        showToast("error", message);
+      } finally {
+        setLoadingEpisodeId(null);
+      }
+    },
+    [closeStream, dismissToast, handleStreamEvent, resetForRun, showToast, t],
+  );
+
+  const handleDownloadEpisode = useCallback(
+    async (targetTraceId: string) => {
+      dismissToast();
+      setDownloadingEpisodeId(targetTraceId);
+      try {
+        const response = await fetch(`/api/episodes/${encodeURIComponent(targetTraceId)}`);
+        if (!response.ok) {
+          throw new Error(t("conversation.episodes.downloadError", { traceId: targetTraceId }));
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `episodes-${targetTraceId}.jsonl`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+        }, 0);
+        showToast(
+          "success",
+          t("conversation.episodes.downloadSuccess", { traceId: targetTraceId }),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : t("conversation.episodes.downloadError", { traceId: targetTraceId });
+        showToast("error", message);
+      } finally {
+        setDownloadingEpisodeId(null);
+      }
+    },
+    [dismissToast, showToast, t],
+  );
+
   const handleRun = useCallback(async () => {
-    if (!draftInput || runStatus === "running" || runStatus === "awaiting-confirmation") {
+    const awaitingConfirmation = runStatus === "awaiting-confirmation";
+    if (!draftInput || runStatus === "running" || awaitingConfirmation) {
       return;
     }
 
@@ -935,10 +1122,7 @@ const HomePage: NextPage = () => {
     try {
       const serialisedHistory = serialiseHistoryForRequest(previousHistory);
       const messagesForRequest = serialisedHistory.map(({ role, content }) => ({ role, content }));
-      const shouldReuseTrace =
-        previousTraceId && currentTraceRef.current === previousTraceId
-          ? previousTraceId
-          : undefined;
+      const shouldReuseTrace = awaitingConfirmation && previousTraceId;
 
       const response = await fetch("/api/run", {
         method: "POST",
@@ -1330,16 +1514,24 @@ const HomePage: NextPage = () => {
     return null;
   }, [finalOutput]);
 
+  const episodeItems = useMemo(() => {
+    if (!draftEpisode) {
+      return episodes;
+    }
+    const withoutDraft = episodes.filter((item) => item.trace_id !== draftEpisode.trace_id);
+    return [draftEpisode, ...withoutDraft];
+  }, [draftEpisode, episodes]);
+
   const filteredEpisodes = useMemo(() => {
     const keyword = episodeFilter.trim().toLowerCase();
     if (!keyword) {
-      return episodes;
+      return episodeItems;
     }
-    return episodes.filter((item) => {
+    return episodeItems.filter((item) => {
       const text = `${item.trace_id} ${item.goal ?? ""} ${item.status}`.toLowerCase();
       return text.includes(keyword);
     });
-  }, [episodeFilter, episodes]);
+  }, [episodeFilter, episodeItems]);
 
   const renderSidebar = () => (
     <>
@@ -1949,6 +2141,48 @@ const HomePage: NextPage = () => {
         </div>
       ) : null}
       <ToastContainer />
+
+      {toast ? (
+        <div
+          className={`fixed bottom-6 right-6 z-50 w-[min(360px,calc(100%-2rem))] rounded-xl border p-4 shadow-xl backdrop-blur ${TOAST_TONE_STYLES[toast.tone].container}`}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className={`text-sm font-semibold ${TOAST_TONE_STYLES[toast.tone].heading}`}>
+                {toast.tone === "success"
+                  ? t("conversation.episodes.toast.successTitle")
+                  : t("conversation.episodes.toast.errorTitle")}
+              </h3>
+              <p className={`mt-1 text-sm ${TOAST_TONE_STYLES[toast.tone].text}`}>
+                {toast.message}
+              </p>
+            </div>
+            <button
+              type="button"
+              className={`text-xs ${TOAST_TONE_STYLES[toast.tone].button}`}
+              onClick={dismissToast}
+            >
+              {t("conversation.episodes.toast.close")}
+            </button>
+          </div>
+          {toast.actionLabel && toast.onAction ? (
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                className={`${outlineButtonClass} px-3 py-1 text-xs`}
+                onClick={() => {
+                  dismissToast();
+                  toast.onAction?.();
+                }}
+              >
+                {toast.actionLabel}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 };
