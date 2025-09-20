@@ -8,7 +8,7 @@ import Sidebar from "../components/chat/Sidebar";
 import type { ChatHistoryMessage } from "../components/ChatMessageList";
 import type { PlanTimelineEvent } from "../components/PlanTimeline";
 import type { SkillEvent } from "../components/SkillPanel";
-import { I18nProvider } from "../lib/i18n";
+import { I18nProvider } from "../lib/i18n/index";
 
 describe("Chat layout components", () => {
   it("renders sidebar information and draft snippet", () => {

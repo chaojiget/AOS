@@ -877,7 +877,7 @@ const HomePage: NextPage = () => {
     try {
       const serialisedHistory = serialiseHistoryForRequest(previousHistory);
       const messagesForRequest = serialisedHistory.map(({ role, content }) => ({ role, content }));
-      const shouldReuseTrace = runStatus === "awaiting-confirmation" && previousTraceId;
+      const shouldReuseTrace = previousTraceId && currentTraceRef.current === previousTraceId;
 
       const response = await fetch("/api/run", {
         method: "POST",
