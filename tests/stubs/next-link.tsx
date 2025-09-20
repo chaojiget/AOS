@@ -3,10 +3,19 @@ import React from "react";
 
 type Href = string | { pathname?: string };
 
-type LinkProps = PropsWithChildren<AnchorHTMLAttributes<HTMLAnchorElement> & { href: Href }>;
+type LinkProps = PropsWithChildren<
+  Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & { href: Href }
+>;
 
 export default function Link({ href, children, ...rest }: LinkProps) {
-  const url = typeof href === "string" ? href : href?.pathname ?? "";
+  let url = "";
+
+  if (typeof href === "string") {
+    url = href;
+  } else if (href && typeof href === "object") {
+    url = href.pathname ?? "";
+  }
+
   return (
     <a {...rest} href={url}>
       {children}
