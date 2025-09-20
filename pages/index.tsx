@@ -36,7 +36,6 @@ import {
   outlineButtonClass,
   pageContainerClass,
   panelSurfaceClass,
-  pillGroupClass,
   primaryButtonClass,
   shellClass,
   subtleTextClass,
@@ -87,8 +86,6 @@ interface FinalReplySnapshot {
 type RunStatus = "idle" | "running" | "awaiting-confirmation" | "completed" | "error";
 
 type GuardianStatusKey = GuardianBudgetStatus | "loading" | "idle" | "error";
-
-type PrimaryTab = "conversation" | "logs" | "settings";
 
 const GUARDIAN_STATUS_TONES: Record<GuardianStatusKey, string> = {
   ok: "bg-emerald-500/10 text-emerald-200",
@@ -294,7 +291,6 @@ const HomePage: NextPage = () => {
   const [traceId, setTraceId] = useState<string | undefined>(undefined);
   const [chatHistory, setChatHistory] = useState<ChatHistoryMessage[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<PrimaryTab>("conversation");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const sidebarSheetMounted = useDrawerMount(sidebarOpen, DRAWER_TRANSITION_MS);
@@ -1488,16 +1484,6 @@ const HomePage: NextPage = () => {
     [router.pathname, t],
   );
 
-  const tabItems = useMemo(
-    () =>
-      [
-        { id: "conversation", label: t("layout.tabs.conversation"), panelId: "conversation-panel" },
-        { id: "logs", label: t("layout.tabs.logs"), panelId: "logflow-panel" },
-        { id: "settings", label: t("layout.tabs.settings"), panelId: "settings-panel" },
-      ] satisfies Array<{ id: PrimaryTab; label: string; panelId: string }>,
-    [t],
-  );
-
   const runIndicator = useMemo((): { label: string; state: RunIndicatorState } => {
     if (runStatus === "error") {
       return {
@@ -1893,7 +1879,7 @@ const HomePage: NextPage = () => {
   }, [episodeFilter, episodeItems]);
 
   const renderSidebar = () => (
-    <>
+    <div className="space-y-6">
       <section className={`${panelSurfaceClass} space-y-4 p-5 sm:p-6`}>
         <div className="space-y-1">
           <h3 className={headingClass}>{t("conversation.heading")}</h3>
@@ -1931,17 +1917,162 @@ const HomePage: NextPage = () => {
         </div>
       </section>
 
+      <section
+        className={`${panelSurfaceClass} space-y-4 p-5 sm:p-6`}
+        data-testid="conversation-episodes"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <h3 className={headingClass}>{t("conversation.episodes.heading")}</h3>
+            <p className={`${subtleTextClass} text-xs sm:text-sm`}>
+              {t("conversation.episodes.subtitle")}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCreateConversation}
+              className={`${outlineButtonClass} px-3 py-1 text-xs sm:text-sm`}
+            >
+              {t("conversation.newButton")}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void refreshEpisodes();
+              }}
+              disabled={episodesLoading}
+              className={`${outlineButtonClass} px-3 py-1 text-xs sm:text-sm`}
+            >
+              {episodesLoading
+                ? t("conversation.episodes.refreshing")
+                : t("conversation.episodes.refresh")}
+            </button>
+          </div>
+        </div>
+
+        <label className="flex flex-col gap-2 text-sm" htmlFor="episode-filter">
+          <span className={`${labelClass} text-slate-400`}>
+            {t("conversation.episodes.searchPlaceholder")}
+          </span>
+          <input
+            id="episode-filter"
+            value={episodeFilter}
+            onChange={(event) => setEpisodeFilter(event.target.value)}
+            placeholder={t("conversation.episodes.searchPlaceholder")}
+            className={`${inputSurfaceClass} w-full`}
+          />
+        </label>
+
+        {episodesError ? (
+          <p className="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-xs text-rose-200">
+            {episodesError}
+          </p>
+        ) : null}
+
+        {episodesLoading ? (
+          <ul className="space-y-3" aria-hidden="true">
+            {EPISODE_SKELETON_ITEMS.map((_, index) => (
+              <li
+                key={`episode-skeleton-${index}`}
+                className="animate-pulse rounded-2xl border border-slate-800/60 bg-slate-950/40 p-4"
+              >
+                <div className="h-4 w-2/3 rounded-full bg-slate-800/70" />
+                <div className="mt-3 h-3 w-1/2 rounded-full bg-slate-800/60" />
+                <div className="mt-4 h-8 rounded-2xl bg-slate-800/50" />
+              </li>
+            ))}
+          </ul>
+        ) : filteredEpisodes.length === 0 ? (
+          <p className={`${subtleTextClass} text-sm`}>{t("conversation.episodes.empty")}</p>
+        ) : (
+          <ul className="space-y-3" data-testid="episode-list">
+            {filteredEpisodes.map((episode) => {
+              const isActive = activeEpisodeId === episode.trace_id;
+              const isLoading = loadingEpisodeId === episode.trace_id;
+              const isDownloading = downloadingEpisodeId === episode.trace_id;
+              const isDraft = episode.status === "draft";
+              const cardToneClass = isActive
+                ? "border-sky-500/60 bg-slate-950/70"
+                : "border-slate-800/70 bg-slate-950/50";
+              const statusClass = isDraft
+                ? "bg-amber-500/10 text-amber-200"
+                : "bg-slate-900/70 text-slate-200";
+              const statusLabel = isDraft
+                ? t("conversation.episodes.draftStatus")
+                : (episode.status ?? "completed");
+              return (
+                <li key={episode.trace_id}>
+                  <article className={`${insetSurfaceClass} space-y-4 border ${cardToneClass} p-4`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-semibold text-slate-100">
+                          {episode.goal && episode.goal.length > 0
+                            ? episode.goal
+                            : t("conversation.episodes.untitled")}
+                        </h4>
+                        <p className={`${subtleTextClass} text-xs`}>{episode.trace_id}</p>
+                      </div>
+                      <span className={`${badgeClass} ${statusClass}`}>{statusLabel}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                      {typeof episode.step_count === "number" ? (
+                        <span>
+                          {t("conversation.episodes.meta.steps")}: {episode.step_count}
+                        </span>
+                      ) : null}
+                      {typeof episode.score === "number" ? (
+                        <span>
+                          {t("conversation.episodes.meta.score")}: {episode.score.toFixed(2)}
+                        </span>
+                      ) : null}
+                      {episode.started_at ? (
+                        <span>{formatDateTime(episode.started_at)}</span>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleLoadEpisode(episode.trace_id)}
+                        disabled={isLoading}
+                        className={`${primaryButtonClass} px-4 py-1.5 text-xs`}
+                      >
+                        {isLoading
+                          ? t("conversation.episodes.actions.loading")
+                          : t("conversation.episodes.actions.resume")}
+                      </button>
+                      {!isDraft ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleDownloadEpisode(episode.trace_id)}
+                          disabled={isDownloading}
+                          className={`${outlineButtonClass} px-4 py-1.5 text-xs`}
+                        >
+                          {isDownloading
+                            ? t("conversation.episodes.actions.downloading")
+                            : t("conversation.episodes.actions.download")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </article>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
       {draftInput ? (
         <section className={`${panelSurfaceClass} space-y-3 p-5 sm:p-6`}>
           <div className={`${labelClass} text-slate-400`}>{t("conversation.draftLabel")}</div>
           <p className="whitespace-pre-wrap text-sm text-slate-200">{draftInput}</p>
         </section>
       ) : null}
-    </>
+    </div>
   );
 
-  const renderInsights = () => (
-    <>
+  const renderInspector = () => (
+    <div className="space-y-6">
       <section
         aria-labelledby="guardian-panel-title"
         className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
@@ -2206,7 +2337,23 @@ const HomePage: NextPage = () => {
           labels={skillLabels}
         />
       </section>
-    </>
+
+      <section
+        className={`${panelSurfaceClass} space-y-4 p-6 sm:p-7`}
+        data-testid="logflow-panel"
+        aria-labelledby="inspector-logflow-title"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 id="inspector-logflow-title" className={headingClass}>
+            {t("layout.tabs.logs")}
+          </h3>
+          <span className={`${badgeClass} bg-slate-900/70 text-slate-200`}>
+            {t("chat.metrics.traceId")}: {traceId ?? "–"}
+          </span>
+        </div>
+        <LogFlowPanel traceId={traceId} />
+      </section>
+    </div>
   );
 
   const conversationPanel = (
@@ -2220,10 +2367,7 @@ const HomePage: NextPage = () => {
       <h3 id="conversation-title" className="sr-only">
         {t("conversation.heading")}
       </h3>
-      <div
-        className="flex flex-col gap-6 md:flex-1 md:min-h-0 md:overflow-y-auto md:pb-6"
-        data-testid="chat-scroll-region"
-      >
+      <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <RunStatusIndicator
             state={runIndicatorState}
@@ -2237,67 +2381,57 @@ const HomePage: NextPage = () => {
             </span>
           ) : null}
         </div>
-
-        <ChatMessageList messages={chatHistory} isRunning={runStatus === "running"} />
-
-        {finalPreview ? (
-          <div className={`${insetSurfaceClass} border border-sky-500/40 bg-sky-500/5 p-4`}>
-            <div className={`${labelClass} text-sky-200`}>{t("conversation.finalOutputTitle")}</div>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">{finalPreview}</p>
-          </div>
-        ) : null}
+        <div
+          className="flex flex-col gap-6 md:flex-1 md:min-h-0 md:overflow-y-auto md:pb-6"
+          data-testid="chat-scroll-region"
+        >
+          <ChatMessageList messages={chatHistory} isRunning={runStatus === "running"} />
+        </div>
       </div>
-
-      <FinalReplyCard
-        label={t("conversation.finalReply.title")}
-        content={finalPreview ?? ""}
-        sticky
-        historyCount={finalReplyHistory.length}
-        anchorId={finalReplyMessageId ?? undefined}
-        onCopy={handleCopyFinalReply}
-        onLocate={handleLocateFinalReply}
-        onOpenHistory={handleOpenFinalReplyHistory}
-      />
 
       <div className="md:sticky md:bottom-0 md:left-0 md:right-0 md:pt-2">
         <form
           onSubmit={handleSubmit}
           className="space-y-4 md:rounded-3xl md:border md:border-slate-800/60 md:bg-slate-950/70 md:p-5 md:shadow-[0_-16px_40px_rgba(15,23,42,0.35)]"
         >
-          <label htmlFor="prompt" className={`${labelClass} text-slate-300`}>
-            {t("chat.inputLabel")}
-          </label>
-          <textarea
-            id="prompt"
-            ref={promptInputRef}
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                void handleRun();
-              }
-            }}
-            placeholder={t("chat.placeholder")}
-            aria-describedby="chat-input-hint"
-            aria-keyshortcuts="Control+Enter Meta+Enter"
-            className={`${inputSurfaceClass} min-h-[9rem] w-full resize-y`}
-          />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button
-              type="submit"
-              disabled={
-                !draftInput || runStatus === "running" || runStatus === "awaiting-confirmation"
-              }
-              className={`${primaryButtonClass} w-full sm:w-auto`}
-              aria-keyshortcuts="Control+Enter Meta+Enter"
-            >
-              {runStatus === "running"
-                ? t("chat.submit.running")
-                : runStatus === "awaiting-confirmation"
-                  ? t("chat.submit.confirming")
-                  : t("chat.submit.run")}
-            </button>
+          <div className="space-y-3">
+            <label htmlFor="prompt" className={`${labelClass} text-slate-300`}>
+              {t("chat.inputLabel")}
+            </label>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+              <textarea
+                id="prompt"
+                ref={promptInputRef}
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    void handleRun();
+                  }
+                }}
+                placeholder={t("chat.placeholder")}
+                aria-describedby="chat-input-hint"
+                aria-keyshortcuts="Control+Enter Meta+Enter"
+                className={`${inputSurfaceClass} min-h-[9rem] w-full flex-1 resize-y`}
+              />
+              <div className="flex flex-col gap-2 sm:w-auto sm:flex-col sm:gap-3">
+                <button
+                  type="submit"
+                  disabled={
+                    !draftInput || runStatus === "running" || runStatus === "awaiting-confirmation"
+                  }
+                  className={`${primaryButtonClass} w-full sm:min-w-[9rem]`}
+                  aria-keyshortcuts="Control+Enter Meta+Enter"
+                >
+                  {runStatus === "running"
+                    ? t("chat.submit.running")
+                    : runStatus === "awaiting-confirmation"
+                      ? t("chat.submit.confirming")
+                      : t("chat.submit.run")}
+                </button>
+              </div>
+            </div>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span className={`${subtleTextClass} text-sm`} id="chat-input-hint">
@@ -2312,66 +2446,9 @@ const HomePage: NextPage = () => {
     </section>
   );
 
-  const logsPanel = (
-    <section
-      className={`${panelSurfaceClass} p-6 sm:p-8`}
-      data-testid="logflow-panel"
-      id="logflow-panel"
-      role="tabpanel"
-      aria-labelledby="tab-logs"
-    >
-      <LogFlowPanel traceId={traceId} />
-    </section>
-  );
-
-  const settingsPanel = (
-    <section
-      aria-labelledby="tab-settings settings-title"
-      className={`${panelSurfaceClass} space-y-6 p-6 sm:p-8`}
-      data-testid="settings-panel"
-      id="settings-panel"
-      role="tabpanel"
-    >
-      <div className="space-y-3">
-        <h3 id="settings-title" className={headingClass}>
-          {t("settings.heading")}
-        </h3>
-        <p className={`${subtleTextClass} text-sm`}>{t("settings.description")}</p>
-      </div>
-      <div
-        className={`${insetSurfaceClass} border border-slate-800/70 bg-slate-950/50 p-6 text-center`}
-        role="status"
-        aria-live="polite"
-      >
-        <p className={`${subtleTextClass} text-sm`}>{t("settings.empty")}</p>
-      </div>
-    </section>
-  );
-
-  const renderSettingsAside = () => (
-    <section
-      aria-labelledby="settings-aside-title"
-      className={`${panelSurfaceClass} space-y-4 p-6 sm:p-7`}
-      data-testid="settings-aside"
-    >
-      <h3 id="settings-aside-title" className={headingClass}>
-        {t("settings.heading")}
-      </h3>
-      <p className={`${subtleTextClass} text-sm`}>{t("settings.empty")}</p>
-    </section>
-  );
-
   const sidebarDrawerId = "mobile-sidebar-drawer";
   const insightsDrawerId = "mobile-insights-drawer";
-  const activePanel =
-    activeTab === "conversation"
-      ? conversationPanel
-      : activeTab === "logs"
-        ? logsPanel
-        : settingsPanel;
-  const renderActiveAside = () =>
-    activeTab === "settings" ? renderSettingsAside() : renderInsights();
-  const asideAriaLabel = activeTab === "settings" ? t("settings.heading") : t("guardian.heading");
+  const inspectorLabel = t("layout.inspector.heading");
 
   return (
     <div className={shellClass} data-testid="chat-shell">
@@ -2431,38 +2508,6 @@ const HomePage: NextPage = () => {
         </div>
       </header>
       <main className={`${pageContainerClass} space-y-8`} data-testid="chat-main">
-        <nav
-          aria-label={t("layout.navigationLabel")}
-          className={`${pillGroupClass} mx-auto max-w-md`}
-          data-testid="chat-nav"
-          role="tablist"
-        >
-          {tabItems.map((tab) => {
-            const selected = activeTab === tab.id;
-            const tabId = `tab-${tab.id}`;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                role="tab"
-                id={tabId}
-                aria-controls={tab.panelId}
-                aria-selected={selected}
-                tabIndex={selected ? 0 : -1}
-                className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${
-                  selected
-                    ? "bg-sky-400 text-slate-950 shadow-[0_12px_30px_rgba(56,189,248,0.35)]"
-                    : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
-                }`}
-                data-testid={`tab-button-${tab.id}`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
-
         <div
           className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between xl:hidden"
           data-testid="mobile-pane-toggles"
@@ -2491,9 +2536,9 @@ const HomePage: NextPage = () => {
             aria-controls={insightsDrawerId}
             aria-expanded={insightsOpen}
             aria-haspopup="dialog"
-            data-testid="chat-insights-toggle"
+            data-testid="chat-inspector-toggle"
           >
-            {asideAriaLabel}
+            {inspectorLabel}
           </button>
         </div>
 
@@ -2509,14 +2554,26 @@ const HomePage: NextPage = () => {
             {renderSidebar()}
           </aside>
 
-          <div className="min-w-0">{activePanel}</div>
+          <div className="min-w-0 space-y-6">
+            <FinalReplyCard
+              label={t("conversation.finalReply.title")}
+              content={finalPreview ?? ""}
+              sticky
+              historyCount={finalReplyHistory.length}
+              anchorId={finalReplyMessageId ?? undefined}
+              onCopy={handleCopyFinalReply}
+              onLocate={handleLocateFinalReply}
+              onOpenHistory={handleOpenFinalReplyHistory}
+            />
+            {conversationPanel}
+          </div>
 
           <aside
             className="hidden xl:flex xl:flex-col xl:space-y-6"
-            data-testid="chat-insights"
-            aria-label={asideAriaLabel}
+            data-testid="chat-inspector"
+            aria-label={inspectorLabel}
           >
-            {renderActiveAside()}
+            {renderInspector()}
           </aside>
         </div>
 
@@ -2570,7 +2627,7 @@ const HomePage: NextPage = () => {
             }`}
             role="presentation"
             aria-hidden={!insightsOpen}
-            data-testid="chat-insights-sheet-backdrop"
+            data-testid="chat-inspector-sheet-backdrop"
           >
             <div
               className={`absolute inset-0 bg-slate-950/80 transition-opacity duration-16 ${
@@ -2586,22 +2643,22 @@ const HomePage: NextPage = () => {
               }`}
               role="dialog"
               aria-modal="true"
-              aria-label={asideAriaLabel}
+              aria-label={inspectorLabel}
               id={insightsDrawerId}
               tabIndex={-1}
-              data-testid="chat-insights-sheet"
+              data-testid="chat-inspector-sheet"
             >
               <div className="mb-4 flex justify-end">
                 <button
                   type="button"
                   onClick={() => setInsightsOpen(false)}
                   className={`${outlineButtonClass} px-3 py-1 text-xs`}
-                  aria-label={`${asideAriaLabel} ${t("panels.plan.collapse")}`}
+                  aria-label={`${inspectorLabel} ${t("panels.plan.collapse")}`}
                 >
                   {t("panels.plan.collapse")}
                 </button>
               </div>
-              <div className="space-y-6">{renderActiveAside()}</div>
+              <div className="space-y-6">{renderInspector()}</div>
             </div>
           </div>
         ) : null}

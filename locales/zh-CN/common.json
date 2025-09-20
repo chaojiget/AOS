@@ -12,6 +12,9 @@
     "productLabel": "AgentOS",
     "primaryNavLabel": "主导航",
     "navigationLabel": "主工作区导航",
+    "inspector": {
+      "heading": "Inspector 检视"
+    },
     "nav": {
       "chat": "对话",
       "episodes": "历史回放",
