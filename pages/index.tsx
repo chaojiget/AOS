@@ -2430,7 +2430,6 @@ const HomePage: NextPage = () => {
           </p>
         </div>
       </header>
-
       <main className={`${pageContainerClass} space-y-8`} data-testid="chat-main">
         <nav
           aria-label={t("layout.navigationLabel")}
@@ -2698,7 +2697,6 @@ const HomePage: NextPage = () => {
           </div>
         </div>
       ) : null}
-=======
 
       {finalReplyHistoryOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
@@ -2762,7 +2760,6 @@ const HomePage: NextPage = () => {
           </div>
         </div>
       ) : null}
-
       {confirmationRequest ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
           <div className={modalBackdropClass} aria-hidden="true" />

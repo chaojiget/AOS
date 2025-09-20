@@ -64,7 +64,7 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
               {group.items.map((message) => {
                 const statusLabel =
                   message.status === "error"
-                    ? message.error ?? t("chat.message.status.error")
+                    ? (message.error ?? t("chat.message.status.error"))
                     : message.status === "pending"
                       ? t("chat.message.status.pending")
                       : message.status === "done"
@@ -176,12 +176,12 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
                         >
                           <span>{t("chat.message.metadata.summary")}</span>
                         </summary>
-                        <dl
-                          id={metadataId}
-                          className="mt-2 space-y-2 text-left text-[0.7rem]"
-                        >
+                        <dl id={metadataId} className="mt-2 space-y-2 text-left text-[0.7rem]">
                           {metadataEntries.map((item) => (
-                            <div key={`${message.id}-${item.key}`} className="flex flex-col gap-0.5">
+                            <div
+                              key={`${message.id}-${item.key}`}
+                              className="flex flex-col gap-0.5"
+                            >
                               <dt className="font-semibold uppercase tracking-[0.14em] text-slate-500">
                                 {item.label}
                               </dt>
