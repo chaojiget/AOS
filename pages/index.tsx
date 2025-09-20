@@ -261,6 +261,7 @@ const HomePage: NextPage = () => {
   const [insightsOpen, setInsightsOpen] = useState(false);
   const sidebarSheetRef = useRef<HTMLDivElement | null>(null);
   const insightsSheetRef = useRef<HTMLDivElement | null>(null);
+  const promptInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [finalOutput, setFinalOutput] = useState<unknown>(null);
   const [lastEvent, setLastEvent] = useState<StreamEventEnvelope | null>(null);
   const [planEvents, setPlanEvents] = useState<PlanTimelineEvent[]>([]);
@@ -1064,7 +1065,19 @@ const HomePage: NextPage = () => {
 
   const handleRun = useCallback(async () => {
     const awaitingConfirmation = runStatus === "awaiting-confirmation";
-    if (!draftInput || runStatus === "running" || awaitingConfirmation) {
+    if (!draftInput) {
+      showToast({
+        title: t("toast.info.title"),
+        message: t("chat.toast.emptyInput"),
+        dismissLabel: t("toast.dismiss"),
+        tone: "info",
+      });
+      if (promptInputRef.current) {
+        promptInputRef.current.focus();
+      }
+      return;
+    }
+    if (runStatus === "running" || awaitingConfirmation) {
       return;
     }
 
@@ -1819,7 +1832,7 @@ const HomePage: NextPage = () => {
   const chatPanel = (
     <section
       aria-labelledby="tab-chat conversation-title"
-      className={`${panelSurfaceClass} space-y-6 p-6 sm:p-8`}
+      className={`${panelSurfaceClass} flex flex-col gap-6 p-6 sm:p-8`}
       data-testid="conversation-panel"
       id="chat-panel"
       role="tabpanel"
@@ -1827,56 +1840,79 @@ const HomePage: NextPage = () => {
       <h3 id="conversation-title" className="sr-only">
         {t("conversation.heading")}
       </h3>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className={`${badgeClass} ${statusTone} bg-transparent normal-case`}>
-          {statusText}
-        </span>
-        {traceId ? (
-          <span className="font-mono text-xs text-slate-400 sm:text-sm">{traceId}</span>
+      <div
+        className="flex flex-col gap-6 md:flex-1 md:min-h-0 md:overflow-y-auto md:pb-6"
+        data-testid="chat-scroll-region"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className={`${badgeClass} ${statusTone} bg-transparent normal-case`}>
+            {statusText}
+          </span>
+          {traceId ? (
+            <span className="font-mono text-xs text-slate-400 sm:text-sm">{traceId}</span>
+          ) : null}
+        </div>
+
+        <ChatMessageList messages={chatHistory} isRunning={runStatus === "running"} />
+
+        {finalPreview ? (
+          <div className={`${insetSurfaceClass} border border-sky-500/40 bg-sky-500/5 p-4`}>
+            <div className={`${labelClass} text-sky-200`}>{t("conversation.finalOutputTitle")}</div>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">{finalPreview}</p>
+          </div>
         ) : null}
       </div>
 
-      <ChatMessageList messages={chatHistory} isRunning={runStatus === "running"} />
-
-      {finalPreview ? (
-        <div className={`${insetSurfaceClass} border border-sky-500/40 bg-sky-500/5 p-4`}>
-          <div className={`${labelClass} text-sky-200`}>{t("conversation.finalOutputTitle")}</div>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">{finalPreview}</p>
-        </div>
-      ) : null}
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <label htmlFor="prompt" className={`${labelClass} text-slate-300`}>
-          {t("chat.inputLabel")}
-        </label>
-        <textarea
-          id="prompt"
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              void handleRun();
-            }
-          }}
-          placeholder={t("chat.placeholder")}
-          className={`${inputSurfaceClass} min-h-[9rem] w-full resize-y`}
-        />
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="submit"
-            disabled={runStatus === "running" || runStatus === "awaiting-confirmation"}
-            className={`${primaryButtonClass} w-full sm:w-auto`}
-          >
-            {runStatus === "running"
-              ? t("chat.submit.running")
-              : runStatus === "awaiting-confirmation"
-                ? t("chat.submit.confirming")
-                : t("chat.submit.run")}
-          </button>
-          <span className={`${subtleTextClass} text-sm`}>{statusText}</span>
-        </div>
-      </form>
+      <div className="md:sticky md:bottom-0 md:left-0 md:right-0 md:pt-2">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4 md:rounded-3xl md:border md:border-slate-800/60 md:bg-slate-950/70 md:p-5 md:shadow-[0_-16px_40px_rgba(15,23,42,0.35)]"
+        >
+          <label htmlFor="prompt" className={`${labelClass} text-slate-300`}>
+            {t("chat.inputLabel")}
+          </label>
+          <textarea
+            id="prompt"
+            ref={promptInputRef}
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                void handleRun();
+              }
+            }}
+            placeholder={t("chat.placeholder")}
+            aria-describedby="chat-input-hint"
+            aria-keyshortcuts="Control+Enter Meta+Enter"
+            className={`${inputSurfaceClass} min-h-[9rem] w-full resize-y`}
+          />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <button
+              type="submit"
+              disabled={
+                !draftInput || runStatus === "running" || runStatus === "awaiting-confirmation"
+              }
+              className={`${primaryButtonClass} w-full sm:w-auto`}
+              aria-keyshortcuts="Control+Enter Meta+Enter"
+            >
+              {runStatus === "running"
+                ? t("chat.submit.running")
+                : runStatus === "awaiting-confirmation"
+                  ? t("chat.submit.confirming")
+                  : t("chat.submit.run")}
+            </button>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className={`${subtleTextClass} text-sm`} id="chat-input-hint">
+              {t("chat.inputShortcutHint")}
+            </span>
+            <span className={`${subtleTextClass} text-sm`} aria-live="polite">
+              {statusText}
+            </span>
+          </div>
+        </form>
+      </div>
     </section>
   );
 

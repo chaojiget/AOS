@@ -68,6 +68,7 @@
   "chat": {
     "inputLabel": "Chat input",
     "placeholder": "Ask the agent for a summary or instruction...",
+    "inputShortcutHint": "Tip: Press Ctrl+Enter or ⌘+Enter to run the agent.",
     "metrics": {
       "heading": "Run metrics",
       "traceId": "Trace ID",
@@ -97,7 +98,8 @@
     "generating": "Generating response…",
     "toast": {
       "noContent": "There's nothing to save yet.",
-      "saveSuccess": "Conversation exported as JSON."
+      "saveSuccess": "Conversation exported as JSON.",
+      "emptyInput": "Enter a message before running the agent."
     },
     "message": {
       "labels": {

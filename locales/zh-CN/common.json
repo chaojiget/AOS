@@ -68,6 +68,7 @@
   "chat": {
     "inputLabel": "聊天输入",
     "placeholder": "请向代理提问或发送指令…",
+    "inputShortcutHint": "提示：按 Ctrl+Enter 或 ⌘+Enter 快速运行。",
     "metrics": {
       "heading": "运行指标",
       "traceId": "追踪 ID",
@@ -97,7 +98,8 @@
     "generating": "正在生成回复…",
     "toast": {
       "noContent": "当前没有可保存的内容。",
-      "saveSuccess": "对话已保存为 JSON 文件。"
+      "saveSuccess": "对话已保存为 JSON 文件。",
+      "emptyInput": "请先输入内容再运行代理。"
     },
     "message": {
       "labels": {

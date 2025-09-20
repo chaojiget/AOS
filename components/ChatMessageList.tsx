@@ -59,7 +59,7 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
 
   return (
     <div
-      className={`${insetSurfaceClass} flex max-h-[26rem] flex-col gap-6 overflow-y-auto p-4`}
+      className={`${insetSurfaceClass} flex max-h-[26rem] flex-col gap-6 overflow-y-auto p-4 md:max-h-none md:min-h-0 md:flex-1`}
       role="log"
       aria-live={isRunning ? "polite" : "off"}
     >
