@@ -5,6 +5,49 @@
     "tabs": {
       "chat": "聊天",
       "logflow": "日志流"
+    },
+    "productLabel": "AgentOS",
+    "primaryNavLabel": "主导航",
+    "nav": {
+      "chat": "对话",
+      "episodes": "历史回放",
+      "skills": "工具看板"
+    },
+    "themeToggle": {
+      "light": "浅色",
+      "dark": "深色",
+      "toLight": "切换到浅色主题",
+      "toDark": "切换到深色主题"
+    },
+    "help": {
+      "button": "帮助",
+      "ariaLabel": "打开帮助与快捷键列表",
+      "title": "帮助与快捷键",
+      "subtitle": "熟悉常用操作，加快代理调试节奏。",
+      "close": "关闭帮助",
+      "shortcuts": {
+        "title": "快捷键",
+        "description": "使用快捷键可以更快触达常见操作。",
+        "run": {
+          "keys": "⌘ / Ctrl + Enter",
+          "description": "运行当前对话输入"
+        },
+        "newline": {
+          "keys": "Shift + Enter",
+          "description": "在输入框内换行"
+        },
+        "focus": {
+          "keys": "/",
+          "description": "聚焦到聊天输入"
+        }
+      },
+      "commands": {
+        "title": "常用命令",
+        "description": "以下动作覆盖最常见的调试路径。",
+        "refresh": "在“历史回放”卡片中选择“刷新”以载入最新运行。",
+        "download": "在 Episode 卡片上使用“导出 JSONL”保存对话记录。",
+        "theme": "通过主题切换按钮在深色与浅色体验之间切换。"
+      }
     }
   },
   "toast": {
