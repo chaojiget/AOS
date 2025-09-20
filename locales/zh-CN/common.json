@@ -17,6 +17,7 @@
     },
     "nav": {
       "chat": "对话",
+      "runs": "运行",
       "episodes": "历史回放",
       "skills": "工具看板"
     },
@@ -127,6 +128,37 @@
         "errorTitle": "出现问题",
         "close": "关闭"
       }
+    }
+  },
+  "runs": {
+    "heading": "运行",
+    "subtitle": "集中查看正在进行和历史运行，并检视事件时间轴。",
+    "list": {
+      "heading": "最近运行",
+      "empty": "暂无运行记录，请先在会话页触发一次运行。",
+      "error": "加载运行列表失败。",
+      "retry": "重试",
+      "refresh": "刷新",
+      "loading": "加载中…",
+      "updated": "已更新",
+      "searchPlaceholder": "按目标、追踪 ID 或状态筛选…"
+    },
+    "timeline": {
+      "heading": "事件时间轴",
+      "empty": "当前运行尚未产生任何事件。",
+      "error": "加载时间轴失败。",
+      "retry": "重试",
+      "meta": {
+        "startedAt": "开始于",
+        "finishedAt": "结束于",
+        "status": "状态"
+      }
+    },
+    "inspector": {
+      "heading": "Inspector",
+      "planHeading": "计划快照",
+      "skillsHeading": "涉及技能",
+      "logHeading": "LogFlow 追踪"
     }
   },
   "chat": {
@@ -285,7 +317,19 @@
     "system": "系统"
   },
   "errors": {
-    "requestFailed": "请求失败（{status}）"
+    "requestFailed": "请求失败（{status}）",
+    "generic": {
+      "title": "发生错误",
+      "description": "未能完成此操作，请重试或返回会话页。",
+      "primary": "重试",
+      "secondary": "返回会话"
+    },
+    "runNotFound": {
+      "title": "未找到运行",
+      "description": "该运行可能已被移除或归档，请选择其他运行或返回会话页。",
+      "primary": "查看会话",
+      "secondary": "重新载入列表"
+    }
   },
   "settings": {
     "heading": "设置",

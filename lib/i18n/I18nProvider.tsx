@@ -5,7 +5,7 @@ import { FALLBACK_LOCALE, type SupportedLocale } from "./config";
 import enMessages from "../../locales/en/common.json" with { type: "json" };
 import zhCNMessages from "../../locales/zh-CN/common.json" with { type: "json" };
 
-type MessageDictionary = typeof zhCNMessages;
+type MessageDictionary = typeof enMessages;
 
 type MessageRecord = Record<SupportedLocale, MessageDictionary>;
 

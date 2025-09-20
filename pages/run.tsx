@@ -1,251 +1,447 @@
-import { NextPage } from "next";
 import Head from "next/head";
-import type { FC, FormEvent } from "react";
-import { useCallback, useState } from "react";
+import type { NextPage } from "next";
+import { useRouter } from "next/router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-interface ChatSendResponse {
-  trace_id: string;
-  msg_id: string;
-  result?: unknown;
-}
+import ErrorCard from "../components/ErrorCard";
+import HeaderPrimaryNav, { type HeaderPrimaryNavItem } from "../components/HeaderPrimaryNav";
+import LogFlowPanel from "../components/LogFlowPanel";
+import {
+  fetchEpisodeDetail,
+  fetchEpisodes,
+  type EpisodeDetailResponse,
+  type EpisodeEvent,
+  type EpisodeListItem,
+} from "../lib/episodes";
+import { useI18n } from "../lib/i18n";
+import {
+  badgeClass,
+  headerSurfaceClass,
+  headingClass,
+  inputSurfaceClass,
+  insetSurfaceClass,
+  labelClass,
+  outlineButtonClass,
+  pageContainerClass,
+  panelSurfaceClass,
+  shellClass,
+  subtleTextClass,
+} from "../lib/theme";
 
-interface ChatPanelProps {
-  message: string;
-  onMessageChange: (value: string) => void;
-  onRun: () => void;
-  isRunning: boolean;
-  status: string;
-  finalOutput: string;
-}
-
-interface LogFlowPanelProps {
-  traceId: string | null;
-  log: string;
+interface RunListState {
   isLoading: boolean;
+  error: string | null;
+  items: EpisodeListItem[];
 }
 
-const formatResult = (result: unknown): string => {
-  if (result === null || result === undefined) {
-    return "Result is empty.";
-  }
+interface RunDetailState {
+  isLoading: boolean;
+  error: string | null;
+  detail: EpisodeDetailResponse["data"] | null;
+}
 
-  if (typeof result === "string") {
-    return result;
-  }
+const skeletonItems = new Array(6).fill(null);
 
-  try {
-    return JSON.stringify(result, null, 2);
-  } catch (error) {
-    return String(result);
+const formatTimestamp = (value: string | null | undefined): string => {
+  if (!value) return "–";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
   }
+  return date.toLocaleString();
 };
 
-const ChatPanel: FC<ChatPanelProps> = ({
-  message,
-  onMessageChange,
-  onRun,
-  isRunning,
-  status,
-  finalOutput,
-}) => {
-  const handleSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      onRun();
-    },
-    [onRun],
-  );
-
-  return (
-    <section className="flex flex-col gap-6 rounded-2xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-lg">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-xl font-semibold text-slate-100">Chat</h2>
-        <p className="text-xs text-slate-400 sm:text-sm">
-          Press{" "}
-          <kbd className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[0.65rem]">
-            Ctrl
-          </kbd>{" "}
-          /
-          <kbd className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[0.65rem]">
-            ⌘
-          </kbd>
-          <span className="px-1">+</span>
-          <kbd className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-[0.65rem]">
-            Enter
-          </kbd>
-        </p>
-      </div>
-      <form className="flex flex-1 flex-col gap-4" onSubmit={handleSubmit}>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-300" htmlFor="message">
-          Message
-          <textarea
-            id="message"
-            placeholder="Ask the agent for a summary or instruction..."
-            value={message}
-            onChange={(event) => onMessageChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (!isRunning && event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                onRun();
-              }
-            }}
-            className="min-h-[12rem] w-full resize-y rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-base text-slate-100 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
-          />
-        </label>
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={isRunning}
-            className="inline-flex items-center justify-center rounded-full bg-cyan-400 px-5 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isRunning ? "Running..." : "Run"}
-          </button>
-          <span className="text-sm text-slate-400">{status}</span>
-        </div>
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
-            Final Output
-          </h3>
-          <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-100">
-            {finalOutput || "Results will appear here once the run completes."}
-          </pre>
-        </div>
-      </form>
-    </section>
-  );
-};
-
-const LogFlowPanel: FC<LogFlowPanelProps> = ({ traceId, log, isLoading }) => {
-  return (
-    <section className="flex h-full flex-col gap-4 rounded-2xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-lg">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-xl font-semibold text-slate-100">LogFlow</h2>
-        <p className="text-xs text-slate-400 sm:text-sm">
-          {traceId ? (
-            <span>
-              trace_id: <code className="break-all text-cyan-300">{traceId}</code>
-            </span>
-          ) : (
-            "Run the agent to generate a trace."
-          )}
-        </p>
-      </div>
-      <pre className="max-h-[28rem] flex-1 overflow-y-auto whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-100">
-        {isLoading ? "Loading episode log..." : log || "Logs will appear here when available."}
-      </pre>
-    </section>
-  );
+const summariseEvent = (event: EpisodeEvent): string | null => {
+  if (!event?.data) return null;
+  if (typeof event.data === "string") {
+    return event.data;
+  }
+  if (typeof event.data === "object") {
+    const message = (event.data as any)?.message ?? (event.data as any)?.text;
+    if (typeof message === "string") {
+      return message;
+    }
+    try {
+      return JSON.stringify(event.data);
+    } catch {
+      return String(event.data);
+    }
+  }
+  return String(event.data);
 };
 
 const RunPage: NextPage = () => {
-  const [message, setMessage] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
-  const [status, setStatus] = useState("");
-  const [finalOutput, setFinalOutput] = useState("");
-  const [traceId, setTraceId] = useState<string | null>(null);
-  const [log, setLog] = useState("");
-  const [isLogLoading, setIsLogLoading] = useState(false);
+  const router = useRouter();
+  const { t } = useI18n();
+  const [listState, setListState] = useState<RunListState>({
+    isLoading: true,
+    error: null,
+    items: [],
+  });
+  const [detailState, setDetailState] = useState<RunDetailState>({
+    isLoading: false,
+    error: null,
+    detail: null,
+  });
+  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
-  const handleRun = useCallback(async () => {
-    if (isRunning) {
-      return;
-    }
-    const prompt = message.trim();
-    setIsRunning(true);
-    setStatus("Running...");
-    setFinalOutput("");
-    setTraceId(null);
-    setLog("");
-    setIsLogLoading(false);
+  const navItems = useMemo<HeaderPrimaryNavItem[]>(
+    () =>
+      [
+        { href: "/", label: t("layout.nav.chat") },
+        { href: "/run", label: t("layout.nav.runs") },
+        { href: "/episodes", label: t("layout.nav.episodes") },
+        { href: "/skills", label: t("layout.nav.skills") },
+      ].map((item) => ({
+        ...item,
+        isActive: router.pathname === item.href,
+      })),
+    [router.pathname, t],
+  );
 
+  const loadRuns = useCallback(async () => {
+    setListState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
-      const response = await fetch("/api/chat/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: prompt }),
-      });
-
-      const payload = (await response.json().catch(() => null)) as
-        | ChatSendResponse
-        | { message?: string }
-        | null;
-
-      if (!response.ok || !payload) {
-        const message =
-          typeof (payload as any)?.message === "string"
-            ? (payload as any).message
-            : "Request failed";
-        throw new Error(message);
-      }
-
-      const data = payload as ChatSendResponse;
-      setStatus("Completed");
-      setTraceId(data.trace_id);
-      setFinalOutput(formatResult(data.result));
-
-      if (data.trace_id) {
-        setIsLogLoading(true);
-        try {
-          const episodeResponse = await fetch(`/api/episodes/${data.trace_id}`);
-          if (episodeResponse.ok) {
-            const episodeText = await episodeResponse.text();
-            const trimmedText = episodeText.trim();
-            setLog(trimmedText.length > 0 ? trimmedText : "Episode available but empty.");
-          } else {
-            setLog("Episode not available yet.");
-          }
-        } catch {
-          setLog("Failed to load episode log.");
-        } finally {
-          setIsLogLoading(false);
+      const response = await fetchEpisodes();
+      const items = response.data.items;
+      setListState({ isLoading: false, error: null, items });
+      setSelectedTraceId((current) => {
+        if (current && items.some((item) => item.trace_id === current)) {
+          return current;
         }
-      } else {
-        setLog("Trace id was not provided for this run.");
-      }
+        return items[0]?.trace_id ?? null;
+      });
     } catch (error) {
-      setStatus("Failed");
-      const message = error instanceof Error ? error.message : "Request failed";
-      setFinalOutput(message);
-      setLog("Run failed before episode log could be retrieved.");
-      setIsLogLoading(false);
-    } finally {
-      setIsRunning(false);
+      const message = error instanceof Error ? error.message : t("runs.list.error");
+      setListState({ isLoading: false, error: message, items: [] });
+      setSelectedTraceId(null);
     }
-  }, [isRunning, message]);
+  }, [t]);
+
+  const loadDetail = useCallback(
+    async (traceId: string) => {
+      setDetailState({ isLoading: true, error: null, detail: null });
+      try {
+        const response = await fetchEpisodeDetail(traceId);
+        setDetailState({ isLoading: false, error: null, detail: response.data });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : t("runs.timeline.error");
+        setDetailState({ isLoading: false, error: message, detail: null });
+      }
+    },
+    [t],
+  );
+
+  useEffect(() => {
+    loadRuns();
+  }, [loadRuns]);
+
+  useEffect(() => {
+    if (selectedTraceId) {
+      loadDetail(selectedTraceId);
+    }
+  }, [selectedTraceId, loadDetail]);
+
+  const filteredItems = useMemo(() => {
+    const normalised = searchTerm.trim().toLowerCase();
+    if (!normalised) {
+      return listState.items;
+    }
+    return listState.items.filter((item) => {
+      const tokens = [item.goal, item.trace_id, item.status]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return tokens.includes(normalised);
+    });
+  }, [listState.items, searchTerm]);
+
+  const pageTitle = `${t("runs.heading")} · Agent OS`;
+  const subtitle = t("runs.subtitle");
+  const listHeading = t("runs.list.heading");
+  const listEmpty = t("runs.list.empty");
+  const listError = listState.error ?? t("runs.list.error");
+  const listRetry = t("runs.list.retry");
+  const listRefresh = t("runs.list.refresh");
+  const searchPlaceholder = t("runs.list.searchPlaceholder");
+  const timelineHeading = t("runs.timeline.heading");
+  const timelineEmpty = t("runs.timeline.empty");
+  const metaStartedLabel = t("runs.timeline.meta.startedAt");
+  const metaFinishedLabel = t("runs.timeline.meta.finishedAt");
+  const metaStatusLabel = t("runs.timeline.meta.status");
+  const errorBack = t("errors.generic.secondary");
+  const runNotFoundTitle = t("errors.runNotFound.title");
+  const runNotFoundDescription = t("errors.runNotFound.description");
+  const runNotFoundPrimary = t("errors.runNotFound.primary");
+  const runNotFoundSecondary = t("errors.runNotFound.secondary");
+
+  const selectedDetail = detailState.detail;
+  const selectedEvents = selectedDetail?.events ?? [];
 
   return (
-    <>
+    <div className={shellClass}>
       <Head>
-        <title>AgentOS · Run</title>
-        <meta
-          name="description"
-          content="Execute the AgentOS run loop, inspect the final output, and browse the LogFlow episode events."
-        />
+        <title>{pageTitle}</title>
       </Head>
-      <div className="min-h-screen bg-slate-950/95 text-slate-100">
-        <header className="border-b border-slate-800/80 bg-slate-950/60 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-8 lg:flex-row lg:items-baseline lg:justify-between">
+      <main className={`${pageContainerClass} space-y-6`}>
+        <header className={`${headerSurfaceClass} space-y-4 p-6 sm:p-8`}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-2">
-              <h1 className="text-3xl font-semibold">AgentOS · Chat + LogFlow</h1>
-              <p className="text-sm text-slate-400">
-                Submit a prompt to generate a response, inspect events, and replay episodes.
-              </p>
+              <h1 className={`${headingClass} text-2xl`}>{t("runs.heading")}</h1>
+              <p className={`${subtleTextClass} text-sm`}>{subtitle}</p>
             </div>
+            <button
+              type="button"
+              onClick={() => loadRuns()}
+              className={`${outlineButtonClass} w-full sm:w-auto`}
+              disabled={listState.isLoading}
+            >
+              {listState.isLoading ? t("runs.list.loading") : listRefresh}
+            </button>
           </div>
-        </header>
-        <main className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 gap-6 px-6 py-8 lg:grid-cols-2">
-          <ChatPanel
-            message={message}
-            onMessageChange={setMessage}
-            onRun={handleRun}
-            isRunning={isRunning}
-            status={status}
-            finalOutput={finalOutput}
+          <HeaderPrimaryNav
+            items={navItems}
+            ariaLabel={t("layout.primaryNavLabel")}
+            className="justify-center"
           />
-          <LogFlowPanel traceId={traceId} log={log} isLoading={isLogLoading} />
-        </main>
-      </div>
-    </>
+        </header>
+
+        <section className="grid gap-6 xl:grid-cols-shell">
+          <aside className={`${panelSurfaceClass} flex flex-col gap-4 p-6`}>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h2 className={`${headingClass} text-base`}>{listHeading}</h2>
+                <span className={`${labelClass} text-xs text-slate-300/70`}>
+                  {listState.items.length}
+                </span>
+              </div>
+              <label className="flex flex-col gap-2 text-sm">
+                <span className={`${labelClass} text-slate-400`}>{searchPlaceholder}</span>
+                <input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder={searchPlaceholder}
+                  className={`${inputSurfaceClass} w-full`}
+                  data-testid="run-search"
+                />
+              </label>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {listState.isLoading ? (
+                <ul className="flex flex-col gap-3" data-testid="run-list-skeleton">
+                  {skeletonItems.map((_, index) => (
+                    <li
+                      key={index}
+                      className="animate-pulse rounded-2xl border border-slate-800/70 bg-slate-900/60 p-4"
+                    >
+                      <div className="h-4 w-3/5 rounded bg-slate-800/70" />
+                      <div className="mt-3 h-3 w-1/2 rounded bg-slate-800/50" />
+                    </li>
+                  ))}
+                </ul>
+              ) : listState.error ? (
+                <ErrorCard
+                  title={listError}
+                  description={subtitle}
+                  actions={[
+                    {
+                      label: listRetry,
+                      onClick: () => loadRuns(),
+                    },
+                    {
+                      label: errorBack,
+                      onClick: () => {
+                        void router.push("/");
+                      },
+                    },
+                  ]}
+                />
+              ) : filteredItems.length === 0 ? (
+                <div className={`${insetSurfaceClass} p-4 text-sm text-slate-300/80`}>
+                  {listEmpty}
+                </div>
+              ) : (
+                <ul className="flex flex-col gap-3" data-testid="run-list">
+                  {filteredItems.map((item) => {
+                    const isSelected = item.trace_id === selectedTraceId;
+                    return (
+                      <li key={item.trace_id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTraceId(item.trace_id)}
+                          className={`${
+                            isSelected
+                              ? "border-sky-500/70 bg-sky-500/10 text-sky-100"
+                              : "border-transparent bg-slate-900/60 text-slate-200 hover:bg-slate-900/80"
+                          } flex w-full flex-col gap-2 rounded-2xl border px-4 py-3 text-left transition`}
+                          data-testid="run-list-item"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-semibold">
+                              {item.goal ?? t("conversation.episodes.untitled")}
+                            </span>
+                            <span className={`${badgeClass} text-xs uppercase tracking-[0.18em]`}>
+                              {item.status}
+                            </span>
+                          </div>
+                          <p className={`${subtleTextClass} text-xs font-mono`}>{item.trace_id}</p>
+                          <p className={`${subtleTextClass} text-xs`}>
+                            {metaStartedLabel}: {formatTimestamp(item.started_at)}
+                          </p>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </aside>
+
+          <section className={`${panelSurfaceClass} flex flex-col gap-6 p-6`}>
+            <header className="space-y-2">
+              <h2 className={`${headingClass} text-xl`}>{timelineHeading}</h2>
+              {selectedDetail ? (
+                <dl className="grid gap-1 text-xs uppercase tracking-[0.18em] text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <dt className={`${badgeClass} bg-transparent px-2 py-0`}>{metaStatusLabel}</dt>
+                    <dd>{selectedDetail.status ?? "–"}</dd>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <dt className={`${badgeClass} bg-transparent px-2 py-0`}>{metaStartedLabel}</dt>
+                    <dd>{formatTimestamp(selectedDetail.started_at)}</dd>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <dt className={`${badgeClass} bg-transparent px-2 py-0`}>
+                      {metaFinishedLabel}
+                    </dt>
+                    <dd>{formatTimestamp(selectedDetail.finished_at ?? null)}</dd>
+                  </div>
+                </dl>
+              ) : null}
+            </header>
+
+            {detailState.isLoading ? (
+              <div className="space-y-3" data-testid="run-timeline-skeleton">
+                {skeletonItems.slice(0, 4).map((_, index) => (
+                  <div
+                    key={index}
+                    className="animate-pulse rounded-2xl border border-slate-800/70 bg-slate-900/60 p-4"
+                  >
+                    <div className="h-4 w-1/4 rounded bg-slate-800/70" />
+                    <div className="mt-2 h-3 w-2/3 rounded bg-slate-800/50" />
+                    <div className="mt-2 h-3 w-full rounded bg-slate-800/40" />
+                  </div>
+                ))}
+              </div>
+            ) : detailState.error ? (
+              <ErrorCard
+                title={runNotFoundTitle}
+                description={runNotFoundDescription}
+                actions={[
+                  {
+                    label: runNotFoundPrimary,
+                    onClick: () => {
+                      void router.push("/");
+                    },
+                  },
+                  {
+                    label: runNotFoundSecondary,
+                    onClick: () => loadRuns(),
+                  },
+                ]}
+              />
+            ) : selectedEvents.length === 0 ? (
+              <div className={`${insetSurfaceClass} p-6 text-center text-sm text-slate-300/80`}>
+                {timelineEmpty}
+              </div>
+            ) : (
+              <ol className="space-y-4" data-testid="run-timeline">
+                {selectedEvents.map((event) => (
+                  <li
+                    key={event.id}
+                    className={`${insetSurfaceClass} space-y-3 border-slate-800/60 p-4`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.18em]">
+                      <span className={`${badgeClass} bg-sky-500/10 text-sky-100`}>
+                        {event.type}
+                      </span>
+                      {event.level ? (
+                        <span className={`${badgeClass} text-amber-200/90`}>{event.level}</span>
+                      ) : null}
+                      <span className={`${badgeClass} text-slate-300`}>
+                        {new Date(event.ts).toLocaleString()}
+                      </span>
+                    </div>
+                    {event.topic ? (
+                      <p className={`${subtleTextClass} text-xs`}>topic: {event.topic}</p>
+                    ) : null}
+                    {summariseEvent(event) ? (
+                      <p className={`${subtleTextClass} text-sm leading-relaxed`}>
+                        {summariseEvent(event)}
+                      </p>
+                    ) : null}
+                    {event.data ? (
+                      <details className="group">
+                        <summary className="cursor-pointer text-xs text-sky-200">payload</summary>
+                        <pre className="mt-2 max-h-60 overflow-auto rounded-xl bg-slate-950/70 p-3 text-xs text-slate-200">
+                          {typeof event.data === "string"
+                            ? event.data
+                            : JSON.stringify(event.data, null, 2)}
+                        </pre>
+                      </details>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+
+          <aside className={`${panelSurfaceClass} space-y-6 p-6`}>
+            <section className="space-y-3">
+              <h2 className={`${headingClass} text-lg`}>{t("runs.inspector.planHeading")}</h2>
+              <ul className="space-y-2 text-sm text-slate-200">
+                <li className={`${insetSurfaceClass} border-slate-800/60 p-3`}>
+                  <p className="font-semibold">Define goal & constraints</p>
+                  <p className={`${subtleTextClass} text-xs`}>
+                    Validate guardrails before executing tools.
+                  </p>
+                </li>
+                <li className={`${insetSurfaceClass} border-slate-800/60 p-3`}>
+                  <p className="font-semibold">Collect supporting evidence</p>
+                  <p className={`${subtleTextClass} text-xs`}>
+                    Aggregate documents and prior episodes to support the final answer.
+                  </p>
+                </li>
+              </ul>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className={`${headingClass} text-lg`}>{t("runs.inspector.skillsHeading")}</h2>
+              <ul className="space-y-2 text-sm text-slate-200">
+                <li className={`${insetSurfaceClass} border-slate-800/60 p-3`}>
+                  <div className={`${badgeClass} bg-sky-500/10 text-sky-100`}>web.search</div>
+                  <p className={`${subtleTextClass} mt-2 text-xs`}>
+                    Resolved factual lookup to confirm budget assumptions.
+                  </p>
+                </li>
+                <li className={`${insetSurfaceClass} border-slate-800/60 p-3`}>
+                  <div className={`${badgeClass} bg-sky-500/10 text-sky-100`}>code.diff</div>
+                  <p className={`${subtleTextClass} mt-2 text-xs`}>
+                    Compared recent commit against baseline to surface risky changes.
+                  </p>
+                </li>
+              </ul>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className={`${headingClass} text-lg`}>{t("runs.inspector.logHeading")}</h2>
+              <LogFlowPanel traceId={selectedTraceId ?? undefined} />
+            </section>
+          </aside>
+        </section>
+      </main>
+    </div>
   );
 };
 

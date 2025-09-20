@@ -17,6 +17,7 @@
     },
     "nav": {
       "chat": "Chat",
+      "runs": "Runs",
       "episodes": "Episodes",
       "skills": "Skills"
     },
@@ -229,6 +230,52 @@
     },
     "error": {
       "detail": "Guardian error: {message}"
+    }
+  },
+  "runs": {
+    "heading": "Runs",
+    "subtitle": "Monitor active and past runs, then inspect their timelines.",
+    "list": {
+      "heading": "Recent runs",
+      "empty": "No runs yet. Trigger a conversation to generate the first run.",
+      "error": "Failed to load runs.",
+      "retry": "Retry",
+      "refresh": "Refresh",
+      "loading": "Loading…",
+      "updated": "Updated",
+      "searchPlaceholder": "Filter by goal, trace ID, or status…"
+    },
+    "timeline": {
+      "heading": "Event timeline",
+      "empty": "No events captured for this run yet.",
+      "error": "Failed to load timeline.",
+      "retry": "Retry",
+      "meta": {
+        "startedAt": "Started",
+        "finishedAt": "Finished",
+        "status": "Status"
+      }
+    },
+    "inspector": {
+      "heading": "Inspector",
+      "planHeading": "Plan snapshot",
+      "skillsHeading": "Skills involved",
+      "logHeading": "LogFlow trace"
+    }
+  },
+  "errors": {
+    "requestFailed": "Request failed ({status})",
+    "generic": {
+      "title": "Something went wrong",
+      "description": "We couldn’t complete this action. Try again or return to conversations.",
+      "primary": "Retry",
+      "secondary": "Back to conversations"
+    },
+    "runNotFound": {
+      "title": "Run not found",
+      "description": "This run no longer exists or has been archived. Choose another run or return to conversations.",
+      "primary": "View conversations",
+      "secondary": "Reload list"
     }
   },
   "panels": {
