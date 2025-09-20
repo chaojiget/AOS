@@ -77,7 +77,6 @@ type RunStatus = "idle" | "running" | "awaiting-confirmation" | "completed" | "e
 
 type GuardianStatusKey = GuardianBudgetStatus | "loading" | "idle" | "error";
 
-
 const GUARDIAN_STATUS_TONES: Record<GuardianStatusKey, string> = {
   ok: "bg-emerald-500/10 text-emerald-200",
   warning: "bg-amber-500/10 text-amber-200",
@@ -101,7 +100,6 @@ const GUARDIAN_ALERT_STATUS_TONES: Record<GuardianAlert["status"], string> = {
 };
 
 const EPISODE_SKELETON_ITEMS = new Array(6).fill(null);
-
 
 const generateLocalId = (): string => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -298,7 +296,6 @@ const HomePage: NextPage = () => {
   const currentTraceRef = useRef<string | undefined>(undefined);
 
   const draftInput = useMemo(() => input.trim(), [input]);
-
 
   const refreshEpisodes = useCallback(async () => {
     setEpisodesLoading(true);
@@ -1004,7 +1001,7 @@ const HomePage: NextPage = () => {
         showToast({
           title: t("toast.success.title"),
           message: t("conversation.episodes.loadSuccess", { traceId: targetTraceId }),
-          tone: "success"
+          tone: "success",
         });
       } catch (error) {
         const message =
@@ -1014,7 +1011,7 @@ const HomePage: NextPage = () => {
         showToast({
           title: t("toast.error.title"),
           message,
-          tone: "error"
+          tone: "error",
         });
       } finally {
         setLoadingEpisodeId(null);
@@ -1046,7 +1043,7 @@ const HomePage: NextPage = () => {
         showToast({
           title: t("toast.success.title"),
           message: t("conversation.episodes.downloadSuccess", { traceId: targetTraceId }),
-          tone: "success"
+          tone: "success",
         });
       } catch (error) {
         const message =
@@ -1056,7 +1053,7 @@ const HomePage: NextPage = () => {
         showToast({
           title: t("toast.error.title"),
           message,
-          tone: "error"
+          tone: "error",
         });
       } finally {
         setDownloadingEpisodeId(null);
