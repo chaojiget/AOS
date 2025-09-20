@@ -5,6 +5,7 @@ import FinalReplyCard from "./FinalReplyCard";
 import {
   badgeClass,
   inputSurfaceClass,
+  labelClass,
   panelSurfaceClass,
   primaryButtonClass,
   subtleTextClass,
