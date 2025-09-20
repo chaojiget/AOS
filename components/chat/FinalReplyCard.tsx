@@ -1,6 +1,6 @@
 import type { FC } from "react";
 
-import { useI18n } from "../../lib/i18n";
+import { useI18n } from "../../lib/i18n/index";
 import {
   insetSurfaceClass,
   labelClass,

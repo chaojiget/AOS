@@ -81,6 +81,83 @@ export function afterEach(fn) {
   currentSuite().afterEach.push(fn);
 }
 
+const viState = {
+  useFake: false,
+  now: null,
+  originalDateNow: Date.now,
+};
+
+function ensureFakeTimerHook() {
+  if (viState.useFake) {
+    Date.now = () => (viState.now ?? viState.originalDateNow());
+  }
+}
+
+export const vi = {
+  fn(implementation = () => undefined) {
+    function mockFunction(...args) {
+      mockFunction.mock.calls.push(args);
+      return implementation(...args);
+    }
+
+    mockFunction.mock = {
+      calls: [],
+    };
+
+    mockFunction.mockImplementation = (nextImpl) => {
+      implementation = nextImpl;
+      return mockFunction;
+    };
+
+    mockFunction.mockReturnValue = (value) => {
+      implementation = () => value;
+      return mockFunction;
+    };
+
+    mockFunction.mockClear = () => {
+      mockFunction.mock.calls = [];
+      return mockFunction;
+    };
+
+    mockFunction.mockReset = () => {
+      mockFunction.mock.calls = [];
+      implementation = () => undefined;
+      return mockFunction;
+    };
+
+    return mockFunction;
+  },
+  useFakeTimers() {
+    if (!viState.useFake) {
+      viState.useFake = true;
+      viState.originalDateNow = Date.now;
+      ensureFakeTimerHook();
+    }
+  },
+  useRealTimers() {
+    if (viState.useFake) {
+      Date.now = viState.originalDateNow;
+      viState.useFake = false;
+      viState.now = null;
+    }
+  },
+  setSystemTime(nextTime) {
+    const timestamp =
+      typeof nextTime === "number"
+        ? nextTime
+        : typeof nextTime?.getTime === "function"
+          ? nextTime.getTime()
+          : Number.NaN;
+
+    if (Number.isNaN(timestamp)) {
+      throw new TypeError("setSystemTime requires a valid Date or timestamp");
+    }
+
+    viState.now = timestamp;
+    ensureFakeTimerHook();
+  },
+};
+
 function isObject(value) {
   return value !== null && typeof value === "object";
 }
@@ -371,4 +448,5 @@ export default {
   expect,
   runSuites,
   resetSuites,
+  vi,
 };
