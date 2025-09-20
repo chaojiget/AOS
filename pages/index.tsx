@@ -5,7 +5,6 @@ import { useRouter } from "next/router";
 import ChatMessageList, { type ChatHistoryMessage } from "../components/ChatMessageList";
 import FinalReplyCard from "../components/chat/FinalReplyCard";
 import HeaderPrimaryNav, { type HeaderPrimaryNavItem } from "../components/HeaderPrimaryNav";
-import LogFlowPanel from "../components/LogFlowPanel";
 import PlanTimeline, {
   type PlanTimelineEvent,
   type PlanTimelineStep,
@@ -1475,6 +1474,7 @@ const HomePage: NextPage = () => {
     () =>
       [
         { href: "/", label: t("layout.nav.chat") },
+        { href: "/run", label: t("layout.nav.runs") },
         { href: "/episodes", label: t("layout.nav.episodes") },
         { href: "/skills", label: t("layout.nav.skills") },
       ].map((item) => ({
@@ -2336,22 +2336,6 @@ const HomePage: NextPage = () => {
           onToggleCollapse={() => setSkillCollapsed((value) => !value)}
           labels={skillLabels}
         />
-      </section>
-
-      <section
-        className={`${panelSurfaceClass} space-y-4 p-6 sm:p-7`}
-        data-testid="logflow-panel"
-        aria-labelledby="inspector-logflow-title"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 id="inspector-logflow-title" className={headingClass}>
-            {t("layout.tabs.logs")}
-          </h3>
-          <span className={`${badgeClass} bg-slate-900/70 text-slate-200`}>
-            {t("chat.metrics.traceId")}: {traceId ?? "–"}
-          </span>
-        </div>
-        <LogFlowPanel traceId={traceId} />
       </section>
     </div>
   );
