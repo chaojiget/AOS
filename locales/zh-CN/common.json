@@ -152,13 +152,18 @@
         "latency": "延迟",
         "cost": "成本",
         "reason": "原因",
-        "reviewNotes": "评审备注"
+        "reviewNotes": "评审备注",
+        "timestamp": "时间",
+        "status": "状态"
       },
       "status": {
         "error": "发送失败",
         "pending": "等待中",
         "done": "已送达",
         "sent": "已发送"
+      },
+      "metadata": {
+        "summary": "查看消息详情"
       }
     }
   },
