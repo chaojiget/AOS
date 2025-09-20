@@ -1,0 +1,108 @@
+meta:
+  id: aos-mvp-stage12
+  title: Agent OS MVP 阶段一二需求说明
+  owner: 超级个体工程局 · Agent OS 小组
+  related_docs:
+    - docs/需求全景规划.md
+    - docs/decision.md
+    - docs/需求草稿/Agent Os（aos）草稿需求·v1.md
+  stakeholders:
+    - name: 产品负责人
+      role: product
+      contact: mailto:po@example.com
+    - name: 技术负责人
+      role: tech-lead
+      contact: mailto:tl@example.com
+    - name: 体验负责人
+      role: design
+      contact: mailto:ux@example.com
+value:
+  business_goal: >-
+    在本地单体环境中交付可自感知、自反思并具备技能固化能力的 Agent Operating System，缩短从实验到复用的迭代周期。
+  metrics:
+    north_star: 任务成功率 ≥ 70% 且具备离线回放证据
+    guardrails:
+      - cost_per_task <= 1.5 USD
+      - step_count_p95 <= 12
+  user_jobs:
+    - persona: Agent 使用者
+      job: 通过聊天指派任务并实时观察智能体执行过程
+      pain_points: 无法追踪执行细节且缺乏失败复盘依据
+    - persona: 技能运营者
+      job: 依据运行日志提炼高复用技能并灰度上线
+      pain_points: 手动搜集样本耗时、技能表现不可量化
+scope:
+  must:
+    - 建立 Observe → Think → Act → Reflect → Stop 循环并持久化 runs/events/skills
+    - 提供 REST + SSE/WS API，支持实时日志流与历史分页查询
+    - 集成至少 1 个 MCP 工具并记录 tool.* 事件
+    - 跑通技能固化流水线：采集→总结→审核→投放→评估
+    - 提供最小前端聊天页、日志流与技能面板
+  should:
+    - 支持离线回放与 Golden Logs 校验
+    - 建立基础指标（成功率、步数、工具命中率、延迟、成本）
+    - 允许 A/B 实验与提示词/技能版本化
+  could:
+    - 集成 OpenTelemetry 追踪与额外可视化
+    - 通过 BullMQ/队列扩展并行执行
+  wont:
+    - 当前阶段不做多租户账号体系
+    - 不实现多 Agent 编排与权重在线学习
+data:
+  sources:
+    - 本地 SQLite（runs/events/skills/memories/mcp_configs/evals）
+    - MCP 工具返回的结构化结果
+  interfaces:
+    - REST `/api/agent/start`, `/api/runs/:runId`, `/api/skills/*`
+    - SSE `/api/runs/:runId/stream`
+    - MCP/LLM 提供的 HTTP API
+  masking: Secrets 通过 .env 注入，前端不落盘；运行日志默认保留 30 天并可配置脱敏钩子
+experience:
+  notes: 聊天主面板聚焦最终答复，侧栏展示计划、行动与反思；日志页支持关键词过滤与按需加载历史
+  performance: TTI <= 3s, p95 <= 5s，实时 SSE 延迟 < 1s
+  accessibility: 支持键盘导航与语义化结构，遵循 WCAG AA
+non_functional:
+  observability: Pino 日志 + 事件序列 + 指标表，必要时接入 OpenTelemetry trace
+  logging: Episode JSONL 追加写，默认留存 30 天；关键事件含 token/cost/duration
+  resilience: 工具失败重试 + 超时，失败时记录 degrade 事件并触发人工确认，允许回放回归
+security:
+  classification: 默认本地/内部环境，数据分级为敏感级（S2），禁止未授权外传
+  permissions: 工具调用走白名单；敏感操作触发 user.confirm 门，需人工确认
+  compliance: 遵循内部安全基线，无外部合规评审要求
+risk_register:
+  - id: R1
+    description: 工具链失败或超时导致循环停滞
+    mitigation: 设置超时/重试与降级策略，记录非重试性错误后提前终止
+  - id: R2
+    description: 技能固化错误导致运行退化
+    mitigation: 引入滑窗评估与自动下线机制，人工审核 pending_review 技能
+  - id: R3
+    description: SSE/回放日志不一致影响审计
+    mitigation: Golden Logs 基准与 replay 校验，CI 中纳入 pnpm replay
+budget:
+  limit: 单次任务预算 ≤ 20,000 tokens 或 1.5 USD
+  sla: 任务成功率 ≥ 70%，单任务时延 p95 ≤ 60s
+  governance: Guardian 设定预算与步数上限，按 run_id 追踪异常并支持限流
+release:
+  plan: 本地冒烟 → 开发环境 5% 金丝雀 → 100% 放量
+  rollback: 发现成功率或成本指标退化 > 2 倍时回滚至上一稳定版本，保留 episodes 供复盘
+  monitoring: 通过指标面板与日志告警（Slack/Webhook）监测成功率、延迟与成本
+acceptance:
+  - id: A1
+    given: 用户在聊天页提交任务
+    when: 后端启动 run 并进入循环执行
+    then: 前端实时显示 plan/tool/reflect 事件并最终输出 FINAL_ANSWER
+  - id: A2
+    given: 运行结束
+    when: 调用 `/api/runs/:runId/stream` 或回放 episodes
+    then: 获得与实时一致的事件序列并可离线复现
+  - id: A3
+    given: 最近 N 次任务包含重复工具调用
+    when: 触发技能分析与审核流程
+    then: 至少产出 1 个通过审核的技能并在后续任务中被调用
+  - id: A4
+    given: Guardian 设定预算与步数阈值
+    when: run 超出阈值或工具失败不可重试
+    then: 系统记录警告并安全终止，保留完整日志
+test_data:
+  strategy: 使用本地合成数据与离线脚本生成的 episodes；敏感信息由脱敏适配器过滤后写入日志
