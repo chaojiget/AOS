@@ -18,6 +18,7 @@
 - dev/build/test：`pnpm dev` / `pnpm build` / `pnpm test`
 
 ## 变更摘要
+- 栅格与抽屉：`tailwind.config.cjs` 新增 `gridTemplateColumns.shell` 与 `transitionDuration.16`，聊天页主容器切换为 `xl:grid-cols-shell`；移动端抽屉维持 `aria`/`tabIndex` 的同时加入 16ms 过渡、遮罩透明度渐变与指针穿透管理。
 - 后端：`servers/api/src/episodes/episodes.service.ts` 实现 Episode 列表/详情/回放、文件读取与评分计算；`servers/api/src/episodes/episodes.controller.ts` + `episodes.module.ts` 注册模块；`servers/api/src/runs/runs.service.ts` 新增 `listRecentRuns`、`awaitRunCompletion`；`servers/api/src/database/database.service.ts` 新增内存模式 `listRuns`；`servers/api/src/app.module.ts` 引入 `EpisodesModule`。
 - Next API & 脚本：`pages/api/episodes/index.ts`、`[traceId]/index.ts`、`[traceId]/replay.ts` 代理远端/本地服务；`scripts/replay.mjs` 读取 JSONL 生成差值报告；`reproduce.sh` 提供最小复现（安装→测试→回放）。
 - 前端 Toast：`components/useLocalToast.tsx` 提供复用的 Toast 状态容器；`pages/index.tsx` 接入错误/成功提示并在 `handleRun`、`handleGuardianDecision`、`refreshEpisodes` 与保存对话路径触发；`pages/episodes.tsx` 复用该容器并接入国际化；`locales/*/common.json` 补充 Toast 文案。

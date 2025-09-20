@@ -101,6 +101,30 @@ const GUARDIAN_ALERT_STATUS_TONES: Record<GuardianAlert["status"], string> = {
 
 const EPISODE_SKELETON_ITEMS = new Array(6).fill(null);
 
+const DRAWER_TRANSITION_MS = 16;
+
+const useDrawerMount = (open: boolean, durationMs: number): boolean => {
+  const [mounted, setMounted] = useState(open);
+
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    if (open) {
+      setMounted(true);
+    } else if (mounted) {
+      timeout = setTimeout(() => {
+        setMounted(false);
+      }, durationMs);
+    }
+    return () => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    };
+  }, [open, mounted, durationMs]);
+
+  return mounted;
+};
+
 const generateLocalId = (): string => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -259,6 +283,8 @@ const HomePage: NextPage = () => {
   const [activeTab, setActiveTab] = useState<"chat" | "logflow">("chat");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const sidebarSheetMounted = useDrawerMount(sidebarOpen, DRAWER_TRANSITION_MS);
+  const insightsSheetMounted = useDrawerMount(insightsOpen, DRAWER_TRANSITION_MS);
   const sidebarSheetRef = useRef<HTMLDivElement | null>(null);
   const insightsSheetRef = useRef<HTMLDivElement | null>(null);
   const [finalOutput, setFinalOutput] = useState<unknown>(null);
@@ -1978,7 +2004,7 @@ const HomePage: NextPage = () => {
         </div>
 
         <div
-          className="mx-auto grid w-full max-w-6xl gap-6 xl:grid-cols-[280px_minmax(360px,1fr)_320px]"
+          className="mx-auto grid w-full max-w-6xl gap-6 xl:grid-cols-shell"
           data-testid="chat-layout"
         >
           <aside
@@ -2000,22 +2026,29 @@ const HomePage: NextPage = () => {
           </aside>
         </div>
 
-        {sidebarOpen ? (
+        {sidebarSheetMounted ? (
           <div
-            className="fixed inset-0 z-40 flex xl:hidden"
+            className={`fixed inset-0 z-40 flex xl:hidden transition-opacity duration-16 ${
+              sidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+            }`}
             role="presentation"
+            aria-hidden={!sidebarOpen}
             data-testid="chat-sidebar-sheet-backdrop"
           >
             <div
-              className="absolute inset-0 bg-slate-950/80"
+              className={`absolute inset-0 bg-slate-950/80 transition-opacity duration-16 ${
+                sidebarOpen ? "opacity-100" : "opacity-0"
+              }`}
               aria-hidden="true"
               onClick={() => setSidebarOpen(false)}
             />
             <div
               ref={sidebarSheetRef}
-              className="relative flex h-full w-full max-w-xs flex-col overflow-y-auto bg-slate-950 p-6 shadow-xl outline-none sm:max-w-sm"
+              className={`relative flex h-full w-full max-w-xs flex-col overflow-y-auto bg-slate-950 p-6 shadow-xl outline-none transition-transform duration-16 ease-out sm:max-w-sm ${
+                sidebarOpen ? "translate-x-0" : "-translate-x-full"
+              }`}
               role="dialog"
-              aria-modal="true"
+              aria-modal={sidebarOpen}
               aria-label={t("conversation.heading")}
               id={sidebarDrawerId}
               tabIndex={-1}
@@ -2036,22 +2069,29 @@ const HomePage: NextPage = () => {
           </div>
         ) : null}
 
-        {insightsOpen ? (
+        {insightsSheetMounted ? (
           <div
-            className="fixed inset-0 z-40 flex xl:hidden"
+            className={`fixed inset-0 z-40 flex xl:hidden transition-opacity duration-16 ${
+              insightsOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+            }`}
             role="presentation"
+            aria-hidden={!insightsOpen}
             data-testid="chat-insights-sheet-backdrop"
           >
             <div
-              className="absolute inset-0 bg-slate-950/80"
+              className={`absolute inset-0 bg-slate-950/80 transition-opacity duration-16 ${
+                insightsOpen ? "opacity-100" : "opacity-0"
+              }`}
               aria-hidden="true"
               onClick={() => setInsightsOpen(false)}
             />
             <div
               ref={insightsSheetRef}
-              className="relative ml-auto flex h-full w-full max-w-xs flex-col overflow-y-auto bg-slate-950 p-6 shadow-xl outline-none sm:max-w-sm"
+              className={`relative ml-auto flex h-full w-full max-w-xs flex-col overflow-y-auto bg-slate-950 p-6 shadow-xl outline-none transition-transform duration-16 ease-out sm:max-w-sm ${
+                insightsOpen ? "translate-x-0" : "translate-x-full"
+              }`}
               role="dialog"
-              aria-modal="true"
+              aria-modal={insightsOpen}
               aria-label={t("guardian.heading")}
               id={insightsDrawerId}
               tabIndex={-1}
