@@ -3,11 +3,8 @@ import type { NextPage } from "next";
 import { useRouter } from "next/router";
 
 import ChatMessageList, { type ChatHistoryMessage } from "../components/ChatMessageList";
-<<<<<<< HEAD
-import HeaderPrimaryNav, { type HeaderPrimaryNavItem } from "../components/HeaderPrimaryNav";
-=======
 import FinalReplyCard from "../components/chat/FinalReplyCard";
->>>>>>> origin/codex/refactor-finalpreview-to-a-component
+import HeaderPrimaryNav, { type HeaderPrimaryNavItem } from "../components/HeaderPrimaryNav";
 import LogFlowPanel from "../components/LogFlowPanel";
 import PlanTimeline, {
   type PlanTimelineEvent,
@@ -342,14 +339,11 @@ const HomePage: NextPage = () => {
   const retryTimerRef = useRef<number | null>(null);
   const retryAttemptRef = useRef(0);
   const currentTraceRef = useRef<string | undefined>(undefined);
-<<<<<<< HEAD
   const helpDialogRef = useRef<HTMLDivElement | null>(null);
   const helpCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
-=======
   const finalReplyHighlightTimeoutRef = useRef<number | null>(null);
   const finalReplyHighlightTargetRef = useRef<string | null>(null);
->>>>>>> origin/codex/refactor-finalpreview-to-a-component
 
   const draftInput = useMemo(() => input.trim(), [input]);
 
@@ -2254,7 +2248,17 @@ const HomePage: NextPage = () => {
         ) : null}
       </div>
 
-<<<<<<< HEAD
+      <FinalReplyCard
+        label={t("conversation.finalReply.title")}
+        content={finalPreview ?? ""}
+        sticky
+        historyCount={finalReplyHistory.length}
+        anchorId={finalReplyMessageId ?? undefined}
+        onCopy={handleCopyFinalReply}
+        onLocate={handleLocateFinalReply}
+        onOpenHistory={handleOpenFinalReplyHistory}
+      />
+
       <div className="md:sticky md:bottom-0 md:left-0 md:right-0 md:pt-2">
         <form
           onSubmit={handleSubmit}
@@ -2305,53 +2309,6 @@ const HomePage: NextPage = () => {
           </div>
         </form>
       </div>
-=======
-      <FinalReplyCard
-        label={t("conversation.finalReply.title")}
-        content={finalPreview ?? ""}
-        sticky
-        historyCount={finalReplyHistory.length}
-        anchorId={finalReplyMessageId ?? undefined}
-        onCopy={handleCopyFinalReply}
-        onLocate={handleLocateFinalReply}
-        onOpenHistory={handleOpenFinalReplyHistory}
-      />
-
-      <ChatMessageList messages={chatHistory} isRunning={runStatus === "running"} />
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <label htmlFor="prompt" className={`${labelClass} text-slate-300`}>
-          {t("chat.inputLabel")}
-        </label>
-        <textarea
-          id="prompt"
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              void handleRun();
-            }
-          }}
-          placeholder={t("chat.placeholder")}
-          className={`${inputSurfaceClass} min-h-[9rem] w-full resize-y`}
-        />
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="submit"
-            disabled={runStatus === "running" || runStatus === "awaiting-confirmation"}
-            className={`${primaryButtonClass} w-full sm:w-auto`}
-          >
-            {runStatus === "running"
-              ? t("chat.submit.running")
-              : runStatus === "awaiting-confirmation"
-                ? t("chat.submit.confirming")
-                : t("chat.submit.run")}
-          </button>
-          <span className={`${subtleTextClass} text-sm`}>{statusText}</span>
-        </div>
-      </form>
->>>>>>> origin/codex/refactor-finalpreview-to-a-component
     </section>
   );
 
