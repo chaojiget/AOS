@@ -2763,7 +2763,6 @@ const HomePage: NextPage = () => {
         </div>
       ) : null}
 
->>>>>>> origin/codex/refactor-finalpreview-to-a-component
       {confirmationRequest ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
           <div className={modalBackdropClass} aria-hidden="true" />
