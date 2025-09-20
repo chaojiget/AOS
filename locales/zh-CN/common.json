@@ -1,11 +1,13 @@
 {
   "layout": {
-    "title": "AgentOS · 对话与日志流",
+    "title": "AgentOS · 会话、日志、设置",
     "subtitle": "提交提示以运行本地代理，查看时间线事件并探索任务分支。",
     "tabs": {
-      "chat": "聊天",
-      "logflow": "日志流"
-    }
+      "conversation": "会话",
+      "logs": "日志",
+      "settings": "设置"
+    },
+    "navigationLabel": "主工作区导航"
   },
   "toast": {
     "error": {
@@ -23,11 +25,11 @@
     }
   },
   "conversation": {
-    "heading": "对话",
-    "traceNotice": "此对话已写入 episodes/{traceId}.jsonl",
-    "newButton": "新建对话",
+    "heading": "会话",
+    "traceNotice": "此会话已写入 episodes/{traceId}.jsonl",
+    "newButton": "新建会话",
     "downloadJsonl": "下载 JSONL",
-    "saveButton": "保存对话",
+    "saveButton": "保存会话",
     "draftLabel": "草稿输入",
     "finalOutputTitle": "最新最终输出快照",
     "episodes": {
@@ -42,7 +44,7 @@
       "draftTitle": "本地草稿",
       "draftStatus": "草稿",
       "draftPlaceholder": "episodes/draft-local.jsonl",
-      "draftTraceNotice": "草稿对话尚未写入 Episode 文件。",
+      "draftTraceNotice": "草稿会话尚未写入 Episode 文件。",
       "loadErrorFallback": "加载 Episode 列表失败。",
       "loadSuccess": "已载入 Episode {traceId}。",
       "loadError": "载入 Episode {traceId} 失败。",
@@ -53,7 +55,7 @@
         "steps": "步骤数"
       },
       "actions": {
-        "resume": "载入回放/继续对话",
+        "resume": "载入回放并继续会话",
         "loading": "载入中…",
         "download": "导出 JSONL",
         "downloading": "导出中…"
@@ -66,7 +68,7 @@
     }
   },
   "chat": {
-    "inputLabel": "聊天输入",
+    "inputLabel": "会话输入",
     "placeholder": "请向代理提问或发送指令…",
     "metrics": {
       "heading": "运行指标",
@@ -97,7 +99,7 @@
     "generating": "正在生成回复…",
     "toast": {
       "noContent": "当前没有可保存的内容。",
-      "saveSuccess": "对话已保存为 JSON 文件。"
+      "saveSuccess": "会话已保存为 JSON 文件。"
     },
     "message": {
       "labels": {
@@ -215,5 +217,10 @@
   },
   "errors": {
     "requestFailed": "请求失败（{status}）"
+  },
+  "settings": {
+    "heading": "设置",
+    "description": "调整工作区偏好并管理外部集成。",
+    "empty": "设置面板即将上线。"
   }
 }

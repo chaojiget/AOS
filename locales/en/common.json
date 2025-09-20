@@ -1,11 +1,13 @@
 {
   "layout": {
-    "title": "AgentOS · Chat + LogFlow",
+    "title": "AgentOS · Conversation, Logs, Settings",
     "subtitle": "Submit a prompt to run the local agent, inspect timeline events, and explore task branches.",
     "tabs": {
-      "chat": "Chat",
-      "logflow": "LogFlow"
-    }
+      "conversation": "Conversation",
+      "logs": "Logs",
+      "settings": "Settings"
+    },
+    "navigationLabel": "Primary workspace sections"
   },
   "toast": {
     "error": {
@@ -66,7 +68,7 @@
     }
   },
   "chat": {
-    "inputLabel": "Chat input",
+    "inputLabel": "Conversation input",
     "placeholder": "Ask the agent for a summary or instruction...",
     "metrics": {
       "heading": "Run metrics",
@@ -215,5 +217,10 @@
   },
   "errors": {
     "requestFailed": "Request failed ({status})"
+  },
+  "settings": {
+    "heading": "Settings",
+    "description": "Adjust workspace preferences and manage integrations.",
+    "empty": "Settings are coming soon."
   }
 }
