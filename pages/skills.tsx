@@ -215,6 +215,9 @@ const SkillsPage: NextPage = () => {
             >
               {isAnalysing ? "Analysing..." : "Analyse recent runs"}
             </button>
+            <Link href="/tools" className={outlineButtonClass}>
+              MCP Tools
+            </Link>
           </div>
           {state.error ? (
             <div

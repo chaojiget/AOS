@@ -149,6 +149,22 @@
 
 ---
 
+### 附：LangGraph 替换计划（JS/TS，最小改动）
+
+- 目标：以 LangGraph.js 替换自研 ChatKernel，保持 API/事件/前端无感。
+- 依赖：pnpm add @langchain/langgraph @langchain/core @langchain/openai。
+- 接入点：
+  - core/agent.ts：保留 AgentKernel 与 runLoop 契约不变。
+  - adapters/core.ts：新增 createLangGraphKernel(options) 实现 AgentKernel（包装 LangGraph createReactAgent 或 StateGraph）。
+  - servers/api/src/runs/run-kernel.factory.ts、cli.ts：当 AOS_AGENT=langgraph 时走 createLangGraphKernel；默认保持现状。
+- 实施步骤：
+  1) 安装依赖；
+  2) 在 adapters/core.ts 实现 LangGraphKernel：使用 createReactAgent + MemorySaver，以 options.traceId 作为 thread_id；先支持对话路径，阶段性不启用工具；
+  3) Phase 2 绑定工具：将现有 ToolInvoker 映射为 LangGraph ToolNode，逐步接入 MCP 工具；
+  4) 回归：pnpm test、pnpm test:ui，手测 /api/runs 流事件（需有 chat/final/run.finished）。
+- 回滚：仅切换环境变量 AOS_AGENT=core 即可。
+- 风险与缓解：成本上升（加 budget 限制）、事件终止性（兜底发 run.finished）、开关可控（默认 core）。
+
 ## 11. 安全与密钥
 
 * 新增/调整 `.env.example`；不得提交真实密钥。

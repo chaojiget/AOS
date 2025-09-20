@@ -1077,5 +1077,110 @@ class ChatKernel implements AgentKernel {
 }
 
 export function createChatKernel(options: ChatKernelOptions): AgentKernel {
+  const mode = process.env.AOS_AGENT?.toLowerCase();
+  if (mode === "langgraph") {
+    return createLangGraphKernel(options);
+  }
   return new ChatKernel(options);
+}
+
+interface LangGraphKernelOptions extends ChatKernelOptions {}
+
+class LangGraphKernel implements AgentKernel {
+  private app: any;
+  private perceived = false;
+  private lastResult: any;
+
+  constructor(private readonly options: LangGraphKernelOptions) {}
+
+  async perceive(): Promise<void> {
+    if (!this.app) {
+      const { StateGraph, MessagesAnnotation } = await import("@langchain/langgraph");
+      const { ToolNode, createReactAgent } = await import("@langchain/langgraph/prebuilt");
+      const { ChatOpenAI } = await import("@langchain/openai");
+
+      const tools = [
+        {
+          name: "llm.chat",
+          invoke: async (args: any) => {
+            return await this.options.toolInvoker({ name: "llm.chat", args }, {
+              trace_id: this.options.traceId,
+              span_id: `lg-llm-${this.options.traceId}`,
+            });
+          },
+        },
+        {
+          name: "mcp.invoke",
+          invoke: async (args: any) => {
+            return await this.options.toolInvoker({ name: "mcp.invoke", args }, {
+              trace_id: this.options.traceId,
+              span_id: `lg-mcp-${this.options.traceId}`,
+            });
+          },
+        },
+      ];
+
+      const model = new ChatOpenAI({ temperature: 0 });
+      const bound = (model as any).bindTools?.(tools) ?? model;
+
+      const toolNode = new (ToolNode as any)(tools);
+      const shouldContinue = ({ messages }: any) => {
+        const last = messages[messages.length - 1];
+        if (last?.tool_calls?.length) return "tools";
+        return "__end__";
+      };
+      const callModel = async (state: any) => {
+        const response = await (bound as any).invoke(state.messages);
+        return { messages: [response] };
+      };
+
+      const workflow = new (StateGraph as any)(MessagesAnnotation)
+        .addNode("agent", callModel)
+        .addEdge("__start__", "agent")
+        .addNode("tools", toolNode)
+        .addEdge("tools", "agent")
+        .addConditionalEdges("agent", shouldContinue);
+
+      this.app = workflow.compile();
+    }
+    this.perceived = true;
+  }
+
+  async plan(): Promise<Plan> {
+    if (!this.perceived) throw new Error("perceive must be called before plan");
+    return { revision: 1, reason: "langgraph", steps: [
+      { id: `${this.options.traceId}-lg-1`, op: "llm.chat", args: { messages: [
+        ...((this.options.history ?? []).filter(h => !(h.role === DEFAULT_SYSTEM_PROMPT.role && h.content === DEFAULT_SYSTEM_PROMPT.content))),
+        DEFAULT_SYSTEM_PROMPT,
+        { role: "user", content: this.options.message },
+      ] }, description: "LangGraph 简化聊天" },
+    ] } as Plan;
+  }
+
+  async act(step: PlanStep): Promise<ActionOutcome> {
+    const result = await this.options.toolInvoker({ name: step.op, args: step.args ?? {} }, {
+      trace_id: this.options.traceId,
+      span_id: step.id,
+    });
+    const outcome: ActionOutcome = { step, result };
+    this.lastResult = outcome;
+    return outcome;
+  }
+
+  async review(actions: ActionOutcome[]): Promise<ReviewResult> {
+    const ok = actions.every(a => a.result.ok);
+    return { score: ok ? 1 : 0, passed: ok, notes: ok ? ["langgraph flow ok"] : ["langgraph step failed"] } as ReviewResult;
+  }
+
+  async renderFinal(actions: ActionOutcome[]): Promise<any> {
+    const last = actions.at(-1)?.result;
+    if (last?.ok) {
+      return typeof last.data === "string" ? { text: last.data } : { text: String(last.data?.content ?? ""), raw: last.data };
+    }
+    return { error: last };
+  }
+}
+
+export function createLangGraphKernel(options: ChatKernelOptions): AgentKernel {
+  return new LangGraphKernel(options);
 }
