@@ -9,6 +9,7 @@ import {
   type RunLoopResult,
   type RunLoopBudget,
 } from "../../../../core/agent";
+import type { ApprovalDecision, SensitiveToolApprovalRequest } from "../../../../adapters/core";
 import { EventBus, createRunEvent, wrapCoreEvent, type EventEnvelope } from "../../../../runtime/events";
 import { EpisodeLogger } from "../../../../runtime/episode";
 import type { ChatMessage } from "../../../../types/chat";
@@ -23,7 +24,13 @@ type RunRowType = typeof runs.$inferSelect;
 type RunPatch = Partial<Omit<RunRowType, "id">>;
 type RunEventInsertRow = typeof runEvents.$inferInsert;
 
-export type RunStatus = "running" | "completed" | "awaiting_input" | "no_plan" | "failed";
+export type RunStatus =
+  | "running"
+  | "completed"
+  | "awaiting_input"
+  | "awaiting_confirmation"
+  | "no_plan"
+  | "failed";
 
 export interface RunSummary {
   id: string;
@@ -61,6 +68,12 @@ interface StartRunRequest {
 interface StreamEvent {
   type: string;
   data: any;
+}
+
+interface PendingApprovalEntry {
+  request: SensitiveToolApprovalRequest;
+  resolve: (decision: ApprovalDecision) => void;
+  reject: (error: unknown) => void;
 }
 
 function normaliseMessage(raw: unknown): string {
@@ -153,6 +166,7 @@ function normaliseBudget(raw: unknown): RunLoopBudget | undefined {
 export class RunsService {
   private readonly logger = new Logger(RunsService.name);
   private readonly streams = new Map<string, ReplaySubject<StreamEvent>>();
+  private readonly pendingApprovals = new Map<string, PendingApprovalEntry>();
 
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
@@ -249,6 +263,71 @@ export class RunsService {
     return subject.asObservable();
   }
 
+  async decideApproval(
+    runId: string,
+    requestId: string,
+    decision: ApprovalDecision,
+  ): Promise<{ decision: ApprovalDecision }> {
+    const key = this.buildApprovalKey(runId, requestId);
+    const entry = this.pendingApprovals.get(key);
+    if (!entry) {
+      throw new NotFoundException(`approval ${requestId} for run ${runId} not found`);
+    }
+    this.pendingApprovals.delete(key);
+
+    if (decision === "approve") {
+      await this.setRunStatus(runId, "running");
+    }
+
+    entry.resolve(decision);
+    return { decision };
+  }
+
+  private buildApprovalKey(runId: string, requestId: string): string {
+    return `${runId}:${requestId}`;
+  }
+
+  private async setRunStatus(runId: string, status: RunStatus): Promise<void> {
+    const patch: RunPatch = { status, updatedAt: new Date() };
+    if (this.database.isMemoryMode()) {
+      this.database.updateRun(runId, patch);
+    } else {
+      await this.database
+        .db!.update(runs)
+        .set(patch)
+        .where(eq(runs.id, runId))
+        .run();
+    }
+  }
+
+  private async waitForApproval(request: SensitiveToolApprovalRequest): Promise<ApprovalDecision> {
+    const key = this.buildApprovalKey(request.runId, request.requestId);
+    if (this.pendingApprovals.has(key)) {
+      return Promise.reject(
+        new Error(`duplicate approval request ${request.requestId}`),
+      );
+    }
+
+    await this.setRunStatus(request.runId, "awaiting_confirmation");
+
+    return new Promise<ApprovalDecision>((resolve, reject) => {
+      this.pendingApprovals.set(key, { request, resolve, reject });
+    });
+  }
+
+  private resolvePendingApprovals(runId: string, error?: unknown): void {
+    for (const [key, entry] of this.pendingApprovals.entries()) {
+      if (entry.request.runId === runId) {
+        this.pendingApprovals.delete(key);
+        if (error) {
+          entry.reject(error);
+        } else {
+          entry.resolve("reject");
+        }
+      }
+    }
+  }
+
   private async executeRun(runId: string, request: StartRunRequest): Promise<void> {
     const eventBus = new EventBus();
     const logger = new EpisodeLogger({ traceId: runId, dir: this.config.episodesDir });
@@ -264,11 +343,17 @@ export class RunsService {
 
     const history = request.history ?? [];
 
+    const approvalAdapter = {
+      awaitApproval: (request: SensitiveToolApprovalRequest) =>
+        this.waitForApproval(request),
+    };
+
     const kernel = await this.kernelFactory.createKernel({
       traceId: runId,
       message: request.message,
       history,
       eventBus,
+      approvalAdapter,
     });
 
     const emit = async (event: CoreEvent, span?: EmitSpanOptions): Promise<void> => {
@@ -340,6 +425,7 @@ export class RunsService {
   }
 
   private async handleRunCompletion(runId: string, result: RunLoopResult): Promise<void> {
+    this.resolvePendingApprovals(runId);
     const status = this.mapRunStatus(result.reason);
     const finishedAt = new Date();
     const finalJson = result.final != null ? JSON.stringify(result.final) : null;
@@ -377,6 +463,7 @@ export class RunsService {
   }
 
   private async handleRunFailure(runId: string, error: unknown): Promise<void> {
+    this.resolvePendingApprovals(runId, error);
     const finishedAt = new Date();
     const message = error instanceof Error ? error.message : "unknown error";
     const failurePatch: RunPatch = {

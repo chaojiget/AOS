@@ -33,6 +33,15 @@ interface RunEventsResponse {
   }>;
 }
 
+export interface RunApprovalRequest {
+  requestId: string;
+  decision: "approve" | "reject";
+}
+
+export interface RunApprovalResponse {
+  decision: "approve" | "reject";
+}
+
 export interface RunApiResponse {
   trace_id: string;
   status?: string;
@@ -218,6 +227,33 @@ export async function getLocalRunStream(runId: string) {
   const stream = runs.stream(runId);
   const events = await runs.getRunEvents(runId);
   return { stream, events };
+}
+
+export async function submitRemoteApproval(
+  apiBase: string,
+  runId: string,
+  payload: RunApprovalRequest,
+  headers: Record<string, string>,
+): Promise<{ status: number; body: any }> {
+  const response = await fetch(`${apiBase}/runs/${encodeURIComponent(runId)}/approval`, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await parseJsonSafe<any>(response);
+  return { status: response.status, body };
+}
+
+export async function submitLocalApproval(
+  runId: string,
+  payload: RunApprovalRequest,
+): Promise<RunApprovalResponse> {
+  const app = await getLocalApp();
+  const runs = app.get(RunsService);
+  return runs.decideApproval(runId, payload.requestId, payload.decision);
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
