@@ -1,14 +1,19 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import Database from "better-sqlite3";
+import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import {
   type ReviewStatus,
   type SkillRecord,
-  getSkillById,
-  listSkills,
-  resetSkillsStore,
-  upsertSkills,
+  type SkillsRepository,
+  type SkillUpdateStats,
+  createSqliteSkillsRepository,
 } from "./storage";
+import * as schema from "../../servers/api/src/database/schema";
+export { InMemorySkillsRepository } from "./storage";
 
 export interface ToolCallEvent {
   id: string;
@@ -55,12 +60,6 @@ export interface EventsRepository {
   listToolEvents(options?: { since?: string }): Promise<ToolCallEvent[]>;
 }
 
-export interface SkillsRepository {
-  list(): Promise<SkillRecord[]>;
-  findById(id: string): Promise<SkillRecord | null>;
-  upsert(records: SkillRecord[]): Promise<SkillRecord[]>;
-}
-
 export interface SkillAnalysisPipelineOptions {
   minSamplesForReview?: number;
   clock?: () => Date;
@@ -71,6 +70,13 @@ export interface SkillAnalysisResult {
   aggregated: AggregatedToolCall[];
   candidates: SkillRecord[];
   updatedSkills: SkillRecord[];
+}
+
+export interface RunDefaultSkillAnalysisOptions extends SkillAnalysisPipelineOptions {
+  eventsRepository?: EventsRepository;
+  skillsRepository?: SkillsRepository;
+  db?: BetterSQLite3Database<typeof schema>;
+  dbPath?: string;
 }
 
 const DEFAULT_MIN_SAMPLES_FOR_REVIEW = 3;
@@ -312,20 +318,6 @@ function normaliseEvent(raw: unknown): ToolCallEvent | null {
   } satisfies ToolCallEvent;
 }
 
-export class FileSkillsRepository implements SkillsRepository {
-  async list(): Promise<SkillRecord[]> {
-    return listSkills();
-  }
-
-  async findById(id: string): Promise<SkillRecord | null> {
-    return getSkillById(id);
-  }
-
-  async upsert(records: SkillRecord[]): Promise<SkillRecord[]> {
-    return upsertSkills(records);
-  }
-}
-
 export class InMemoryEventsRepository implements EventsRepository {
   private events: ToolCallEvent[];
 
@@ -339,36 +331,6 @@ export class InMemoryEventsRepository implements EventsRepository {
 
   setEvents(events: ToolCallEvent[]): void {
     this.events = events.map((event) => ({ ...event }));
-  }
-}
-
-export class InMemorySkillsRepository implements SkillsRepository {
-  private records: SkillRecord[];
-
-  constructor(records: SkillRecord[] = []) {
-    this.records = records.map((record) => ({ ...record, template_json: stableClone(record.template_json) }));
-  }
-
-  async list(): Promise<SkillRecord[]> {
-    return this.records.map((record) => ({ ...record, template_json: stableClone(record.template_json) }));
-  }
-
-  async findById(id: string): Promise<SkillRecord | null> {
-    const match = this.records.find((record) => record.id === id);
-    return match ? { ...match, template_json: stableClone(match.template_json) } : null;
-  }
-
-  async upsert(records: SkillRecord[]): Promise<SkillRecord[]> {
-    for (const record of records) {
-      const index = this.records.findIndex((existing) => existing.id === record.id);
-      const cloned = { ...record, template_json: stableClone(record.template_json) };
-      if (index >= 0) {
-        this.records[index] = cloned;
-      } else {
-        this.records.push(cloned);
-      }
-    }
-    return this.list();
   }
 }
 
@@ -392,6 +354,7 @@ export class SkillAnalysisPipeline {
     const aggregated = this.aggregate(deduped);
 
     const updatedRecords: SkillRecord[] = [];
+    const statsBySkill = new Map<string, SkillUpdateStats>();
 
     for (const group of aggregated) {
       if (group.totalCount === 0) {
@@ -399,13 +362,16 @@ export class SkillAnalysisPipeline {
       }
       const draft = await this.summariser.summarise(group);
       const existing = await this.skillsRepository.findById(draft.id);
-      const updated = this.mergeWithExisting(group, draft, existing);
-      updatedRecords.push(updated);
+      const { record, stats } = this.mergeWithExisting(group, draft, existing);
+      updatedRecords.push(record);
+      statsBySkill.set(record.id, stats);
     }
+
+    const runId = randomUUID();
 
     const updatedList =
       updatedRecords.length > 0
-        ? await this.skillsRepository.upsert(updatedRecords)
+        ? await this.skillsRepository.upsert(updatedRecords, { runId, stats: statsBySkill })
         : await this.skillsRepository.list();
 
     const candidates = updatedList.filter((skill) => skill.review_status !== "approved");
@@ -472,7 +438,7 @@ export class SkillAnalysisPipeline {
     group: AggregatedToolCall,
     draft: SkillDraft,
     existing: SkillRecord | null,
-  ): SkillRecord {
+  ): { record: SkillRecord; stats: SkillUpdateStats } {
     const metadata = extractAnalysisMetadata(existing);
     const now = this.now().toISOString();
     const newEvents = group.events.filter((event) => !metadata.eventIds.has(eventKey(event)));
@@ -507,7 +473,7 @@ export class SkillAnalysisPipeline {
 
     const tags = mergeTags(existing?.tags, draft.tags, group.tags);
 
-    return {
+    const record: SkillRecord = {
       id: draft.id,
       name: draft.name,
       description: draft.description,
@@ -520,6 +486,18 @@ export class SkillAnalysisPipeline {
       review_status: reviewStatus,
       last_analyzed_at: now,
     } satisfies SkillRecord;
+
+    const stats: SkillUpdateStats = {
+      totalCount,
+      successCount: totalSuccess,
+      failureCount: totalFailure,
+      newEventCount: newEvents.length,
+      newSuccessCount: newSuccess,
+      newFailureCount: newFailure,
+      lastEventAt: group.lastTimestamp ?? newEvents[newEvents.length - 1]?.timestamp,
+    };
+
+    return { record, stats };
   }
 
   private determineReviewStatus(current: ReviewStatus | undefined, usedCount: number): ReviewStatus {
@@ -535,12 +513,107 @@ export class SkillAnalysisPipeline {
 
 export async function runDefaultSkillAnalysis(
   summariser: SkillSummariser = new HeuristicSkillSummariser(),
-  options: SkillAnalysisPipelineOptions = {},
+  options: RunDefaultSkillAnalysisOptions = {},
 ): Promise<SkillAnalysisResult> {
-  const eventsRepo = new FileEventsRepository();
-  const skillsRepo = new FileSkillsRepository();
-  const pipeline = new SkillAnalysisPipeline(eventsRepo, skillsRepo, summariser, options);
-  return pipeline.run();
+  const eventsRepo = options.eventsRepository ?? new FileEventsRepository();
+  let cleanup: (() => void) | null = null;
+  let skillsRepo = options.skillsRepository;
+
+  if (!skillsRepo) {
+    if (options.db) {
+      skillsRepo = createSqliteSkillsRepository(options.db);
+    } else {
+      const { repository, dispose } = createSqliteRepositoryFromPath(options.dbPath);
+      skillsRepo = repository;
+      cleanup = dispose;
+    }
+  }
+
+  if (!skillsRepo) {
+    throw new Error("Failed to resolve skills repository for analysis");
+  }
+
+  try {
+    const pipeline = new SkillAnalysisPipeline(eventsRepo, skillsRepo, summariser, options);
+    return await pipeline.run();
+  } finally {
+    if (cleanup) {
+      cleanup();
+    }
+  }
 }
 
-export { resetSkillsStore };
+function createSqliteRepositoryFromPath(path?: string): {
+  repository: SkillsRepository;
+  dispose: () => void;
+} {
+  const dbPath = path ?? process.env.AOS_DB_PATH ?? join(process.cwd(), "data", "aos.sqlite");
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const sqlite = new Database(dbPath);
+  sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("foreign_keys = ON");
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS skills (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      category TEXT,
+      tags_json TEXT,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      template_json TEXT,
+      used_count INTEGER NOT NULL DEFAULT 0,
+      win_rate REAL NOT NULL DEFAULT 0,
+      review_status TEXT NOT NULL DEFAULT 'draft',
+      last_analyzed_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      version INTEGER NOT NULL DEFAULT 0,
+      current_version_id TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS skill_versions (
+      id TEXT PRIMARY KEY,
+      skill_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      category TEXT,
+      tags_json TEXT,
+      template_json TEXT,
+      used_count INTEGER NOT NULL DEFAULT 0,
+      win_rate REAL NOT NULL DEFAULT 0,
+      review_status TEXT NOT NULL DEFAULT 'draft',
+      last_analyzed_at INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS skill_versions_unique ON skill_versions(skill_id, version);
+    CREATE INDEX IF NOT EXISTS skill_versions_skill_idx ON skill_versions(skill_id);
+
+    CREATE TABLE IF NOT EXISTS skill_runs (
+      id TEXT PRIMARY KEY,
+      skill_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      run_id TEXT NOT NULL,
+      total_count INTEGER NOT NULL,
+      success_count INTEGER NOT NULL,
+      failure_count INTEGER NOT NULL,
+      new_event_count INTEGER NOT NULL DEFAULT 0,
+      new_success_count INTEGER NOT NULL DEFAULT 0,
+      new_failure_count INTEGER NOT NULL DEFAULT 0,
+      last_event_at INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS skill_runs_skill_idx ON skill_runs(skill_id);
+    CREATE INDEX IF NOT EXISTS skill_runs_run_idx ON skill_runs(run_id);
+  `);
+  const db = drizzle(sqlite, { schema });
+  const repository = createSqliteSkillsRepository(db);
+  return {
+    repository,
+    dispose: () => sqlite.close(),
+  };
+}
