@@ -22,6 +22,8 @@ import {
   type EpisodeListItem,
   type EpisodeReplayResponse,
 } from "../lib/episodes";
+import { useI18n } from "../lib/i18n/index";
+import { useLocalToast } from "../components/useLocalToast";
 
 type ListState = {
   isLoading: boolean;
@@ -40,12 +42,6 @@ type ReplayState = {
   result: EpisodeReplayResponse["data"] | null;
   error: string | null;
 };
-
-type ToastState = {
-  message: string;
-  actionLabel: string;
-  onAction: () => void;
-} | null;
 
 const skeletonItems = new Array(6).fill(null);
 
@@ -74,9 +70,8 @@ const EpisodesPage: NextPage = () => {
     error: null,
   });
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
-  const [toast, setToast] = useState<ToastState>(null);
-
-  const dismissToast = useCallback(() => setToast(null), []);
+  const { t } = useI18n();
+  const { ToastContainer, showToast, dismissToast } = useLocalToast();
 
   const loadEpisodes = useCallback(async () => {
     setListState((prev) => ({ ...prev, isLoading: true, error: null }));
@@ -97,30 +92,43 @@ const EpisodesPage: NextPage = () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : "加载 Episodes 列表时发生未知错误";
       setListState({ isLoading: false, error: message, items: [] });
-      setToast({
+      showToast({
+        title: t("toast.error.title"),
         message,
-        actionLabel: "重试",
-        onAction: loadEpisodes,
+        dismissLabel: t("toast.dismiss"),
+        actionLabel: t("toast.action.retry"),
+        onAction: () => {
+          void loadEpisodes();
+        },
+        tone: "error",
       });
     }
-  }, []);
+  }, [showToast, t]);
 
-  const loadDetail = useCallback(async (traceId: string) => {
-    setDetailState({ isLoading: true, error: null, detail: null });
-    setReplayState({ isReplaying: false, result: null, error: null });
-    try {
-      const response = await fetchEpisodeDetail(traceId);
-      setDetailState({ isLoading: false, error: null, detail: response.data });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "加载 Episode 详情时发生未知错误";
-      setDetailState({ isLoading: false, error: message, detail: null });
-      setToast({
-        message,
-        actionLabel: "重试",
-        onAction: () => loadDetail(traceId),
-      });
-    }
-  }, []);
+  const loadDetail = useCallback(
+    async (traceId: string) => {
+      setDetailState({ isLoading: true, error: null, detail: null });
+      setReplayState({ isReplaying: false, result: null, error: null });
+      try {
+        const response = await fetchEpisodeDetail(traceId);
+        setDetailState({ isLoading: false, error: null, detail: response.data });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "加载 Episode 详情时发生未知错误";
+        setDetailState({ isLoading: false, error: message, detail: null });
+        showToast({
+          title: t("toast.error.title"),
+          message,
+          dismissLabel: t("toast.dismiss"),
+          actionLabel: t("toast.action.retry"),
+          onAction: () => {
+            void loadDetail(traceId);
+          },
+          tone: "error",
+        });
+      }
+    },
+    [showToast, t],
+  );
 
   useEffect(() => {
     loadEpisodes();
@@ -150,13 +158,18 @@ const EpisodesPage: NextPage = () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : "回放 Episode 时发生未知错误";
       setReplayState({ isReplaying: false, result: null, error: message });
-      setToast({
+      showToast({
+        title: t("toast.error.title"),
         message,
-        actionLabel: "重试",
-        onAction: handleReplay,
+        dismissLabel: t("toast.dismiss"),
+        actionLabel: t("toast.action.retry"),
+        onAction: () => {
+          void handleReplay();
+        },
+        tone: "error",
       });
     }
-  }, [dismissToast, selectedTraceId]);
+  }, [dismissToast, selectedTraceId, showToast, t]);
 
   const selectedDetail = detailState.detail;
 
@@ -365,35 +378,7 @@ const EpisodesPage: NextPage = () => {
         </section>
       </main>
 
-      {toast ? (
-        <div className="fixed bottom-6 left-1/2 z-50 w-[min(420px,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 shadow-lg backdrop-blur">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h3 className="text-sm font-semibold text-amber-200">出现问题</h3>
-              <p className="mt-1 text-sm text-amber-100/90">{toast.message}</p>
-            </div>
-            <button
-              type="button"
-              className="text-sm text-amber-100/80 hover:text-amber-50"
-              onClick={dismissToast}
-            >
-              关闭
-            </button>
-          </div>
-          <div className="mt-3 flex justify-end gap-2">
-            <button
-              type="button"
-              className={outlineButtonClass}
-              onClick={() => {
-                dismissToast();
-                toast.onAction();
-              }}
-            >
-              {toast.actionLabel}
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <ToastContainer />
     </div>
   );
 };

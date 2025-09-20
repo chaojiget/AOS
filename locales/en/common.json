@@ -7,6 +7,21 @@
       "logflow": "LogFlow"
     }
   },
+  "toast": {
+    "error": {
+      "title": "Something went wrong"
+    },
+    "success": {
+      "title": "All set"
+    },
+    "info": {
+      "title": "Heads-up"
+    },
+    "dismiss": "Close",
+    "action": {
+      "retry": "Retry"
+    }
+  },
   "conversation": {
     "heading": "Conversation",
     "traceNotice": "This conversation is logged to episodes/{traceId}.jsonl",
@@ -45,6 +60,10 @@
     "errorPrefix": "Error: {message}",
     "empty": "No messages yet.",
     "generating": "Generating response…",
+    "toast": {
+      "noContent": "There's nothing to save yet.",
+      "saveSuccess": "Conversation exported as JSON."
+    },
     "message": {
       "labels": {
         "msgId": "msg_id",

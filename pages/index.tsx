@@ -2,6 +2,7 @@ import { FormEventHandler, useCallback, useEffect, useMemo, useRef, useState } f
 import type { NextPage } from "next";
 
 import ChatMessageList, { type ChatHistoryMessage } from "../components/ChatMessageList";
+import { useLocalToast } from "../components/useLocalToast";
 import LogFlowPanel from "../components/LogFlowPanel";
 import PlanTimeline, {
   type PlanTimelineEvent,
@@ -254,6 +255,7 @@ const extractTokens = (payload: any): number | null => {
 
 const HomePage: NextPage = () => {
   const { t, locale } = useI18n();
+  const { ToastContainer, showToast } = useLocalToast();
   const [input, setInput] = useState("");
   const [runStatus, setRunStatus] = useState<RunStatus>("idle");
   const [traceId, setTraceId] = useState<string | undefined>(undefined);
@@ -306,10 +308,20 @@ const HomePage: NextPage = () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setEpisodesError(message);
+      showToast({
+        title: t("toast.error.title"),
+        message,
+        dismissLabel: t("toast.dismiss"),
+        actionLabel: t("toast.action.retry"),
+        onAction: () => {
+          void refreshEpisodes();
+        },
+        tone: "error",
+      });
     } finally {
       setEpisodesLoading(false);
     }
-  }, []);
+  }, [showToast, t]);
 
   const resetForRun = useCallback(() => {
     setPlanEvents([]);
@@ -832,6 +844,12 @@ const HomePage: NextPage = () => {
     }
 
     if (entries.length === 0) {
+      showToast({
+        title: t("toast.info.title"),
+        message: t("chat.toast.noContent"),
+        dismissLabel: t("toast.dismiss"),
+        tone: "info",
+      });
       return;
     }
 
@@ -850,7 +868,13 @@ const HomePage: NextPage = () => {
     setTimeout(() => {
       URL.revokeObjectURL(url);
     }, 0);
-  }, [chatHistory, draftInput, traceId]);
+    showToast({
+      title: t("toast.success.title"),
+      message: t("chat.toast.saveSuccess"),
+      dismissLabel: t("toast.dismiss"),
+      tone: "success",
+    });
+  }, [chatHistory, draftInput, showToast, t, traceId]);
 
   const handleRun = useCallback(async () => {
     if (!draftInput || runStatus === "running" || runStatus === "awaiting-confirmation") {
@@ -880,7 +904,8 @@ const HomePage: NextPage = () => {
     try {
       const serialisedHistory = serialiseHistoryForRequest(previousHistory);
       const messagesForRequest = serialisedHistory.map(({ role, content }) => ({ role, content }));
-      const shouldReuseTrace = runStatus === "awaiting-confirmation" && previousTraceId;
+      const shouldReuseTrace =
+        previousTraceId && currentTraceRef.current === previousTraceId ? previousTraceId : undefined;
 
       const response = await fetch("/api/run", {
         method: "POST",
@@ -889,7 +914,7 @@ const HomePage: NextPage = () => {
           message: draftInput,
           messages: messagesForRequest,
           history: serialisedHistory,
-          ...(shouldReuseTrace ? { trace_id: previousTraceId } : {}),
+          ...(shouldReuseTrace ? { trace_id: shouldReuseTrace } : {}),
         }),
       });
 
@@ -960,8 +985,24 @@ const HomePage: NextPage = () => {
         return [...updated, entry];
       });
       setTraceId(previousTraceId);
+      showToast({
+        title: t("toast.error.title"),
+        message: errorMessage,
+        dismissLabel: t("toast.dismiss"),
+        tone: "error",
+      });
     }
-  }, [chatHistory, draftInput, handleStreamEvent, resetForRun, runStatus, startStream, t, traceId]);
+  }, [
+    chatHistory,
+    draftInput,
+    handleStreamEvent,
+    resetForRun,
+    runStatus,
+    showToast,
+    startStream,
+    t,
+    traceId,
+  ]);
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
     (event) => {
@@ -1072,9 +1113,18 @@ const HomePage: NextPage = () => {
         .catch((error: unknown) => {
           console.warn("Guardian approval failed", error);
           setGuardianSubmissions((previous) => ({ ...previous, [alertId]: "error" }));
+          const fallback = t("guardian.alerts.error");
+          const message =
+            error instanceof Error && error.message ? `${fallback} (${error.message})` : fallback;
+          showToast({
+            title: t("toast.error.title"),
+            message,
+            dismissLabel: t("toast.dismiss"),
+            tone: "error",
+          });
         });
     },
-    [upsertGuardianAlert],
+    [showToast, t, upsertGuardianAlert],
   );
 
   const tabItems = useMemo(
@@ -1734,6 +1784,7 @@ const HomePage: NextPage = () => {
           </div>
         </div>
       ) : null}
+      <ToastContainer />
     </div>
   );
 };

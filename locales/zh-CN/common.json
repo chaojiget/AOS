@@ -7,6 +7,21 @@
       "logflow": "日志流"
     }
   },
+  "toast": {
+    "error": {
+      "title": "出现问题"
+    },
+    "success": {
+      "title": "操作成功"
+    },
+    "info": {
+      "title": "提示"
+    },
+    "dismiss": "关闭",
+    "action": {
+      "retry": "重试"
+    }
+  },
   "conversation": {
     "heading": "对话",
     "traceNotice": "此对话已写入 episodes/{traceId}.jsonl",
@@ -45,6 +60,10 @@
     "errorPrefix": "错误：{message}",
     "empty": "暂无消息。",
     "generating": "正在生成回复…",
+    "toast": {
+      "noContent": "当前没有可保存的内容。",
+      "saveSuccess": "对话已保存为 JSON 文件。"
+    },
     "message": {
       "labels": {
         "msgId": "消息 ID",
