@@ -36,6 +36,12 @@ function isAskEvent(
   return entry.event.type === "ask";
 }
 
+function isReflectNoteEvent(
+  entry: EmittedEntry,
+): entry is { event: Extract<CoreEvent, { type: "reflect.note" }>; span?: EmitSpanOptions } {
+  return entry.event.type === "reflect.note";
+}
+
 describe("runLoop", () => {
   it("executes plan steps and resolves when review passes", async () => {
     const emitted: EmittedEntry[] = [];
@@ -86,10 +92,17 @@ describe("runLoop", () => {
       (item): item is { event: Extract<CoreEvent, { type: "tool" }>; span?: EmitSpanOptions } =>
         item.event.type === "tool",
     );
-    expect(toolEvents).toHaveLength(2);
-    expect(toolEvents.map((item) => item.span?.spanId)).toEqual(["s1", "s2"]);
+    expect(toolEvents).toHaveLength(4);
+    const startedTools = toolEvents.filter((item) => item.event.status === "started");
+    expect(startedTools.map((item) => item.span?.spanId)).toEqual(["s1", "s2"]);
+    const succeededTools = toolEvents.filter((item) => item.event.status === "succeeded");
+    expect(succeededTools.map((item) => item.span?.spanId)).toEqual(["s1", "s2"]);
+    expect(succeededTools.every((item) => item.event.result?.ok === true)).toBe(true);
     expect(toolEvents.every((item) => item.span?.parentSpanId === "plan-1")).toBe(true);
     expect(toolEvents.some((item) => item.event.name === "tool.echo")).toBeTruthy();
+
+    const reflectNotes = emitted.filter(isReflectNoteEvent);
+    expect(reflectNotes.map((item) => item.event.text)).toEqual(["ok"]);
 
     const finalEvent = emitted.find(isFinalEvent);
     expect(finalEvent?.event.reason).toBe("completed");
@@ -330,8 +343,9 @@ describe("runLoop", () => {
       (item): item is { event: Extract<CoreEvent, { type: "tool" }>; span?: EmitSpanOptions } =>
         item.event.type === "tool",
     );
-    expect(toolEvents).toHaveLength(1);
-    expect(toolEvents[0]?.event.result?.ok).toBe(false);
+    expect(toolEvents).toHaveLength(2);
+    const failedTool = toolEvents.find((item) => item.event.status === "failed");
+    expect(failedTool?.event.result?.ok).toBe(false);
 
     const planEvents = emitted.filter((item) => item.event.type === "plan");
     expect(planEvents).toHaveLength(1);

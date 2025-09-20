@@ -9,6 +9,8 @@ function summarise(event: EventEnvelope): string {
       const revision = data?.revision ?? "?";
       return `Plan revision ${revision} with ${steps} step${steps === 1 ? "" : "s"}`;
     }
+    case "tool.started":
+      return `Tool ${data?.name ?? "(unknown)"} started`;
     case "tool.succeeded":
       return `Tool ${data?.name ?? "(unknown)"} succeeded`;
     case "tool.failed":
@@ -19,6 +21,8 @@ function summarise(event: EventEnvelope): string {
       return `Progress ${Math.round((data?.pct ?? 0) * 100)}% (${data?.step ?? "step"})`;
     case "run.finished":
       return `Run finished (${data?.reason ?? "completed"})`;
+    case "final.answer":
+      return "Final answer ready";
     case "run.failed":
       return `Run failed${data?.message ? `: ${data.message}` : ""}`;
     case "run.ask":
@@ -27,6 +31,10 @@ function summarise(event: EventEnvelope): string {
       return `Score ${data?.value ?? "?"} (${data?.passed ? "pass" : "fail"})`;
     case "run.log":
       return typeof data?.message === "string" ? data.message : "Log";
+    case "reflect.note":
+      return typeof data?.text === "string" ? data.text : "Reflection";
+    case "skill.used":
+      return `Skill ${data?.name ?? "(unknown)"} used`;
     default:
       return event.type;
   }

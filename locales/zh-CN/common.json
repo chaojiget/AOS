@@ -131,6 +131,9 @@
         "succeeded": "已完成",
         "failed": "失败"
       },
+      "skillLevel": "技能",
+      "skillUsed": "命中技能：{name}",
+      "unnamedSkill": "未命名技能",
       "metric": {
         "na": "–"
       },
