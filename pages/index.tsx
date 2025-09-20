@@ -8,6 +8,7 @@ import PlanTimeline, {
   type PlanTimelineStep,
 } from "../components/PlanTimeline";
 import SkillPanel, { type SkillEvent } from "../components/SkillPanel";
+import { fetchEpisodeDetail, fetchEpisodes, type EpisodeListItem } from "../lib/episodes";
 import { useI18n } from "../lib/i18n/index";
 import {
   fetchGuardianBudget,
@@ -62,14 +63,6 @@ interface StreamEventEnvelope {
   data?: any;
 }
 
-interface EpisodeListItem {
-  trace_id: string;
-  status: string;
-  started_at: string;
-  finished_at?: string | null;
-  goal?: string | null;
-}
-
 interface ConfirmationRequestState {
   id: string;
   ts: string;
@@ -82,6 +75,16 @@ interface ConfirmationRequestState {
 type RunStatus = "idle" | "running" | "awaiting-confirmation" | "completed" | "error";
 
 type GuardianStatusKey = GuardianBudgetStatus | "loading" | "idle" | "error";
+
+type ToastTone = "success" | "error";
+
+type ToastState = {
+  id: string;
+  tone: ToastTone;
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+} | null;
 
 const GUARDIAN_STATUS_TONES: Record<GuardianStatusKey, string> = {
   ok: "bg-emerald-500/10 text-emerald-200",
@@ -103,6 +106,26 @@ const GUARDIAN_ALERT_STATUS_TONES: Record<GuardianAlert["status"], string> = {
   approved: "bg-emerald-500/10 text-emerald-200",
   rejected: "bg-rose-500/10 text-rose-200",
   resolved: "bg-slate-700/40 text-slate-100",
+};
+
+const EPISODE_SKELETON_ITEMS = new Array(6).fill(null);
+
+const TOAST_TONE_STYLES: Record<
+  ToastTone,
+  { container: string; heading: string; text: string; button: string }
+> = {
+  success: {
+    container: "border-emerald-500/40 bg-emerald-500/10",
+    heading: "text-emerald-200",
+    text: "text-emerald-100/90",
+    button: "text-emerald-100/80 hover:text-emerald-50",
+  },
+  error: {
+    container: "border-rose-500/40 bg-rose-500/10",
+    heading: "text-rose-200",
+    text: "text-rose-100/90",
+    button: "text-rose-100/80 hover:text-rose-50",
+  },
 };
 
 const generateLocalId = (): string => {
@@ -285,6 +308,11 @@ const HomePage: NextPage = () => {
   const [episodesLoading, setEpisodesLoading] = useState(false);
   const [episodesError, setEpisodesError] = useState<string | null>(null);
   const [episodeFilter, setEpisodeFilter] = useState("");
+  const [draftEpisode, setDraftEpisode] = useState<EpisodeListItem | null>(null);
+  const [activeEpisodeId, setActiveEpisodeId] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState>(null);
+  const [loadingEpisodeId, setLoadingEpisodeId] = useState<string | null>(null);
+  const [downloadingEpisodeId, setDownloadingEpisodeId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const retryTimerRef = useRef<number | null>(null);
   const retryAttemptRef = useRef(0);
@@ -292,24 +320,36 @@ const HomePage: NextPage = () => {
 
   const draftInput = useMemo(() => input.trim(), [input]);
 
+  const dismissToast = useCallback(() => setToast(null), []);
+
+  const showToast = useCallback(
+    (tone: ToastTone, message: string, actionLabel?: string, onAction?: () => void) => {
+      setToast({
+        id: generateLocalId(),
+        tone,
+        message,
+        actionLabel,
+        onAction,
+      });
+    },
+    [],
+  );
+
   const refreshEpisodes = useCallback(async () => {
     setEpisodesLoading(true);
     setEpisodesError(null);
     try {
-      const response = await fetch("/api/episodes");
-      if (!response.ok) {
-        throw new Error(`failed (${response.status})`);
-      }
-      const payload = await response.json();
-      const items: EpisodeListItem[] = payload?.data?.items ?? [];
+      const response = await fetchEpisodes();
+      const items = response?.data?.items ?? [];
       setEpisodes(items);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message =
+        error instanceof Error ? error.message : t("conversation.episodes.loadErrorFallback");
       setEpisodesError(message);
     } finally {
       setEpisodesLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const resetForRun = useCallback(() => {
     setPlanEvents([]);
@@ -342,6 +382,15 @@ const HomePage: NextPage = () => {
   useEffect(() => {
     refreshEpisodes().catch(() => {});
   }, [refreshEpisodes]);
+
+  useEffect(() => {
+    if (traceId) {
+      setActiveEpisodeId(traceId);
+      if (draftEpisode && draftEpisode.trace_id !== traceId) {
+        setDraftEpisode(null);
+      }
+    }
+  }, [draftEpisode, traceId]);
 
   const appendSystemMessage = useCallback(
     (content: string, status: ChatHistoryMessage["status"] = "done") => {
@@ -852,8 +901,145 @@ const HomePage: NextPage = () => {
     }, 0);
   }, [chatHistory, draftInput, traceId]);
 
+  const handleCreateConversation = useCallback(() => {
+    closeStream();
+    resetForRun();
+    setChatHistory([]);
+    setTraceId(undefined);
+    currentTraceRef.current = undefined;
+    setRunStatus("idle");
+    setRunError(null);
+    setInput("");
+    dismissToast();
+
+    const draftId = `draft-${generateLocalId()}`;
+    const now = new Date().toISOString();
+    const placeholder: EpisodeListItem = {
+      trace_id: draftId,
+      status: "draft",
+      started_at: now,
+      finished_at: null,
+      goal: t("conversation.episodes.draftTitle"),
+      step_count: 0,
+      score: null,
+    };
+    setDraftEpisode(placeholder);
+    setActiveEpisodeId(draftId);
+    setEpisodeFilter("");
+  }, [closeStream, dismissToast, resetForRun, t]);
+
+  const handleLoadEpisode = useCallback(
+    async (targetTraceId: string) => {
+      dismissToast();
+      setLoadingEpisodeId(targetTraceId);
+      try {
+        const response = await fetchEpisodeDetail(targetTraceId);
+        const detail = response.data;
+        const events = Array.isArray(detail?.events) ? detail.events : [];
+
+        closeStream();
+        resetForRun();
+        setChatHistory([]);
+        setTraceId(targetTraceId);
+        currentTraceRef.current = targetTraceId;
+        setRunStatus("idle");
+        setRunError(null);
+        setInput("");
+
+        const sortedEvents = [...events].sort(
+          (a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime(),
+        );
+        sortedEvents.forEach((event) => {
+          const envelope: StreamEventEnvelope = {
+            id: event.id ?? generateLocalId(),
+            ts: event.ts,
+            type: event.type,
+            trace_id: targetTraceId,
+            span_id: event.span_id ?? undefined,
+            parent_span_id: event.parent_span_id ?? undefined,
+            data: event.data,
+          };
+          handleStreamEvent(envelope);
+        });
+        setRunStatus("idle");
+
+        setActiveEpisodeId(targetTraceId);
+        setDraftEpisode(null);
+        setEpisodes((items) => {
+          const next = [...items];
+          const index = next.findIndex((item) => item.trace_id === targetTraceId);
+          const fallback = index >= 0 ? next[index] : undefined;
+          const enrichedMetadata: EpisodeListItem = {
+            trace_id: detail?.trace_id ?? targetTraceId,
+            status: detail?.status ?? fallback?.status ?? "completed",
+            started_at: detail?.started_at ?? fallback?.started_at ?? new Date().toISOString(),
+            finished_at: detail?.finished_at ?? fallback?.finished_at,
+            goal: detail?.goal ?? fallback?.goal,
+            step_count: detail?.step_count ?? fallback?.step_count,
+            score: detail?.score ?? fallback?.score,
+          };
+          if (index >= 0) {
+            next[index] = { ...next[index], ...enrichedMetadata };
+          } else {
+            next.unshift(enrichedMetadata);
+          }
+          return next;
+        });
+
+        showToast("success", t("conversation.episodes.loadSuccess", { traceId: targetTraceId }));
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : t("conversation.episodes.loadError", { traceId: targetTraceId });
+        showToast("error", message);
+      } finally {
+        setLoadingEpisodeId(null);
+      }
+    },
+    [closeStream, dismissToast, handleStreamEvent, resetForRun, showToast, t],
+  );
+
+  const handleDownloadEpisode = useCallback(
+    async (targetTraceId: string) => {
+      dismissToast();
+      setDownloadingEpisodeId(targetTraceId);
+      try {
+        const response = await fetch(`/api/episodes/${encodeURIComponent(targetTraceId)}`);
+        if (!response.ok) {
+          throw new Error(t("conversation.episodes.downloadError", { traceId: targetTraceId }));
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `episodes-${targetTraceId}.jsonl`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+        }, 0);
+        showToast(
+          "success",
+          t("conversation.episodes.downloadSuccess", { traceId: targetTraceId }),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : t("conversation.episodes.downloadError", { traceId: targetTraceId });
+        showToast("error", message);
+      } finally {
+        setDownloadingEpisodeId(null);
+      }
+    },
+    [dismissToast, showToast, t],
+  );
+
   const handleRun = useCallback(async () => {
-    if (!draftInput || runStatus === "running" || runStatus === "awaiting-confirmation") {
+    const awaitingConfirmation = runStatus === "awaiting-confirmation";
+    if (!draftInput || runStatus === "running" || awaitingConfirmation) {
       return;
     }
 
@@ -880,7 +1066,7 @@ const HomePage: NextPage = () => {
     try {
       const serialisedHistory = serialiseHistoryForRequest(previousHistory);
       const messagesForRequest = serialisedHistory.map(({ role, content }) => ({ role, content }));
-      const shouldReuseTrace = runStatus === "awaiting-confirmation" && previousTraceId;
+      const shouldReuseTrace = awaitingConfirmation && previousTraceId;
 
       const response = await fetch("/api/run", {
         method: "POST",
@@ -1247,16 +1433,24 @@ const HomePage: NextPage = () => {
     return null;
   }, [finalOutput]);
 
+  const episodeItems = useMemo(() => {
+    if (!draftEpisode) {
+      return episodes;
+    }
+    const withoutDraft = episodes.filter((item) => item.trace_id !== draftEpisode.trace_id);
+    return [draftEpisode, ...withoutDraft];
+  }, [draftEpisode, episodes]);
+
   const filteredEpisodes = useMemo(() => {
     const keyword = episodeFilter.trim().toLowerCase();
     if (!keyword) {
-      return episodes;
+      return episodeItems;
     }
-    return episodes.filter((item) => {
+    return episodeItems.filter((item) => {
       const text = `${item.trace_id} ${item.goal ?? ""} ${item.status}`.toLowerCase();
       return text.includes(keyword);
     });
-  }, [episodeFilter, episodes]);
+  }, [episodeFilter, episodeItems]);
 
   return (
     <div className={shellClass} data-testid="chat-shell">
@@ -1304,30 +1498,42 @@ const HomePage: NextPage = () => {
           >
             <aside className="space-y-6" data-testid="chat-sidebar">
               <section className={`${panelSurfaceClass} space-y-4 p-5 sm:p-6`}>
-                <div className="space-y-1">
-                  <h3 className={headingClass}>{t("conversation.heading")}</h3>
-                  <p className={`${subtleTextClass} text-xs sm:text-sm`}>
-                    {traceId
-                      ? t("conversation.traceNotice", { traceId })
-                      : t("conversation.traceNotice", { traceId: "…" })}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-3 text-xs sm:flex-row sm:items-center sm:justify-between sm:text-sm">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <h3 className={headingClass}>{t("conversation.heading")}</h3>
+                      <p className={`${subtleTextClass} text-xs sm:text-sm`}>
+                        {traceId
+                          ? t("conversation.traceNotice", { traceId })
+                          : draftEpisode
+                            ? t("conversation.episodes.draftTraceNotice")
+                            : t("conversation.traceNotice", { traceId: "…" })}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCreateConversation}
+                      className={`${outlineButtonClass} px-3 py-1 text-xs sm:text-sm`}
+                    >
+                      {t("conversation.newButton")}
+                    </button>
+                  </div>
                   {traceId ? (
                     <span className="flex items-center gap-2 truncate text-sky-200">
                       <span className={`${badgeClass} bg-sky-500/10 text-sky-100`}>episodes</span>
                       <span className="truncate text-slate-200">episodes/{traceId}.jsonl</span>
                     </span>
+                  ) : draftEpisode ? (
+                    <span className="flex items-center gap-2 truncate text-amber-200">
+                      <span className={`${badgeClass} bg-amber-500/10 text-amber-100`}>
+                        {t("conversation.episodes.draftStatus")}
+                      </span>
+                      <span className="truncate text-slate-200">
+                        {t("conversation.episodes.draftPlaceholder")}
+                      </span>
+                    </span>
                   ) : null}
                   <div className="flex flex-wrap items-center gap-2">
-                    {traceId ? (
-                      <a
-                        className={`${outlineButtonClass} px-3 py-1 text-xs sm:text-sm`}
-                        href={`/api/episodes/${traceId}`}
-                      >
-                        {t("conversation.downloadJsonl")}
-                      </a>
-                    ) : null}
                     <button
                       type="button"
                       onClick={handleSaveConversation}
@@ -1348,6 +1554,153 @@ const HomePage: NextPage = () => {
                   <p className="whitespace-pre-wrap text-sm text-slate-200">{draftInput}</p>
                 </section>
               ) : null}
+
+              <section
+                className={`${panelSurfaceClass} space-y-5 p-5 sm:p-6`}
+                data-testid="episodes-sidebar-panel"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className={headingClass}>{t("conversation.episodes.heading")}</h3>
+                    <p className={`${subtleTextClass} text-xs sm:text-sm`}>
+                      {t("conversation.episodes.subtitle")}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => refreshEpisodes().catch(() => {})}
+                    className={`${outlineButtonClass} px-3 py-1 text-xs sm:text-sm`}
+                    disabled={episodesLoading}
+                  >
+                    {episodesLoading
+                      ? t("conversation.episodes.refreshing")
+                      : t("conversation.episodes.refresh")}
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  <input
+                    type="search"
+                    value={episodeFilter}
+                    onChange={(event) => setEpisodeFilter(event.target.value)}
+                    placeholder={t("conversation.episodes.searchPlaceholder")}
+                    className={`${inputSurfaceClass} w-full`}
+                  />
+                  {episodesLoading ? (
+                    <ul className="flex flex-col gap-3" data-testid="episodes-skeleton">
+                      {EPISODE_SKELETON_ITEMS.map((_, index) => (
+                        <li
+                          key={index}
+                          className="animate-pulse rounded-md border border-slate-700/60 bg-slate-800/60 p-3"
+                        >
+                          <div className="h-4 w-2/3 rounded bg-slate-700/70" />
+                          <div className="mt-3 h-3 w-1/2 rounded bg-slate-700/50" />
+                        </li>
+                      ))}
+                    </ul>
+                  ) : episodesError ? (
+                    <div className={`${insetSurfaceClass} space-y-3 p-4 text-sm text-rose-200`}>
+                      <p>{episodesError}</p>
+                      <button
+                        type="button"
+                        className={`${outlineButtonClass} px-3 py-1 text-xs`}
+                        onClick={() => refreshEpisodes().catch(() => {})}
+                      >
+                        {t("conversation.episodes.retry")}
+                      </button>
+                    </div>
+                  ) : filteredEpisodes.length === 0 ? (
+                    <div className={`${insetSurfaceClass} p-4 text-sm text-slate-300/80`}>
+                      {t("conversation.episodes.empty")}
+                    </div>
+                  ) : (
+                    <ul className="flex flex-col gap-3" data-testid="episodes-list">
+                      {filteredEpisodes.map((item) => {
+                        const isActive = activeEpisodeId === item.trace_id;
+                        const isDraft = draftEpisode?.trace_id === item.trace_id;
+                        const isLoading = loadingEpisodeId === item.trace_id;
+                        const isDownloading = downloadingEpisodeId === item.trace_id;
+                        const startedAt = formatDateTime(item.started_at);
+                        return (
+                          <li key={item.trace_id}>
+                            <div
+                              className={`${
+                                isActive
+                                  ? "border-sky-500/70 bg-sky-500/5"
+                                  : "border-transparent bg-slate-800/60 hover:bg-slate-800/80"
+                              } rounded-md border p-3 transition`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="space-y-1">
+                                  <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-100">
+                                    <span className="truncate">
+                                      {item.goal && item.goal.length > 0
+                                        ? item.goal
+                                        : t("conversation.episodes.untitled")}
+                                    </span>
+                                    {isDraft ? (
+                                      <span
+                                        className={`${badgeClass} bg-amber-500/10 text-amber-100`}
+                                      >
+                                        {t("conversation.episodes.draftStatus")}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className="text-xs text-slate-300/80">{startedAt}</p>
+                                </div>
+                                <span
+                                  className={`${badgeClass} bg-slate-900/70 text-xs text-slate-200`}
+                                >
+                                  {item.status}
+                                </span>
+                              </div>
+                              <dl className="mt-3 grid gap-2 text-xs text-slate-200 sm:grid-cols-2">
+                                {typeof item.score === "number" ? (
+                                  <div className="space-y-1">
+                                    <dt className={`${labelClass} text-slate-400`}>
+                                      {t("conversation.episodes.meta.score")}
+                                    </dt>
+                                    <dd>{item.score.toFixed(2)}</dd>
+                                  </div>
+                                ) : null}
+                                {typeof item.step_count === "number" ? (
+                                  <div className="space-y-1">
+                                    <dt className={`${labelClass} text-slate-400`}>
+                                      {t("conversation.episodes.meta.steps")}
+                                    </dt>
+                                    <dd>{item.step_count}</dd>
+                                  </div>
+                                ) : null}
+                              </dl>
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleLoadEpisode(item.trace_id)}
+                                  className={`${primaryButtonClass} px-3 py-1 text-xs`}
+                                  disabled={isDraft || isLoading}
+                                >
+                                  {isLoading
+                                    ? t("conversation.episodes.actions.loading")
+                                    : t("conversation.episodes.actions.resume")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadEpisode(item.trace_id)}
+                                  className={`${outlineButtonClass} px-3 py-1 text-xs`}
+                                  disabled={isDraft || isDownloading}
+                                >
+                                  {isDownloading
+                                    ? t("conversation.episodes.actions.downloading")
+                                    : t("conversation.episodes.actions.download")}
+                                </button>
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </section>
             </aside>
 
             <section
@@ -1732,6 +2085,48 @@ const HomePage: NextPage = () => {
               </div>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {toast ? (
+        <div
+          className={`fixed bottom-6 right-6 z-50 w-[min(360px,calc(100%-2rem))] rounded-xl border p-4 shadow-xl backdrop-blur ${TOAST_TONE_STYLES[toast.tone].container}`}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className={`text-sm font-semibold ${TOAST_TONE_STYLES[toast.tone].heading}`}>
+                {toast.tone === "success"
+                  ? t("conversation.episodes.toast.successTitle")
+                  : t("conversation.episodes.toast.errorTitle")}
+              </h3>
+              <p className={`mt-1 text-sm ${TOAST_TONE_STYLES[toast.tone].text}`}>
+                {toast.message}
+              </p>
+            </div>
+            <button
+              type="button"
+              className={`text-xs ${TOAST_TONE_STYLES[toast.tone].button}`}
+              onClick={dismissToast}
+            >
+              {t("conversation.episodes.toast.close")}
+            </button>
+          </div>
+          {toast.actionLabel && toast.onAction ? (
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                className={`${outlineButtonClass} px-3 py-1 text-xs`}
+                onClick={() => {
+                  dismissToast();
+                  toast.onAction?.();
+                }}
+              >
+                {toast.actionLabel}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

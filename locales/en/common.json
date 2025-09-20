@@ -10,10 +10,45 @@
   "conversation": {
     "heading": "Conversation",
     "traceNotice": "This conversation is logged to episodes/{traceId}.jsonl",
+    "newButton": "New conversation",
     "downloadJsonl": "Download JSONL",
     "saveButton": "Save conversation",
     "draftLabel": "Draft input",
-    "finalOutputTitle": "Latest final output snapshot"
+    "finalOutputTitle": "Latest final output snapshot",
+    "episodes": {
+      "heading": "Episodes",
+      "subtitle": "Recent runs and saved drafts.",
+      "searchPlaceholder": "Search by goal, trace ID, or status…",
+      "refresh": "Refresh",
+      "refreshing": "Refreshing…",
+      "retry": "Retry",
+      "empty": "No episodes yet. Run the agent to record a new conversation.",
+      "untitled": "Untitled run",
+      "draftTitle": "Draft conversation",
+      "draftStatus": "Draft",
+      "draftPlaceholder": "episodes/draft-local.jsonl",
+      "draftTraceNotice": "Draft conversation not yet recorded to disk.",
+      "loadErrorFallback": "Failed to load episode list.",
+      "loadSuccess": "Episode {traceId} loaded into the conversation.",
+      "loadError": "Failed to load episode {traceId}.",
+      "downloadSuccess": "Episode {traceId} exported.",
+      "downloadError": "Failed to export episode {traceId}.",
+      "meta": {
+        "score": "Score",
+        "steps": "Steps"
+      },
+      "actions": {
+        "resume": "Load & continue",
+        "loading": "Loading…",
+        "download": "Export JSONL",
+        "downloading": "Exporting…"
+      },
+      "toast": {
+        "successTitle": "Action completed",
+        "errorTitle": "Something went wrong",
+        "close": "Close"
+      }
+    }
   },
   "chat": {
     "inputLabel": "Chat input",

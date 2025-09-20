@@ -10,10 +10,45 @@
   "conversation": {
     "heading": "对话",
     "traceNotice": "此对话已写入 episodes/{traceId}.jsonl",
+    "newButton": "新建对话",
     "downloadJsonl": "下载 JSONL",
     "saveButton": "保存对话",
     "draftLabel": "草稿输入",
-    "finalOutputTitle": "最新最终输出快照"
+    "finalOutputTitle": "最新最终输出快照",
+    "episodes": {
+      "heading": "历史回放",
+      "subtitle": "最近的运行记录与草稿。",
+      "searchPlaceholder": "按目标、追踪 ID 或状态搜索…",
+      "refresh": "刷新",
+      "refreshing": "正在刷新…",
+      "retry": "重试",
+      "empty": "暂无 Episode，先运行一次代理以生成记录。",
+      "untitled": "未命名运行",
+      "draftTitle": "本地草稿",
+      "draftStatus": "草稿",
+      "draftPlaceholder": "episodes/draft-local.jsonl",
+      "draftTraceNotice": "草稿对话尚未写入 Episode 文件。",
+      "loadErrorFallback": "加载 Episode 列表失败。",
+      "loadSuccess": "已载入 Episode {traceId}。",
+      "loadError": "载入 Episode {traceId} 失败。",
+      "downloadSuccess": "已导出 Episode {traceId}。",
+      "downloadError": "导出 Episode {traceId} 失败。",
+      "meta": {
+        "score": "得分",
+        "steps": "步骤数"
+      },
+      "actions": {
+        "resume": "载入回放/继续对话",
+        "loading": "载入中…",
+        "download": "导出 JSONL",
+        "downloading": "导出中…"
+      },
+      "toast": {
+        "successTitle": "操作完成",
+        "errorTitle": "出现问题",
+        "close": "关闭"
+      }
+    }
   },
   "chat": {
     "inputLabel": "聊天输入",
