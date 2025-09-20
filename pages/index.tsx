@@ -260,6 +260,10 @@ const HomePage: NextPage = () => {
   const [chatHistory, setChatHistory] = useState<ChatHistoryMessage[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "logflow">("chat");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [insightsOpen, setInsightsOpen] = useState(false);
+  const sidebarSheetRef = useRef<HTMLDivElement | null>(null);
+  const insightsSheetRef = useRef<HTMLDivElement | null>(null);
   const [finalOutput, setFinalOutput] = useState<unknown>(null);
   const [lastEvent, setLastEvent] = useState<StreamEventEnvelope | null>(null);
   const [planEvents, setPlanEvents] = useState<PlanTimelineEvent[]>([]);
@@ -420,6 +424,34 @@ const HomePage: NextPage = () => {
     });
     return unsubscribe;
   }, [upsertGuardianAlert]);
+
+  useEffect(() => {
+    if (sidebarOpen) {
+      sidebarSheetRef.current?.focus();
+    }
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (insightsOpen) {
+      insightsSheetRef.current?.focus();
+    }
+  }, [insightsOpen]);
+
+  useEffect(() => {
+    if (!sidebarOpen && !insightsOpen) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSidebarOpen(false);
+        setInsightsOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [sidebarOpen, insightsOpen]);
 
   const handleStreamEvent = useCallback(
     (event: StreamEventEnvelope) => {
@@ -1258,6 +1290,400 @@ const HomePage: NextPage = () => {
     });
   }, [episodeFilter, episodes]);
 
+  const renderSidebar = () => (
+    <>
+      <section className={`${panelSurfaceClass} space-y-4 p-5 sm:p-6`}>
+        <div className="space-y-1">
+          <h3 className={headingClass}>{t("conversation.heading")}</h3>
+          <p className={`${subtleTextClass} text-xs sm:text-sm`}>
+            {traceId
+              ? t("conversation.traceNotice", { traceId })
+              : t("conversation.traceNotice", { traceId: "…" })}
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 text-xs sm:flex-row sm:items-center sm:justify-between sm:text-sm">
+          {traceId ? (
+            <span className="flex items-center gap-2 truncate text-sky-200">
+              <span className={`${badgeClass} bg-sky-500/10 text-sky-100`}>episodes</span>
+              <span className="truncate text-slate-200">episodes/{traceId}.jsonl</span>
+            </span>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {traceId ? (
+              <a
+                className={`${outlineButtonClass} px-3 py-1 text-xs sm:text-sm`}
+                href={`/api/episodes/${traceId}`}
+              >
+                {t("conversation.downloadJsonl")}
+              </a>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleSaveConversation}
+              disabled={disableSave}
+              className={`${primaryButtonClass} px-3 py-1 text-xs sm:text-sm`}
+            >
+              {t("conversation.saveButton")}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {draftInput ? (
+        <section className={`${panelSurfaceClass} space-y-3 p-5 sm:p-6`}>
+          <div className={`${labelClass} text-slate-400`}>{t("conversation.draftLabel")}</div>
+          <p className="whitespace-pre-wrap text-sm text-slate-200">{draftInput}</p>
+        </section>
+      ) : null}
+    </>
+  );
+
+  const renderInsights = () => (
+    <>
+      <section
+        aria-labelledby="guardian-panel-title"
+        className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
+        data-testid="guardian-panel"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <h3 id="guardian-panel-title" className={headingClass}>
+                {t("guardian.heading")}
+              </h3>
+              <p className={`${subtleTextClass} text-xs`}>{t("guardian.subtitle")}</p>
+            </div>
+            <span className={`${badgeClass} ${guardianStatusTone} normal-case`}>
+              {guardianStatusLabel}
+            </span>
+          </div>
+          {guardianError ? (
+            <p className="text-xs text-rose-200">
+              {t("guardian.error.detail", { message: guardianError })}
+            </p>
+          ) : null}
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <dt className={`${labelClass} text-slate-400`}>{t("guardian.budget.limit")}</dt>
+              <dd className="text-sm text-slate-200">
+                {guardianBudget
+                  ? formatCurrencyValue(guardianBudget.limit, guardianBudget.currency)
+                  : "–"}
+              </dd>
+            </div>
+            <div className="space-y-2">
+              <dt className={`${labelClass} text-slate-400`}>{t("guardian.budget.used")}</dt>
+              <dd className="text-sm text-slate-200">
+                {guardianBudget
+                  ? formatCurrencyValue(guardianBudget.used, guardianBudget.currency)
+                  : "–"}
+              </dd>
+            </div>
+            <div className="space-y-2">
+              <dt className={`${labelClass} text-slate-400`}>{t("guardian.budget.remaining")}</dt>
+              <dd className="text-sm text-slate-200">
+                {guardianBudget
+                  ? formatCurrencyValue(guardianBudget.remaining, guardianBudget.currency)
+                  : "–"}
+              </dd>
+            </div>
+          </dl>
+          {guardianBudget?.updatedAt ? (
+            <p className={`${subtleTextClass} text-xs`}>
+              {t("guardian.budget.updatedAt", {
+                value: formatDateTime(guardianBudget.updatedAt),
+              })}
+            </p>
+          ) : null}
+        </div>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className={`${labelClass} text-slate-300`}>{t("guardian.alerts.heading")}</h4>
+            <span className={`${badgeClass} bg-slate-900/70 text-slate-300`}>
+              {guardianAlerts.length}
+            </span>
+          </div>
+          {guardianStreamError ? (
+            <p className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
+              {t("guardian.alerts.streamError")}
+            </p>
+          ) : null}
+          {guardianAlerts.length === 0 ? (
+            <p className={`${subtleTextClass} text-sm`}>
+              {guardianLoading
+                ? t("guardian.alerts.loading")
+                : guardianError
+                  ? t("guardian.alerts.streamError")
+                  : t("guardian.alerts.empty")}
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {guardianAlerts.map((alert) => {
+                const submissionState = guardianSubmissions[alert.id];
+                const isPending = submissionState === "pending";
+                const replayHref =
+                  alert.replayUrl ??
+                  alert.detailsUrl ??
+                  (alert.traceId ? `/episodes/${alert.traceId}` : null);
+                const showApproval = alert.requireApproval && alert.status === "open";
+                return (
+                  <li
+                    key={alert.id}
+                    className={`${insetSurfaceClass} border border-slate-800/70 bg-slate-950/50 p-4`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-2">
+                        <p className="text-sm text-slate-100">{alert.message}</p>
+                        <div className="flex flex-wrap gap-2">
+                          <span
+                            className={`${badgeClass} ${GUARDIAN_SEVERITY_TONES[alert.severity]}`}
+                          >
+                            {t(`guardian.alerts.severity.${alert.severity}`)}
+                          </span>
+                          <span
+                            className={`${badgeClass} ${GUARDIAN_ALERT_STATUS_TONES[alert.status]}`}
+                          >
+                            {t(`guardian.alerts.status.${alert.status}`)}
+                          </span>
+                        </div>
+                        <p className={`${subtleTextClass} text-xs`}>
+                          {formatDateTime(alert.updatedAt ?? alert.createdAt)}
+                        </p>
+                      </div>
+                      {replayHref ? (
+                        <a
+                          href={replayHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={`${outlineButtonClass} px-3 py-1.5 text-xs`}
+                        >
+                          {t("guardian.alerts.replay")}
+                        </a>
+                      ) : null}
+                    </div>
+                    {showApproval ? (
+                      <div className="flex flex-wrap gap-3 pt-3">
+                        <button
+                          type="button"
+                          onClick={() => handleGuardianDecision(alert.id, "approve")}
+                          disabled={isPending}
+                          className={`${primaryButtonClass} px-3 py-1.5 text-xs`}
+                        >
+                          {t("guardian.alerts.approve")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleGuardianDecision(alert.id, "reject")}
+                          disabled={isPending}
+                          className={`${outlineButtonClass} px-3 py-1.5 text-xs`}
+                        >
+                          {t("guardian.alerts.reject")}
+                        </button>
+                      </div>
+                    ) : null}
+                    {submissionState === "success" ? (
+                      <p className={`${subtleTextClass} pt-2 text-xs`}>
+                        {t("guardian.alerts.submitted")}
+                      </p>
+                    ) : null}
+                    {submissionState === "error" ? (
+                      <p className="pt-2 text-xs text-rose-200">{t("guardian.alerts.error")}</p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="run-stats-title"
+        className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
+        data-testid="run-stats-panel"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h3 id="run-stats-title" className={headingClass}>
+            {t("chat.metrics.heading")}
+          </h3>
+          <span className={`${badgeClass} ${statusTone} bg-transparent normal-case`}>
+            {statusText}
+          </span>
+        </div>
+        <dl className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.traceId")}</dt>
+            <dd className="font-mono text-sm text-slate-200">{traceId ?? "–"}</dd>
+          </div>
+          <div className="space-y-2">
+            <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.progress")}</dt>
+            <dd className="text-sm text-slate-200">
+              {typeof progressPct === "number" ? `${Math.round(progressPct * 100)}%` : "–"}
+            </dd>
+          </div>
+          <div className="space-y-2">
+            <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.latency")}</dt>
+            <dd className="text-sm text-slate-200">
+              {metrics.latency > 0 ? `${metrics.latency.toFixed(0)} ms` : "–"}
+            </dd>
+          </div>
+          <div className="space-y-2">
+            <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.cost")}</dt>
+            <dd className="text-sm text-slate-200">
+              {metrics.cost > 0 ? metrics.cost.toFixed(4) : "–"}
+            </dd>
+          </div>
+          <div className="space-y-2">
+            <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.tokens")}</dt>
+            <dd className="text-sm text-slate-200">
+              {metrics.tokens > 0 ? metrics.tokens.toLocaleString() : "–"}
+            </dd>
+          </div>
+        </dl>
+        {runError ? (
+          <p className="rounded-2xl border border-orange-500/50 bg-orange-500/10 px-4 py-3 text-sm text-orange-200">
+            {runError}
+          </p>
+        ) : (
+          <p className={`${subtleTextClass} text-xs`}>{t("chat.metrics.streamingNotice")}</p>
+        )}
+      </section>
+
+      <section
+        aria-labelledby="raw-response-title"
+        className={`${panelSurfaceClass} space-y-4 p-6 sm:p-7`}
+        data-testid="raw-response-panel"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h3 id="raw-response-title" className={headingClass}>
+            {t("chat.latestResponse")}
+          </h3>
+          <button
+            type="button"
+            onClick={() => setDebugOpen((value) => !value)}
+            className={`${outlineButtonClass} px-3 py-1 text-xs`}
+          >
+            {debugOpen ? t("panels.plan.collapse") : t("panels.plan.expand")}
+          </button>
+        </div>
+        {debugOpen ? (
+          <pre className="max-h-[28rem] overflow-auto rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 text-xs leading-relaxed text-slate-200">
+            {lastEvent ? JSON.stringify(lastEvent, null, 2) : t("chat.noResponse")}
+          </pre>
+        ) : (
+          <p className={`${subtleTextClass} text-xs`}>
+            {lastEvent ? t("chat.metrics.streamingNotice") : t("chat.noResponse")}
+          </p>
+        )}
+      </section>
+
+      <section className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`} data-testid="plan-panel">
+        <PlanTimeline
+          events={planEvents}
+          filter={planFilter}
+          collapsed={planCollapsed}
+          onFilterChange={setPlanFilter}
+          onToggleCollapse={() => setPlanCollapsed((value) => !value)}
+          labels={planLabels}
+        />
+      </section>
+
+      <section
+        className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
+        data-testid="skill-panel-wrapper"
+      >
+        <SkillPanel
+          events={skillEvents}
+          filter={skillFilter}
+          collapsed={skillCollapsed}
+          onFilterChange={setSkillFilter}
+          onToggleCollapse={() => setSkillCollapsed((value) => !value)}
+          labels={skillLabels}
+        />
+      </section>
+    </>
+  );
+
+  const chatPanel = (
+    <section
+      aria-labelledby="tab-chat conversation-title"
+      className={`${panelSurfaceClass} space-y-6 p-6 sm:p-8`}
+      data-testid="conversation-panel"
+      id="chat-panel"
+      role="tabpanel"
+    >
+      <h3 id="conversation-title" className="sr-only">
+        {t("conversation.heading")}
+      </h3>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className={`${badgeClass} ${statusTone} bg-transparent normal-case`}>
+          {statusText}
+        </span>
+        {traceId ? (
+          <span className="font-mono text-xs text-slate-400 sm:text-sm">{traceId}</span>
+        ) : null}
+      </div>
+
+      <ChatMessageList messages={chatHistory} isRunning={runStatus === "running"} />
+
+      {finalPreview ? (
+        <div className={`${insetSurfaceClass} border border-sky-500/40 bg-sky-500/5 p-4`}>
+          <div className={`${labelClass} text-sky-200`}>{t("conversation.finalOutputTitle")}</div>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">{finalPreview}</p>
+        </div>
+      ) : null}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <label htmlFor="prompt" className={`${labelClass} text-slate-300`}>
+          {t("chat.inputLabel")}
+        </label>
+        <textarea
+          id="prompt"
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              void handleRun();
+            }
+          }}
+          placeholder={t("chat.placeholder")}
+          className={`${inputSurfaceClass} min-h-[9rem] w-full resize-y`}
+        />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            type="submit"
+            disabled={runStatus === "running" || runStatus === "awaiting-confirmation"}
+            className={`${primaryButtonClass} w-full sm:w-auto`}
+          >
+            {runStatus === "running"
+              ? t("chat.submit.running")
+              : runStatus === "awaiting-confirmation"
+                ? t("chat.submit.confirming")
+                : t("chat.submit.run")}
+          </button>
+          <span className={`${subtleTextClass} text-sm`}>{statusText}</span>
+        </div>
+      </form>
+    </section>
+  );
+
+  const logflowPanel = (
+    <section
+      className={`${panelSurfaceClass} p-6 sm:p-8`}
+      data-testid="logflow-panel"
+      id="logflow-panel"
+      role="tabpanel"
+      aria-labelledby="tab-logflow"
+    >
+      <LogFlowPanel traceId={traceId} />
+    </section>
+  );
+
+  const sidebarDrawerId = "mobile-sidebar-drawer";
+  const insightsDrawerId = "mobile-insights-drawer";
+  const activePanel = activeTab === "chat" ? chatPanel : logflowPanel;
+
   return (
     <div className={shellClass} data-testid="chat-shell">
       <header className={`${headerSurfaceClass} px-6 py-8 sm:px-8`} data-testid="chat-header">
@@ -1273,23 +1699,31 @@ const HomePage: NextPage = () => {
 
       <main className={`${pageContainerClass} space-y-8`} data-testid="chat-main">
         <nav
-          aria-label={t("layout.tabs.chat")}
+          aria-label={`${t("layout.tabs.chat")} / ${t("layout.tabs.logflow")}`}
           className={`${pillGroupClass} mx-auto max-w-md`}
           data-testid="chat-nav"
+          role="tablist"
         >
           {tabItems.map((tab) => {
             const selected = activeTab === tab.id;
+            const tabId = `tab-${tab.id}`;
+            const panelId = tab.id === "chat" ? "chat-panel" : "logflow-panel";
             return (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                aria-pressed={selected}
+                role="tab"
+                id={tabId}
+                aria-controls={panelId}
+                aria-selected={selected}
+                tabIndex={selected ? 0 : -1}
                 className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${
                   selected
                     ? "bg-sky-400 text-slate-950 shadow-[0_12px_30px_rgba(56,189,248,0.35)]"
                     : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
                 }`}
+                data-testid={`tab-button-${tab.id}`}
               >
                 {tab.label}
               </button>
@@ -1297,406 +1731,135 @@ const HomePage: NextPage = () => {
           })}
         </nav>
 
-        {activeTab === "chat" ? (
-          <div
-            className="mx-auto grid w-full max-w-6xl gap-6 xl:grid-cols-[260px_minmax(0,1fr)_320px]"
-            data-testid="chat-layout"
+        <div
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between xl:hidden"
+          data-testid="mobile-pane-toggles"
+        >
+          <button
+            type="button"
+            className={`${outlineButtonClass} w-full sm:w-auto`}
+            onClick={() => {
+              setSidebarOpen(true);
+              setInsightsOpen(false);
+            }}
+            aria-controls={sidebarDrawerId}
+            aria-expanded={sidebarOpen}
+            aria-haspopup="dialog"
+            data-testid="chat-sidebar-toggle"
           >
-            <aside className="space-y-6" data-testid="chat-sidebar">
-              <section className={`${panelSurfaceClass} space-y-4 p-5 sm:p-6`}>
-                <div className="space-y-1">
-                  <h3 className={headingClass}>{t("conversation.heading")}</h3>
-                  <p className={`${subtleTextClass} text-xs sm:text-sm`}>
-                    {traceId
-                      ? t("conversation.traceNotice", { traceId })
-                      : t("conversation.traceNotice", { traceId: "…" })}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-3 text-xs sm:flex-row sm:items-center sm:justify-between sm:text-sm">
-                  {traceId ? (
-                    <span className="flex items-center gap-2 truncate text-sky-200">
-                      <span className={`${badgeClass} bg-sky-500/10 text-sky-100`}>episodes</span>
-                      <span className="truncate text-slate-200">episodes/{traceId}.jsonl</span>
-                    </span>
-                  ) : null}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {traceId ? (
-                      <a
-                        className={`${outlineButtonClass} px-3 py-1 text-xs sm:text-sm`}
-                        href={`/api/episodes/${traceId}`}
-                      >
-                        {t("conversation.downloadJsonl")}
-                      </a>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={handleSaveConversation}
-                      disabled={disableSave}
-                      className={`${primaryButtonClass} px-3 py-1 text-xs sm:text-sm`}
-                    >
-                      {t("conversation.saveButton")}
-                    </button>
-                  </div>
-                </div>
-              </section>
+            {t("conversation.heading")}
+          </button>
+          <button
+            type="button"
+            className={`${outlineButtonClass} w-full sm:w-auto`}
+            onClick={() => {
+              setInsightsOpen(true);
+              setSidebarOpen(false);
+            }}
+            aria-controls={insightsDrawerId}
+            aria-expanded={insightsOpen}
+            aria-haspopup="dialog"
+            data-testid="chat-insights-toggle"
+          >
+            {t("guardian.heading")}
+          </button>
+        </div>
 
-              {draftInput ? (
-                <section className={`${panelSurfaceClass} space-y-3 p-5 sm:p-6`}>
-                  <div className={`${labelClass} text-slate-400`}>
-                    {t("conversation.draftLabel")}
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm text-slate-200">{draftInput}</p>
-                </section>
-              ) : null}
-            </aside>
+        <div
+          className="mx-auto grid w-full max-w-6xl gap-6 xl:grid-cols-[280px_minmax(360px,1fr)_320px]"
+          data-testid="chat-layout"
+        >
+          <aside
+            className="hidden xl:flex xl:flex-col xl:space-y-6"
+            data-testid="chat-sidebar"
+            aria-label={t("conversation.heading")}
+          >
+            {renderSidebar()}
+          </aside>
 
-            <section
-              aria-labelledby="conversation-title"
-              className={`${panelSurfaceClass} space-y-6 p-6 sm:p-8`}
-              data-testid="conversation-panel"
+          <div className="min-w-0">{activePanel}</div>
+
+          <aside
+            className="hidden xl:flex xl:flex-col xl:space-y-6"
+            data-testid="chat-insights"
+            aria-label={t("guardian.heading")}
+          >
+            {renderInsights()}
+          </aside>
+        </div>
+
+        {sidebarOpen ? (
+          <div
+            className="fixed inset-0 z-40 flex xl:hidden"
+            role="presentation"
+            data-testid="chat-sidebar-sheet-backdrop"
+          >
+            <div
+              className="absolute inset-0 bg-slate-950/80"
+              aria-hidden="true"
+              onClick={() => setSidebarOpen(false)}
+            />
+            <div
+              ref={sidebarSheetRef}
+              className="relative flex h-full w-full max-w-xs flex-col overflow-y-auto bg-slate-950 p-6 shadow-xl outline-none sm:max-w-sm"
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("conversation.heading")}
+              id={sidebarDrawerId}
+              tabIndex={-1}
+              data-testid="chat-sidebar-sheet"
             >
-              <h3 id="conversation-title" className="sr-only">
-                {t("conversation.heading")}
-              </h3>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className={`${badgeClass} ${statusTone} bg-transparent normal-case`}>
-                  {statusText}
-                </span>
-                {traceId ? (
-                  <span className="font-mono text-xs text-slate-400 sm:text-sm">{traceId}</span>
-                ) : null}
+              <div className="mb-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(false)}
+                  className={`${outlineButtonClass} px-3 py-1 text-xs`}
+                  aria-label={`${t("conversation.heading")} ${t("panels.plan.collapse")}`}
+                >
+                  {t("panels.plan.collapse")}
+                </button>
               </div>
-
-              <ChatMessageList messages={chatHistory} isRunning={runStatus === "running"} />
-
-              {finalPreview ? (
-                <div className={`${insetSurfaceClass} border border-sky-500/40 bg-sky-500/5 p-4`}>
-                  <div className={`${labelClass} text-sky-200`}>
-                    {t("conversation.finalOutputTitle")}
-                  </div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">{finalPreview}</p>
-                </div>
-              ) : null}
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <label htmlFor="prompt" className={`${labelClass} text-slate-300`}>
-                  {t("chat.inputLabel")}
-                </label>
-                <textarea
-                  id="prompt"
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                      event.preventDefault();
-                      void handleRun();
-                    }
-                  }}
-                  placeholder={t("chat.placeholder")}
-                  className={`${inputSurfaceClass} min-h-[9rem] w-full resize-y`}
-                />
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <button
-                    type="submit"
-                    disabled={runStatus === "running" || runStatus === "awaiting-confirmation"}
-                    className={`${primaryButtonClass} w-full sm:w-auto`}
-                  >
-                    {runStatus === "running"
-                      ? t("chat.submit.running")
-                      : runStatus === "awaiting-confirmation"
-                        ? t("chat.submit.confirming")
-                        : t("chat.submit.run")}
-                  </button>
-                  <span className={`${subtleTextClass} text-sm`}>{statusText}</span>
-                </div>
-              </form>
-            </section>
-
-            <aside className="space-y-6" data-testid="chat-insights">
-              <section
-                aria-labelledby="guardian-panel-title"
-                className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
-                data-testid="guardian-panel"
-              >
-                <div className="space-y-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <h3 id="guardian-panel-title" className={headingClass}>
-                        {t("guardian.heading")}
-                      </h3>
-                      <p className={`${subtleTextClass} text-xs`}>{t("guardian.subtitle")}</p>
-                    </div>
-                    <span className={`${badgeClass} ${guardianStatusTone} normal-case`}>
-                      {guardianStatusLabel}
-                    </span>
-                  </div>
-                  {guardianError ? (
-                    <p className="text-xs text-rose-200">
-                      {t("guardian.error.detail", { message: guardianError })}
-                    </p>
-                  ) : null}
-                  <dl className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <dt className={`${labelClass} text-slate-400`}>
-                        {t("guardian.budget.limit")}
-                      </dt>
-                      <dd className="text-sm text-slate-200">
-                        {guardianBudget
-                          ? formatCurrencyValue(guardianBudget.limit, guardianBudget.currency)
-                          : "–"}
-                      </dd>
-                    </div>
-                    <div className="space-y-2">
-                      <dt className={`${labelClass} text-slate-400`}>
-                        {t("guardian.budget.used")}
-                      </dt>
-                      <dd className="text-sm text-slate-200">
-                        {guardianBudget
-                          ? formatCurrencyValue(guardianBudget.used, guardianBudget.currency)
-                          : "–"}
-                      </dd>
-                    </div>
-                    <div className="space-y-2">
-                      <dt className={`${labelClass} text-slate-400`}>
-                        {t("guardian.budget.remaining")}
-                      </dt>
-                      <dd className="text-sm text-slate-200">
-                        {guardianBudget
-                          ? formatCurrencyValue(guardianBudget.remaining, guardianBudget.currency)
-                          : "–"}
-                      </dd>
-                    </div>
-                  </dl>
-                  {guardianBudget?.updatedAt ? (
-                    <p className={`${subtleTextClass} text-xs`}>
-                      {t("guardian.budget.updatedAt", {
-                        value: formatDateTime(guardianBudget.updatedAt),
-                      })}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h4 className={`${labelClass} text-slate-300`}>
-                      {t("guardian.alerts.heading")}
-                    </h4>
-                    <span className={`${badgeClass} bg-slate-900/70 text-slate-300`}>
-                      {guardianAlerts.length}
-                    </span>
-                  </div>
-                  {guardianStreamError ? (
-                    <p className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
-                      {t("guardian.alerts.streamError")}
-                    </p>
-                  ) : null}
-                  {guardianAlerts.length === 0 ? (
-                    <p className={`${subtleTextClass} text-sm`}>
-                      {guardianLoading
-                        ? t("guardian.alerts.loading")
-                        : guardianError
-                          ? t("guardian.alerts.streamError")
-                          : t("guardian.alerts.empty")}
-                    </p>
-                  ) : (
-                    <ul className="space-y-3">
-                      {guardianAlerts.map((alert) => {
-                        const submissionState = guardianSubmissions[alert.id];
-                        const isPending = submissionState === "pending";
-                        const replayHref =
-                          alert.replayUrl ??
-                          alert.detailsUrl ??
-                          (alert.traceId ? `/episodes/${alert.traceId}` : null);
-                        const showApproval = alert.requireApproval && alert.status === "open";
-                        return (
-                          <li
-                            key={alert.id}
-                            className={`${insetSurfaceClass} border border-slate-800/70 bg-slate-950/50 p-4`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="space-y-2">
-                                <p className="text-sm text-slate-100">{alert.message}</p>
-                                <div className="flex flex-wrap gap-2">
-                                  <span
-                                    className={`${badgeClass} ${GUARDIAN_SEVERITY_TONES[alert.severity]}`}
-                                  >
-                                    {t(`guardian.alerts.severity.${alert.severity}`)}
-                                  </span>
-                                  <span
-                                    className={`${badgeClass} ${GUARDIAN_ALERT_STATUS_TONES[alert.status]}`}
-                                  >
-                                    {t(`guardian.alerts.status.${alert.status}`)}
-                                  </span>
-                                </div>
-                                <p className={`${subtleTextClass} text-xs`}>
-                                  {formatDateTime(alert.updatedAt ?? alert.createdAt)}
-                                </p>
-                              </div>
-                              {replayHref ? (
-                                <a
-                                  href={replayHref}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className={`${outlineButtonClass} px-3 py-1.5 text-xs`}
-                                >
-                                  {t("guardian.alerts.replay")}
-                                </a>
-                              ) : null}
-                            </div>
-                            {showApproval ? (
-                              <div className="flex flex-wrap gap-3 pt-3">
-                                <button
-                                  type="button"
-                                  onClick={() => handleGuardianDecision(alert.id, "approve")}
-                                  disabled={isPending}
-                                  className={`${primaryButtonClass} px-3 py-1.5 text-xs`}
-                                >
-                                  {t("guardian.alerts.approve")}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleGuardianDecision(alert.id, "reject")}
-                                  disabled={isPending}
-                                  className={`${outlineButtonClass} px-3 py-1.5 text-xs`}
-                                >
-                                  {t("guardian.alerts.reject")}
-                                </button>
-                              </div>
-                            ) : null}
-                            {submissionState === "success" ? (
-                              <p className={`${subtleTextClass} pt-2 text-xs`}>
-                                {t("guardian.alerts.submitted")}
-                              </p>
-                            ) : null}
-                            {submissionState === "error" ? (
-                              <p className="pt-2 text-xs text-rose-200">
-                                {t("guardian.alerts.error")}
-                              </p>
-                            ) : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              </section>
-              <section
-                aria-labelledby="run-stats-title"
-                className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
-                data-testid="run-stats-panel"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <h3 id="run-stats-title" className={headingClass}>
-                    {t("chat.metrics.heading")}
-                  </h3>
-                  <span className={`${badgeClass} ${statusTone} bg-transparent normal-case`}>
-                    {statusText}
-                  </span>
-                </div>
-                <dl className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.traceId")}</dt>
-                    <dd className="font-mono text-sm text-slate-200">{traceId ?? "–"}</dd>
-                  </div>
-                  <div className="space-y-2">
-                    <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.progress")}</dt>
-                    <dd className="text-sm text-slate-200">
-                      {typeof progressPct === "number" ? `${Math.round(progressPct * 100)}%` : "–"}
-                    </dd>
-                  </div>
-                  <div className="space-y-2">
-                    <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.latency")}</dt>
-                    <dd className="text-sm text-slate-200">
-                      {metrics.latency > 0 ? `${metrics.latency.toFixed(0)} ms` : "–"}
-                    </dd>
-                  </div>
-                  <div className="space-y-2">
-                    <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.cost")}</dt>
-                    <dd className="text-sm text-slate-200">
-                      {metrics.cost > 0 ? metrics.cost.toFixed(4) : "–"}
-                    </dd>
-                  </div>
-                  <div className="space-y-2">
-                    <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.tokens")}</dt>
-                    <dd className="text-sm text-slate-200">
-                      {metrics.tokens > 0 ? metrics.tokens.toLocaleString() : "–"}
-                    </dd>
-                  </div>
-                </dl>
-                {runError ? (
-                  <p className="rounded-2xl border border-orange-500/50 bg-orange-500/10 px-4 py-3 text-sm text-orange-200">
-                    {runError}
-                  </p>
-                ) : (
-                  <p className={`${subtleTextClass} text-xs`}>
-                    {t("chat.metrics.streamingNotice")}
-                  </p>
-                )}
-              </section>
-
-              <section
-                aria-labelledby="raw-response-title"
-                className={`${panelSurfaceClass} space-y-4 p-6 sm:p-7`}
-                data-testid="raw-response-panel"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <h3 id="raw-response-title" className={headingClass}>
-                    {t("chat.latestResponse")}
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => setDebugOpen((value) => !value)}
-                    className={`${outlineButtonClass} px-3 py-1 text-xs`}
-                  >
-                    {debugOpen ? t("panels.plan.collapse") : t("panels.plan.expand")}
-                  </button>
-                </div>
-                {debugOpen ? (
-                  <pre className="max-h-[28rem] overflow-auto rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 text-xs leading-relaxed text-slate-200">
-                    {lastEvent ? JSON.stringify(lastEvent, null, 2) : t("chat.noResponse")}
-                  </pre>
-                ) : (
-                  <p className={`${subtleTextClass} text-xs`}>
-                    {lastEvent ? t("chat.metrics.streamingNotice") : t("chat.noResponse")}
-                  </p>
-                )}
-              </section>
-
-              <section
-                className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
-                data-testid="plan-panel"
-              >
-                <PlanTimeline
-                  events={planEvents}
-                  filter={planFilter}
-                  collapsed={planCollapsed}
-                  onFilterChange={setPlanFilter}
-                  onToggleCollapse={() => setPlanCollapsed((value) => !value)}
-                  labels={planLabels}
-                />
-              </section>
-
-              <section
-                className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
-                data-testid="skill-panel-wrapper"
-              >
-                <SkillPanel
-                  events={skillEvents}
-                  filter={skillFilter}
-                  collapsed={skillCollapsed}
-                  onFilterChange={setSkillFilter}
-                  onToggleCollapse={() => setSkillCollapsed((value) => !value)}
-                  labels={skillLabels}
-                />
-              </section>
-            </aside>
+              <div className="space-y-6">{renderSidebar()}</div>
+            </div>
           </div>
-        ) : (
-          <section className={`${panelSurfaceClass} p-6 sm:p-8`}>
-            <LogFlowPanel traceId={traceId} />
-          </section>
-        )}
-      </main>
+        ) : null}
 
+        {insightsOpen ? (
+          <div
+            className="fixed inset-0 z-40 flex xl:hidden"
+            role="presentation"
+            data-testid="chat-insights-sheet-backdrop"
+          >
+            <div
+              className="absolute inset-0 bg-slate-950/80"
+              aria-hidden="true"
+              onClick={() => setInsightsOpen(false)}
+            />
+            <div
+              ref={insightsSheetRef}
+              className="relative ml-auto flex h-full w-full max-w-xs flex-col overflow-y-auto bg-slate-950 p-6 shadow-xl outline-none sm:max-w-sm"
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("guardian.heading")}
+              id={insightsDrawerId}
+              tabIndex={-1}
+              data-testid="chat-insights-sheet"
+            >
+              <div className="mb-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setInsightsOpen(false)}
+                  className={`${outlineButtonClass} px-3 py-1 text-xs`}
+                  aria-label={`${t("guardian.heading")} ${t("panels.plan.collapse")}`}
+                >
+                  {t("panels.plan.collapse")}
+                </button>
+              </div>
+              <div className="space-y-6">{renderInsights()}</div>
+            </div>
+          </div>
+        ) : null}
+      </main>
       {confirmationRequest ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
           <div className={modalBackdropClass} aria-hidden="true" />
