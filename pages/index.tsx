@@ -77,15 +77,6 @@ type RunStatus = "idle" | "running" | "awaiting-confirmation" | "completed" | "e
 
 type GuardianStatusKey = GuardianBudgetStatus | "loading" | "idle" | "error";
 
-type ToastTone = "success" | "error";
-
-type ToastState = {
-  id: string;
-  tone: ToastTone;
-  message: string;
-  actionLabel?: string;
-  onAction?: () => void;
-} | null;
 
 const GUARDIAN_STATUS_TONES: Record<GuardianStatusKey, string> = {
   ok: "bg-emerald-500/10 text-emerald-200",
@@ -111,23 +102,6 @@ const GUARDIAN_ALERT_STATUS_TONES: Record<GuardianAlert["status"], string> = {
 
 const EPISODE_SKELETON_ITEMS = new Array(6).fill(null);
 
-const TOAST_TONE_STYLES: Record<
-  ToastTone,
-  { container: string; heading: string; text: string; button: string }
-> = {
-  success: {
-    container: "border-emerald-500/40 bg-emerald-500/10",
-    heading: "text-emerald-200",
-    text: "text-emerald-100/90",
-    button: "text-emerald-100/80 hover:text-emerald-50",
-  },
-  error: {
-    container: "border-rose-500/40 bg-rose-500/10",
-    heading: "text-rose-200",
-    text: "text-rose-100/90",
-    button: "text-rose-100/80 hover:text-rose-50",
-  },
-};
 
 const generateLocalId = (): string => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -278,7 +252,7 @@ const extractTokens = (payload: any): number | null => {
 
 const HomePage: NextPage = () => {
   const { t, locale } = useI18n();
-  const { ToastContainer, showToast } = useLocalToast();
+  const { ToastContainer, showToast, dismissToast } = useLocalToast();
   const [input, setInput] = useState("");
   const [runStatus, setRunStatus] = useState<RunStatus>("idle");
   const [traceId, setTraceId] = useState<string | undefined>(undefined);
@@ -316,7 +290,6 @@ const HomePage: NextPage = () => {
   const [episodeFilter, setEpisodeFilter] = useState("");
   const [draftEpisode, setDraftEpisode] = useState<EpisodeListItem | null>(null);
   const [activeEpisodeId, setActiveEpisodeId] = useState<string | null>(null);
-  const [toast, setToast] = useState<ToastState>(null);
   const [loadingEpisodeId, setLoadingEpisodeId] = useState<string | null>(null);
   const [downloadingEpisodeId, setDownloadingEpisodeId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -326,20 +299,6 @@ const HomePage: NextPage = () => {
 
   const draftInput = useMemo(() => input.trim(), [input]);
 
-  const dismissToast = useCallback(() => setToast(null), []);
-
-  const showToast = useCallback(
-    (tone: ToastTone, message: string, actionLabel?: string, onAction?: () => void) => {
-      setToast({
-        id: generateLocalId(),
-        tone,
-        message,
-        actionLabel,
-        onAction,
-      });
-    },
-    [],
-  );
 
   const refreshEpisodes = useCallback(async () => {
     setEpisodesLoading(true);
@@ -1042,13 +1001,21 @@ const HomePage: NextPage = () => {
           return next;
         });
 
-        showToast("success", t("conversation.episodes.loadSuccess", { traceId: targetTraceId }));
+        showToast({
+          title: t("toast.success.title"),
+          message: t("conversation.episodes.loadSuccess", { traceId: targetTraceId }),
+          tone: "success"
+        });
       } catch (error) {
         const message =
           error instanceof Error
             ? error.message
             : t("conversation.episodes.loadError", { traceId: targetTraceId });
-        showToast("error", message);
+        showToast({
+          title: t("toast.error.title"),
+          message,
+          tone: "error"
+        });
       } finally {
         setLoadingEpisodeId(null);
       }
@@ -1076,16 +1043,21 @@ const HomePage: NextPage = () => {
         setTimeout(() => {
           URL.revokeObjectURL(url);
         }, 0);
-        showToast(
-          "success",
-          t("conversation.episodes.downloadSuccess", { traceId: targetTraceId }),
-        );
+        showToast({
+          title: t("toast.success.title"),
+          message: t("conversation.episodes.downloadSuccess", { traceId: targetTraceId }),
+          tone: "success"
+        });
       } catch (error) {
         const message =
           error instanceof Error
             ? error.message
             : t("conversation.episodes.downloadError", { traceId: targetTraceId });
-        showToast("error", message);
+        showToast({
+          title: t("toast.error.title"),
+          message,
+          tone: "error"
+        });
       } finally {
         setDownloadingEpisodeId(null);
       }
@@ -2141,48 +2113,6 @@ const HomePage: NextPage = () => {
         </div>
       ) : null}
       <ToastContainer />
-
-      {toast ? (
-        <div
-          className={`fixed bottom-6 right-6 z-50 w-[min(360px,calc(100%-2rem))] rounded-xl border p-4 shadow-xl backdrop-blur ${TOAST_TONE_STYLES[toast.tone].container}`}
-          role="status"
-          aria-live="polite"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className={`text-sm font-semibold ${TOAST_TONE_STYLES[toast.tone].heading}`}>
-                {toast.tone === "success"
-                  ? t("conversation.episodes.toast.successTitle")
-                  : t("conversation.episodes.toast.errorTitle")}
-              </h3>
-              <p className={`mt-1 text-sm ${TOAST_TONE_STYLES[toast.tone].text}`}>
-                {toast.message}
-              </p>
-            </div>
-            <button
-              type="button"
-              className={`text-xs ${TOAST_TONE_STYLES[toast.tone].button}`}
-              onClick={dismissToast}
-            >
-              {t("conversation.episodes.toast.close")}
-            </button>
-          </div>
-          {toast.actionLabel && toast.onAction ? (
-            <div className="mt-3 flex justify-end">
-              <button
-                type="button"
-                className={`${outlineButtonClass} px-3 py-1 text-xs`}
-                onClick={() => {
-                  dismissToast();
-                  toast.onAction?.();
-                }}
-              >
-                {toast.actionLabel}
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 };

@@ -1,6 +1,8 @@
 import React from "react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+
+const vi = { fn: () => () => {} };
 
 import ChatMain from "../components/chat/ChatMain";
 import InsightsPanel from "../components/chat/InsightsPanel";
