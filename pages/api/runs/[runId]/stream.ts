@@ -27,8 +27,10 @@ function toSseData(event: {
 }
 
 function writeSse(res: NextApiResponse, event: { type: string; data: any }) {
-  const payload = JSON.stringify(event.data ?? {});
-  res.write(`event: ${event.type}\n`);
+  const payload = JSON.stringify({
+    ...event.data,
+    type: event.type,
+  });
   res.write(`data: ${payload}\n\n`);
 }
 

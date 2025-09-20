@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 
 import {
   SkillNotFoundError,
@@ -22,10 +22,9 @@ export interface SkillsAnalysisResult {
 export class SkillsService {
   private readonly repository: SkillsRepository;
 
-  constructor(private readonly database: DatabaseService) {
-    this.repository = database.db
-      ? createSqliteSkillsRepository(database.db)
-      : createInMemorySkillsRepository();
+  constructor(@Optional() @Inject(DatabaseService) private readonly database?: DatabaseService) {
+    const db = database?.db ?? null;
+    this.repository = db ? createSqliteSkillsRepository(db) : createInMemorySkillsRepository();
   }
 
   async list(): Promise<SkillRecord[]> {
@@ -49,7 +48,7 @@ export class SkillsService {
     const summariser = new HeuristicSkillSummariser();
     const result = await runDefaultSkillAnalysis(summariser, {
       skillsRepository: this.repository,
-      db: this.database.db ?? undefined,
+      db: this.database?.db ?? undefined,
     });
     return { analyzed: result.analyzedEvents, candidates: result.candidates };
   }

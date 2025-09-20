@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, desc } from "drizzle-orm";
 import { Observable, ReplaySubject } from "rxjs";
 import {
   runLoop,
@@ -238,6 +238,26 @@ export class RunsService {
       throw new NotFoundException(`run ${runId} not found`);
     }
     return this.mapRun(row);
+  }
+
+  async listRecentRuns(limit = 50): Promise<RunSummary[]> {
+    if (limit <= 0) {
+      return [];
+    }
+
+    if (this.database.isMemoryMode()) {
+      const rows = this.database.listRuns(limit);
+      return rows.map((row) => this.mapRun(row));
+    }
+
+    const rows = this.database
+      .db!.select()
+      .from(runs)
+      .orderBy(desc(runs.startedAt))
+      .limit(limit)
+      .all();
+
+    return rows.map((row) => this.mapRun(row));
   }
 
   async getRunEvents(runId: string, since?: number): Promise<RunEventDto[]> {

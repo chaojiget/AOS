@@ -62,6 +62,14 @@ interface StreamEventEnvelope {
   data?: any;
 }
 
+interface EpisodeListItem {
+  trace_id: string;
+  status: string;
+  started_at: string;
+  finished_at?: string | null;
+  goal?: string | null;
+}
+
 interface ConfirmationRequestState {
   id: string;
   ts: string;
@@ -272,12 +280,36 @@ const HomePage: NextPage = () => {
   const [guardianSubmissions, setGuardianSubmissions] = useState<
     Record<string, "pending" | "success" | "error">
   >({});
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [episodes, setEpisodes] = useState<EpisodeListItem[]>([]);
+  const [episodesLoading, setEpisodesLoading] = useState(false);
+  const [episodesError, setEpisodesError] = useState<string | null>(null);
+  const [episodeFilter, setEpisodeFilter] = useState("");
   const eventSourceRef = useRef<EventSource | null>(null);
   const retryTimerRef = useRef<number | null>(null);
   const retryAttemptRef = useRef(0);
   const currentTraceRef = useRef<string | undefined>(undefined);
 
   const draftInput = useMemo(() => input.trim(), [input]);
+
+  const refreshEpisodes = useCallback(async () => {
+    setEpisodesLoading(true);
+    setEpisodesError(null);
+    try {
+      const response = await fetch("/api/episodes");
+      if (!response.ok) {
+        throw new Error(`failed (${response.status})`);
+      }
+      const payload = await response.json();
+      const items: EpisodeListItem[] = payload?.data?.items ?? [];
+      setEpisodes(items);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setEpisodesError(message);
+    } finally {
+      setEpisodesLoading(false);
+    }
+  }, []);
 
   const resetForRun = useCallback(() => {
     setPlanEvents([]);
@@ -306,6 +338,26 @@ const HomePage: NextPage = () => {
   }, []);
 
   useEffect(() => () => closeStream(), [closeStream]);
+
+  useEffect(() => {
+    refreshEpisodes().catch(() => {});
+  }, [refreshEpisodes]);
+
+  const appendSystemMessage = useCallback(
+    (content: string, status: ChatHistoryMessage["status"] = "done") => {
+      setChatHistory((history) => [
+        ...history,
+        {
+          id: generateLocalId(),
+          role: "system",
+          content,
+          ts: new Date().toISOString(),
+          status,
+        },
+      ]);
+    },
+    [],
+  );
 
   useEffect(() => {
     let active = true;
@@ -816,6 +868,7 @@ const HomePage: NextPage = () => {
       ts: createdAt,
       status: "pending",
       traceId,
+      msgId: localId,
     };
 
     setChatHistory([...previousHistory, userMessage]);
@@ -827,6 +880,7 @@ const HomePage: NextPage = () => {
     try {
       const serialisedHistory = serialiseHistoryForRequest(previousHistory);
       const messagesForRequest = serialisedHistory.map(({ role, content }) => ({ role, content }));
+      const shouldReuseTrace = runStatus === "awaiting-confirmation" && previousTraceId;
 
       const response = await fetch("/api/run", {
         method: "POST",
@@ -835,7 +889,7 @@ const HomePage: NextPage = () => {
           message: draftInput,
           messages: messagesForRequest,
           history: serialisedHistory,
-          ...(previousTraceId ? { trace_id: previousTraceId } : {}),
+          ...(shouldReuseTrace ? { trace_id: previousTraceId } : {}),
         }),
       });
 
@@ -1169,6 +1223,41 @@ const HomePage: NextPage = () => {
     [t],
   );
 
+  const finalPreview = useMemo(() => {
+    if (finalOutput == null) {
+      return null;
+    }
+    if (typeof finalOutput === "string") {
+      return finalOutput;
+    }
+    if (Array.isArray(finalOutput)) {
+      return finalOutput
+        .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+        .join("\n");
+    }
+    if (typeof finalOutput === "object") {
+      const output = finalOutput as Record<string, unknown>;
+      if (typeof output.text === "string") {
+        return output.text;
+      }
+      if (typeof output.message === "string") {
+        return output.message;
+      }
+    }
+    return null;
+  }, [finalOutput]);
+
+  const filteredEpisodes = useMemo(() => {
+    const keyword = episodeFilter.trim().toLowerCase();
+    if (!keyword) {
+      return episodes;
+    }
+    return episodes.filter((item) => {
+      const text = `${item.trace_id} ${item.goal ?? ""} ${item.status}`.toLowerCase();
+      return text.includes(keyword);
+    });
+  }, [episodeFilter, episodes]);
+
   return (
     <div className={shellClass} data-testid="chat-shell">
       <header className={`${headerSurfaceClass} px-6 py-8 sm:px-8`} data-testid="chat-header">
@@ -1210,70 +1299,82 @@ const HomePage: NextPage = () => {
 
         {activeTab === "chat" ? (
           <div
-            className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]"
+            className="mx-auto grid w-full max-w-6xl gap-6 xl:grid-cols-[260px_minmax(0,1fr)_320px]"
             data-testid="chat-layout"
           >
-            <section
-              aria-labelledby="conversation-title"
-              className={`${panelSurfaceClass} space-y-6 p-6 sm:p-8`}
-              data-testid="conversation-panel"
-            >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-2">
-                  <h3 id="conversation-title" className={headingClass}>
-                    {t("conversation.heading")}
-                  </h3>
+            <aside className="space-y-6" data-testid="chat-sidebar">
+              <section className={`${panelSurfaceClass} space-y-4 p-5 sm:p-6`}>
+                <div className="space-y-1">
+                  <h3 className={headingClass}>{t("conversation.heading")}</h3>
                   <p className={`${subtleTextClass} text-xs sm:text-sm`}>
                     {traceId
                       ? t("conversation.traceNotice", { traceId })
                       : t("conversation.traceNotice", { traceId: "…" })}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-3 text-xs sm:text-sm">
+                <div className="flex flex-col gap-3 text-xs sm:flex-row sm:items-center sm:justify-between sm:text-sm">
                   {traceId ? (
                     <span className="flex items-center gap-2 truncate text-sky-200">
                       <span className={`${badgeClass} bg-sky-500/10 text-sky-100`}>episodes</span>
                       <span className="truncate text-slate-200">episodes/{traceId}.jsonl</span>
+                    </span>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {traceId ? (
                       <a
-                        className="text-sky-300 underline decoration-dotted underline-offset-4 transition hover:text-sky-100"
+                        className={`${outlineButtonClass} px-3 py-1 text-xs sm:text-sm`}
                         href={`/api/episodes/${traceId}`}
                       >
                         {t("conversation.downloadJsonl")}
                       </a>
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={handleSaveConversation}
-                    disabled={disableSave}
-                    className={`${outlineButtonClass} whitespace-nowrap`}
-                  >
-                    {t("conversation.saveButton")}
-                  </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={handleSaveConversation}
+                      disabled={disableSave}
+                      className={`${primaryButtonClass} px-3 py-1 text-xs sm:text-sm`}
+                    >
+                      {t("conversation.saveButton")}
+                    </button>
+                  </div>
                 </div>
+              </section>
+
+              {draftInput ? (
+                <section className={`${panelSurfaceClass} space-y-3 p-5 sm:p-6`}>
+                  <div className={`${labelClass} text-slate-400`}>
+                    {t("conversation.draftLabel")}
+                  </div>
+                  <p className="whitespace-pre-wrap text-sm text-slate-200">{draftInput}</p>
+                </section>
+              ) : null}
+            </aside>
+
+            <section
+              aria-labelledby="conversation-title"
+              className={`${panelSurfaceClass} space-y-6 p-6 sm:p-8`}
+              data-testid="conversation-panel"
+            >
+              <h3 id="conversation-title" className="sr-only">
+                {t("conversation.heading")}
+              </h3>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className={`${badgeClass} ${statusTone} bg-transparent normal-case`}>
+                  {statusText}
+                </span>
+                {traceId ? (
+                  <span className="font-mono text-xs text-slate-400 sm:text-sm">{traceId}</span>
+                ) : null}
               </div>
 
               <ChatMessageList messages={chatHistory} isRunning={runStatus === "running"} />
 
-              {draftInput ? (
-                <div
-                  className={`${insetSurfaceClass} border-dashed border-slate-700/60 bg-slate-950/40 p-4`}
-                >
-                  <div className={`${labelClass} text-slate-400`}>
-                    {t("conversation.draftLabel")}
-                  </div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-200">{draftInput}</p>
-                </div>
-              ) : null}
-
-              {finalOutput != null ? (
-                <div className="space-y-3">
-                  <div className={`${labelClass} text-slate-400`}>
+              {finalPreview ? (
+                <div className={`${insetSurfaceClass} border border-sky-500/40 bg-sky-500/5 p-4`}>
+                  <div className={`${labelClass} text-sky-200`}>
                     {t("conversation.finalOutputTitle")}
                   </div>
-                  <pre className="max-h-72 overflow-auto rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 text-xs leading-relaxed text-slate-200">
-                    {JSON.stringify(finalOutput, null, 2)}
-                  </pre>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">{finalPreview}</p>
                 </div>
               ) : null}
 
@@ -1311,7 +1412,7 @@ const HomePage: NextPage = () => {
               </form>
             </section>
 
-            <div className="grid gap-6" data-testid="sidebar-panels">
+            <aside className="space-y-6" data-testid="chat-insights">
               <section
                 aria-labelledby="guardian-panel-title"
                 className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
@@ -1541,13 +1642,23 @@ const HomePage: NextPage = () => {
                   <h3 id="raw-response-title" className={headingClass}>
                     {t("chat.latestResponse")}
                   </h3>
-                  {lastEvent ? (
-                    <span className={`${badgeClass} bg-sky-500/10 text-sky-100`}>updated</span>
-                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setDebugOpen((value) => !value)}
+                    className={`${outlineButtonClass} px-3 py-1 text-xs`}
+                  >
+                    {debugOpen ? t("panels.plan.collapse") : t("panels.plan.expand")}
+                  </button>
                 </div>
-                <pre className="max-h-[28rem] overflow-auto rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 text-xs leading-relaxed text-slate-200">
-                  {lastEvent ? JSON.stringify(lastEvent, null, 2) : t("chat.noResponse")}
-                </pre>
+                {debugOpen ? (
+                  <pre className="max-h-[28rem] overflow-auto rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 text-xs leading-relaxed text-slate-200">
+                    {lastEvent ? JSON.stringify(lastEvent, null, 2) : t("chat.noResponse")}
+                  </pre>
+                ) : (
+                  <p className={`${subtleTextClass} text-xs`}>
+                    {lastEvent ? t("chat.metrics.streamingNotice") : t("chat.noResponse")}
+                  </p>
+                )}
               </section>
 
               <section
@@ -1577,7 +1688,7 @@ const HomePage: NextPage = () => {
                   labels={skillLabels}
                 />
               </section>
-            </div>
+            </aside>
           </div>
         ) : (
           <section className={`${panelSurfaceClass} p-6 sm:p-8`}>

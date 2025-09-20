@@ -7,6 +7,7 @@ import { AgentModule } from "./agent/agent.module";
 import { SkillsModule } from "./skills/skills.module";
 import { McpModule } from "./mcp/mcp.module";
 import { HealthModule } from "./health/health.module";
+import { EpisodesModule } from "./episodes/episodes.module";
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { HealthModule } from "./health/health.module";
     SkillsModule,
     McpModule,
     HealthModule,
+    EpisodesModule,
   ],
 })
 export class AppModule {}

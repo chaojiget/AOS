@@ -235,6 +235,23 @@ export class DatabaseService implements OnModuleDestroy {
     return match ? { ...match } : undefined;
   }
 
+  listRuns(limit = 50): RunRow[] {
+    if (!this.memory) return [];
+    if (limit <= 0) {
+      return [];
+    }
+    const rows = Array.from(this.memory.runs.values()).sort(
+      (a, b) => b.startedAt.getTime() - a.startedAt.getTime(),
+    );
+    return rows.slice(0, limit).map((row) => ({
+      ...row,
+      startedAt: new Date(row.startedAt),
+      finishedAt: row.finishedAt ? new Date(row.finishedAt) : null,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+    }));
+  }
+
   insertRunEvent(record: RunEventInsert): void {
     if (!this.memory) return;
     const rows = this.memory.runEvents.get(record.runId) ?? [];
