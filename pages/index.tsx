@@ -10,6 +10,15 @@ import PlanTimeline, {
 import SkillPanel, { type SkillEvent } from "../components/SkillPanel";
 import { useI18n } from "../lib/i18n/index";
 import {
+  fetchGuardianBudget,
+  subscribeGuardianAlerts,
+  submitGuardianApproval,
+  type GuardianAlert,
+  type GuardianAlertEvent,
+  type GuardianBudget,
+  type GuardianBudgetStatus,
+} from "../lib/guardian/index";
+import {
   badgeClass,
   headerSurfaceClass,
   headingClass,
@@ -62,6 +71,30 @@ interface ConfirmationRequestState {
 }
 
 type RunStatus = "idle" | "running" | "awaiting-confirmation" | "completed" | "error";
+
+type GuardianStatusKey = GuardianBudgetStatus | "loading" | "idle" | "error";
+
+const GUARDIAN_STATUS_TONES: Record<GuardianStatusKey, string> = {
+  ok: "bg-emerald-500/10 text-emerald-200",
+  warning: "bg-amber-500/10 text-amber-200",
+  critical: "bg-rose-500/10 text-rose-200",
+  loading: "bg-slate-700/30 text-slate-200",
+  idle: "bg-slate-700/30 text-slate-200",
+  error: "bg-rose-500/10 text-rose-200",
+};
+
+const GUARDIAN_SEVERITY_TONES: Record<GuardianAlert["severity"], string> = {
+  info: "bg-slate-700/40 text-slate-100",
+  warning: "bg-amber-500/10 text-amber-200",
+  critical: "bg-rose-500/10 text-rose-200",
+};
+
+const GUARDIAN_ALERT_STATUS_TONES: Record<GuardianAlert["status"], string> = {
+  open: "bg-sky-500/10 text-sky-200",
+  approved: "bg-emerald-500/10 text-emerald-200",
+  rejected: "bg-rose-500/10 text-rose-200",
+  resolved: "bg-slate-700/40 text-slate-100",
+};
 
 const generateLocalId = (): string => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -230,6 +263,14 @@ const HomePage: NextPage = () => {
     null,
   );
   const [progressPct, setProgressPct] = useState<number | null>(null);
+  const [guardianBudget, setGuardianBudget] = useState<GuardianBudget | null>(null);
+  const [guardianAlerts, setGuardianAlerts] = useState<GuardianAlert[]>([]);
+  const [guardianLoading, setGuardianLoading] = useState(true);
+  const [guardianError, setGuardianError] = useState<string | null>(null);
+  const [guardianStreamError, setGuardianStreamError] = useState<string | null>(null);
+  const [guardianSubmissions, setGuardianSubmissions] = useState<
+    Record<string, "pending" | "success" | "error">
+  >({});
   const eventSourceRef = useRef<EventSource | null>(null);
   const retryTimerRef = useRef<number | null>(null);
   const retryAttemptRef = useRef(0);
@@ -264,6 +305,68 @@ const HomePage: NextPage = () => {
   }, []);
 
   useEffect(() => () => closeStream(), [closeStream]);
+
+  useEffect(() => {
+    let active = true;
+    setGuardianLoading(true);
+    fetchGuardianBudget()
+      .then((budget) => {
+        if (!active) return;
+        setGuardianBudget(budget);
+        setGuardianError(null);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setGuardianError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (active) {
+          setGuardianLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const upsertGuardianAlert = useCallback((updated: GuardianAlert) => {
+    setGuardianAlerts((current) => {
+      const index = current.findIndex((item) => item.id === updated.id);
+      const next =
+        index >= 0
+          ? current.map((item, position) => (position === index ? { ...item, ...updated } : item))
+          : [...current, updated];
+      next.sort((a, b) => {
+        const aTime = Date.parse(a.updatedAt ?? a.createdAt ?? "");
+        const bTime = Date.parse(b.updatedAt ?? b.createdAt ?? "");
+        return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
+      });
+      return next.slice(0, 10);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return () => {};
+    }
+    const unsubscribe = subscribeGuardianAlerts({
+      onEvent: (event: GuardianAlertEvent) => {
+        if (event.budget) {
+          setGuardianBudget(event.budget);
+          setGuardianError(null);
+          setGuardianLoading(false);
+        }
+        if (event.alert) {
+          upsertGuardianAlert(event.alert);
+        }
+        setGuardianStreamError(null);
+      },
+      onError: (error) => {
+        setGuardianStreamError(error.message);
+      },
+    });
+    return unsubscribe;
+  }, [upsertGuardianAlert]);
 
   const handleStreamEvent = useCallback(
     (event: StreamEventEnvelope) => {
@@ -789,6 +892,34 @@ const HomePage: NextPage = () => {
     [closeStream, confirmationRequest, t],
   );
 
+  const handleGuardianDecision = useCallback(
+    (alertId: string, decision: "approve" | "reject") => {
+      setGuardianSubmissions((previous) => ({ ...previous, [alertId]: "pending" }));
+      void submitGuardianApproval({ alertId, decision })
+        .then((result) => {
+          if (result.alert) {
+            upsertGuardianAlert(result.alert);
+          } else {
+            setGuardianAlerts((current) => {
+              const index = current.findIndex((item) => item.id === alertId);
+              if (index === -1) {
+                return current;
+              }
+              const next = [...current];
+              next[index] = { ...next[index], status: result.status };
+              return next;
+            });
+          }
+          setGuardianSubmissions((previous) => ({ ...previous, [alertId]: "success" }));
+        })
+        .catch((error: unknown) => {
+          console.warn("Guardian approval failed", error);
+          setGuardianSubmissions((previous) => ({ ...previous, [alertId]: "error" }));
+        });
+    },
+    [upsertGuardianAlert],
+  );
+
   const tabItems = useMemo(
     () => [
       { id: "chat" as const, label: t("layout.tabs.chat") },
@@ -838,6 +969,16 @@ const HomePage: NextPage = () => {
     return { cost, latency, tokens };
   }, [skillEvents]);
 
+  const guardianStatusKey: GuardianStatusKey = guardianError
+    ? "error"
+    : guardianLoading
+      ? "loading"
+      : guardianBudget
+        ? guardianBudget.status
+        : "idle";
+  const guardianStatusTone = GUARDIAN_STATUS_TONES[guardianStatusKey];
+  const guardianStatusLabel = t(`guardian.status.${guardianStatusKey}`);
+
   const formatDateTime = useCallback(
     (value: string) => {
       try {
@@ -852,6 +993,21 @@ const HomePage: NextPage = () => {
         }).format(date);
       } catch {
         return value;
+      }
+    },
+    [locale],
+  );
+
+  const formatCurrencyValue = useCallback(
+    (value?: number | null, currency?: string) => {
+      if (typeof value !== "number" || Number.isNaN(value)) {
+        return "–";
+      }
+      const unit = currency && currency.length > 0 ? currency : "USD";
+      try {
+        return new Intl.NumberFormat(locale, { style: "currency", currency: unit }).format(value);
+      } catch {
+        return `${value.toFixed(2)} ${unit}`;
       }
     },
     [locale],
@@ -1053,6 +1209,172 @@ const HomePage: NextPage = () => {
             </section>
 
             <div className="grid gap-6" data-testid="sidebar-panels">
+              <section
+                aria-labelledby="guardian-panel-title"
+                className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}
+                data-testid="guardian-panel"
+              >
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <h3 id="guardian-panel-title" className={headingClass}>
+                        {t("guardian.heading")}
+                      </h3>
+                      <p className={`${subtleTextClass} text-xs`}>{t("guardian.subtitle")}</p>
+                    </div>
+                    <span className={`${badgeClass} ${guardianStatusTone} normal-case`}>
+                      {guardianStatusLabel}
+                    </span>
+                  </div>
+                  {guardianError ? (
+                    <p className="text-xs text-rose-200">
+                      {t("guardian.error.detail", { message: guardianError })}
+                    </p>
+                  ) : null}
+                  <dl className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <dt className={`${labelClass} text-slate-400`}>
+                        {t("guardian.budget.limit")}
+                      </dt>
+                      <dd className="text-sm text-slate-200">
+                        {guardianBudget
+                          ? formatCurrencyValue(guardianBudget.limit, guardianBudget.currency)
+                          : "–"}
+                      </dd>
+                    </div>
+                    <div className="space-y-2">
+                      <dt className={`${labelClass} text-slate-400`}>
+                        {t("guardian.budget.used")}
+                      </dt>
+                      <dd className="text-sm text-slate-200">
+                        {guardianBudget
+                          ? formatCurrencyValue(guardianBudget.used, guardianBudget.currency)
+                          : "–"}
+                      </dd>
+                    </div>
+                    <div className="space-y-2">
+                      <dt className={`${labelClass} text-slate-400`}>
+                        {t("guardian.budget.remaining")}
+                      </dt>
+                      <dd className="text-sm text-slate-200">
+                        {guardianBudget
+                          ? formatCurrencyValue(guardianBudget.remaining, guardianBudget.currency)
+                          : "–"}
+                      </dd>
+                    </div>
+                  </dl>
+                  {guardianBudget?.updatedAt ? (
+                    <p className={`${subtleTextClass} text-xs`}>
+                      {t("guardian.budget.updatedAt", {
+                        value: formatDateTime(guardianBudget.updatedAt),
+                      })}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className={`${labelClass} text-slate-300`}>
+                      {t("guardian.alerts.heading")}
+                    </h4>
+                    <span className={`${badgeClass} bg-slate-900/70 text-slate-300`}>
+                      {guardianAlerts.length}
+                    </span>
+                  </div>
+                  {guardianStreamError ? (
+                    <p className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
+                      {t("guardian.alerts.streamError")}
+                    </p>
+                  ) : null}
+                  {guardianAlerts.length === 0 ? (
+                    <p className={`${subtleTextClass} text-sm`}>
+                      {guardianLoading
+                        ? t("guardian.alerts.loading")
+                        : guardianError
+                          ? t("guardian.alerts.streamError")
+                          : t("guardian.alerts.empty")}
+                    </p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {guardianAlerts.map((alert) => {
+                        const submissionState = guardianSubmissions[alert.id];
+                        const isPending = submissionState === "pending";
+                        const replayHref =
+                          alert.replayUrl ??
+                          alert.detailsUrl ??
+                          (alert.traceId ? `/episodes/${alert.traceId}` : null);
+                        const showApproval = alert.requireApproval && alert.status === "open";
+                        return (
+                          <li
+                            key={alert.id}
+                            className={`${insetSurfaceClass} border border-slate-800/70 bg-slate-950/50 p-4`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-2">
+                                <p className="text-sm text-slate-100">{alert.message}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  <span
+                                    className={`${badgeClass} ${GUARDIAN_SEVERITY_TONES[alert.severity]}`}
+                                  >
+                                    {t(`guardian.alerts.severity.${alert.severity}`)}
+                                  </span>
+                                  <span
+                                    className={`${badgeClass} ${GUARDIAN_ALERT_STATUS_TONES[alert.status]}`}
+                                  >
+                                    {t(`guardian.alerts.status.${alert.status}`)}
+                                  </span>
+                                </div>
+                                <p className={`${subtleTextClass} text-xs`}>
+                                  {formatDateTime(alert.updatedAt ?? alert.createdAt)}
+                                </p>
+                              </div>
+                              {replayHref ? (
+                                <a
+                                  href={replayHref}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className={`${outlineButtonClass} px-3 py-1.5 text-xs`}
+                                >
+                                  {t("guardian.alerts.replay")}
+                                </a>
+                              ) : null}
+                            </div>
+                            {showApproval ? (
+                              <div className="flex flex-wrap gap-3 pt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => handleGuardianDecision(alert.id, "approve")}
+                                  disabled={isPending}
+                                  className={`${primaryButtonClass} px-3 py-1.5 text-xs`}
+                                >
+                                  {t("guardian.alerts.approve")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleGuardianDecision(alert.id, "reject")}
+                                  disabled={isPending}
+                                  className={`${outlineButtonClass} px-3 py-1.5 text-xs`}
+                                >
+                                  {t("guardian.alerts.reject")}
+                                </button>
+                              </div>
+                            ) : null}
+                            {submissionState === "success" ? (
+                              <p className={`${subtleTextClass} pt-2 text-xs`}>
+                                {t("guardian.alerts.submitted")}
+                              </p>
+                            ) : null}
+                            {submissionState === "error" ? (
+                              <p className="pt-2 text-xs text-rose-200">
+                                {t("guardian.alerts.error")}
+                              </p>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </section>
               <section
                 aria-labelledby="run-stats-title"
                 className={`${panelSurfaceClass} space-y-6 p-6 sm:p-7`}

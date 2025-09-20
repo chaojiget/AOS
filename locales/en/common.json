@@ -63,6 +63,49 @@
       }
     }
   },
+  "guardian": {
+    "heading": "Guardian oversight",
+    "subtitle": "Monitor budget and respond to runtime alerts.",
+    "status": {
+      "loading": "Loading…",
+      "idle": "No data",
+      "ok": "Within budget",
+      "warning": "Approaching limit",
+      "critical": "Budget exceeded",
+      "error": "Unavailable"
+    },
+    "budget": {
+      "limit": "Budget limit",
+      "used": "Spent",
+      "remaining": "Remaining",
+      "updatedAt": "Updated {value}"
+    },
+    "alerts": {
+      "heading": "Active alerts",
+      "loading": "Listening for Guardian alerts…",
+      "empty": "No alerts at the moment.",
+      "streamError": "Unable to connect to Guardian alerts.",
+      "approve": "Approve",
+      "reject": "Reject",
+      "replay": "Replay",
+      "submitted": "Decision submitted",
+      "error": "Submission failed",
+      "status": {
+        "open": "Awaiting action",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "resolved": "Resolved"
+      },
+      "severity": {
+        "info": "Info",
+        "warning": "Warning",
+        "critical": "Critical"
+      }
+    },
+    "error": {
+      "detail": "Guardian error: {message}"
+    }
+  },
   "panels": {
     "plan": {
       "heading": "Plan timeline",
