@@ -42,6 +42,7 @@ logs/
 # Project artifacts
 episodes/
 !pages/api/episodes/
+!servers/api/src/episodes/
 reports/
 
 # IDE and OS files
