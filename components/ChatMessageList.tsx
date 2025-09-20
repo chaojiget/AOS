@@ -1,5 +1,7 @@
 import type { FC } from "react";
 
+import { formatShortId } from "../lib/id";
+import { formatFullTimestamp, formatRelativeTimestamp } from "../lib/datetime";
 import { useI18n } from "../lib/i18n/index";
 import { badgeClass, chatBubbleVariants, insetSurfaceClass, subtleTextClass } from "../lib/theme";
 
@@ -36,23 +38,6 @@ const groupMessagesByRole = (messages: ChatHistoryMessage[]) => {
   return groups;
 };
 
-const formatTimestamp = (ts: string, locale: string): string => {
-  if (!ts) return "";
-  try {
-    const date = new Date(ts);
-    if (Number.isNaN(date.getTime())) {
-      return ts;
-    }
-    return date.toLocaleTimeString(locale, {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  } catch {
-    return ts;
-  }
-};
-
 const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false }) => {
   const { locale, t } = useI18n();
   const groups = groupMessagesByRole(messages);
@@ -79,42 +64,94 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
               {group.items.map((message) => {
                 const statusLabel =
                   message.status === "error"
-                    ? (message.error ?? t("chat.message.status.error"))
+                    ? message.error ?? t("chat.message.status.error")
                     : message.status === "pending"
                       ? t("chat.message.status.pending")
                       : message.status === "done"
                         ? t("chat.message.status.done")
                         : t("chat.message.status.sent");
 
-                const metadata: string[] = [
-                  message.msgId
-                    ? `${t("chat.message.labels.msgId")}: ${message.msgId}`
-                    : `${t("chat.message.labels.localId")}: ${message.id}`,
-                  formatTimestamp(message.ts, locale),
-                  statusLabel,
-                ];
+                const identifier = message.msgId ?? message.id;
+                const identifierLabel = message.msgId
+                  ? t("chat.message.labels.msgId")
+                  : t("chat.message.labels.localId");
+                const relativeTime = formatRelativeTimestamp(message.ts, locale);
+                const exactTime = formatFullTimestamp(message.ts, locale);
+                const metadataEntries: Array<{
+                  key: string;
+                  label: string;
+                  value: string;
+                  title?: string;
+                }> = [];
+
+                if (identifier) {
+                  metadataEntries.push({
+                    key: "identifier",
+                    label: identifierLabel,
+                    value: formatShortId(identifier),
+                    title: identifier,
+                  });
+                }
+
+                if (relativeTime) {
+                  metadataEntries.push({
+                    key: "timestamp",
+                    label: t("chat.message.labels.timestamp"),
+                    value: relativeTime,
+                    title: exactTime,
+                  });
+                }
+
+                metadataEntries.push({
+                  key: "status",
+                  label: t("chat.message.labels.status"),
+                  value: statusLabel,
+                });
 
                 if (message.traceId) {
-                  metadata.push(`${t("chat.message.labels.traceId")}: ${message.traceId}`);
+                  metadataEntries.push({
+                    key: "traceId",
+                    label: t("chat.message.labels.traceId"),
+                    value: formatShortId(message.traceId),
+                    title: message.traceId,
+                  });
                 }
-                if (message.failureReason) {
-                  metadata.push(`${t("chat.message.labels.reason")}: ${message.failureReason}`);
-                }
-                if (message.reviewNotes && message.reviewNotes.length > 0) {
-                  const noteSummary = message.reviewNotes.filter(Boolean).join(" · ");
-                  metadata.push(`${t("chat.message.labels.reviewNotes")}: ${noteSummary}`);
-                }
+
                 if (typeof message.latencyMs === "number") {
-                  metadata.push(
-                    `${t("chat.message.labels.latency")}: ${message.latencyMs.toFixed(0)} ms`,
-                  );
+                  metadataEntries.push({
+                    key: "latency",
+                    label: t("chat.message.labels.latency"),
+                    value: `${message.latencyMs.toFixed(0)} ms`,
+                  });
                 }
+
                 if (typeof message.cost === "number") {
-                  metadata.push(`${t("chat.message.labels.cost")}: ${message.cost.toFixed(4)}`);
+                  metadataEntries.push({
+                    key: "cost",
+                    label: t("chat.message.labels.cost"),
+                    value: message.cost.toFixed(4),
+                  });
+                }
+
+                if (message.failureReason) {
+                  metadataEntries.push({
+                    key: "reason",
+                    label: t("chat.message.labels.reason"),
+                    value: message.failureReason,
+                  });
+                }
+
+                if (message.reviewNotes && message.reviewNotes.length > 0) {
+                  metadataEntries.push({
+                    key: "reviewNotes",
+                    label: t("chat.message.labels.reviewNotes"),
+                    value: message.reviewNotes.filter(Boolean).join("\n"),
+                  });
                 }
 
                 const ringClass =
                   message.status === "error" ? "ring-orange-400/80" : "ring-offset-transparent";
+                const metadataId = `chat-message-${message.id}-metadata`;
 
                 return (
                   <article
@@ -127,18 +164,38 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
                     <div className="whitespace-pre-wrap break-words text-left">
                       {message.content}
                     </div>
-                    <footer
-                      className={`mt-3 flex flex-wrap items-center gap-2 text-[0.7rem] font-medium uppercase tracking-[0.14em] ${tone.meta}`}
-                    >
-                      {metadata.map((item, index) => (
-                        <span
-                          key={`${message.id}-meta-${index}`}
-                          className={`${badgeClass} ${tone.meta} bg-transparent px-2 py-0 normal-case`}
+                    {metadataEntries.length > 0 ? (
+                      <details
+                        className="mt-3 text-[0.7rem]"
+                        aria-label={t("chat.message.metadata.summary")}
+                      >
+                        <summary
+                          className="flex cursor-pointer select-none items-center gap-2 font-semibold uppercase tracking-[0.14em] text-slate-500 outline-none transition hover:text-slate-700 focus-visible:text-slate-700"
+                          aria-controls={metadataId}
                         >
-                          {item}
-                        </span>
-                      ))}
-                    </footer>
+                          <span>{t("chat.message.metadata.summary")}</span>
+                        </summary>
+                        <dl
+                          id={metadataId}
+                          className="mt-2 space-y-2 text-left text-[0.7rem]"
+                        >
+                          {metadataEntries.map((item) => (
+                            <div key={`${message.id}-${item.key}`} className="flex flex-col gap-0.5">
+                              <dt className="font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                {item.label}
+                              </dt>
+                              <dd
+                                className="whitespace-pre-line break-words font-mono text-slate-700"
+                                title={item.title}
+                                aria-label={item.title ? `${item.label}: ${item.title}` : undefined}
+                              >
+                                {item.value}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </details>
+                    ) : null}
                   </article>
                 );
               })}

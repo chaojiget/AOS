@@ -107,13 +107,18 @@
         "latency": "latency",
         "cost": "cost",
         "reason": "reason",
-        "reviewNotes": "review notes"
+        "reviewNotes": "review notes",
+        "timestamp": "time",
+        "status": "status"
       },
       "status": {
         "error": "Delivery failed",
         "pending": "Pending",
         "done": "Delivered",
         "sent": "Sent"
+      },
+      "metadata": {
+        "summary": "View message details"
       }
     }
   },
