@@ -65,7 +65,7 @@ describe("Chat layout components", () => {
           messages={messages}
           isRunning={false}
           finalPreview="执行完成"
-          finalPreviewLabel="最终输出"
+          finalPreviewLabel="最终答复"
           inputLabel="指令"
           inputPlaceholder="请输入指令"
           inputValue="测试"
@@ -80,8 +80,9 @@ describe("Chat layout components", () => {
     );
 
     expect(html).toContain("trace-123");
-    expect(html).toContain("最终输出");
+    expect(html).toContain("最终答复");
     expect(html).toContain("执行完成");
+    expect(html).toContain("历史版本");
     expect(html).toContain("运行");
   });
 

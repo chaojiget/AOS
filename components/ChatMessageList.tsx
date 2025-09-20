@@ -119,6 +119,7 @@ const ChatMessageList: FC<ChatMessageListProps> = ({ messages, isRunning = false
                 return (
                   <article
                     key={message.id}
+                    id={`chat-message-${message.id}`}
                     data-role={message.role}
                     data-msg-id={message.msgId ?? undefined}
                     data-status={message.status ?? "sent"}

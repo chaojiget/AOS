@@ -2,6 +2,7 @@ import { FormEventHandler, useCallback, useEffect, useMemo, useRef, useState } f
 import type { NextPage } from "next";
 
 import ChatMessageList, { type ChatHistoryMessage } from "../components/ChatMessageList";
+import FinalReplyCard from "../components/chat/FinalReplyCard";
 import LogFlowPanel from "../components/LogFlowPanel";
 import PlanTimeline, {
   type PlanTimelineEvent,
@@ -71,6 +72,13 @@ interface ConfirmationRequestState {
   context?: any;
   level?: string;
   tool?: string;
+}
+
+interface FinalReplySnapshot {
+  id: string;
+  ts: string;
+  content: string;
+  traceId?: string | null;
 }
 
 type RunStatus = "idle" | "running" | "awaiting-confirmation" | "completed" | "error";
@@ -262,6 +270,8 @@ const HomePage: NextPage = () => {
   const sidebarSheetRef = useRef<HTMLDivElement | null>(null);
   const insightsSheetRef = useRef<HTMLDivElement | null>(null);
   const [finalOutput, setFinalOutput] = useState<unknown>(null);
+  const [finalReplyHistory, setFinalReplyHistory] = useState<FinalReplySnapshot[]>([]);
+  const [finalReplyHistoryOpen, setFinalReplyHistoryOpen] = useState(false);
   const [lastEvent, setLastEvent] = useState<StreamEventEnvelope | null>(null);
   const [planEvents, setPlanEvents] = useState<PlanTimelineEvent[]>([]);
   const [planFilter, setPlanFilter] = useState("");
@@ -294,6 +304,8 @@ const HomePage: NextPage = () => {
   const retryTimerRef = useRef<number | null>(null);
   const retryAttemptRef = useRef(0);
   const currentTraceRef = useRef<string | undefined>(undefined);
+  const finalReplyHighlightTimeoutRef = useRef<number | null>(null);
+  const finalReplyHighlightTargetRef = useRef<string | null>(null);
 
   const draftInput = useMemo(() => input.trim(), [input]);
 
@@ -327,6 +339,8 @@ const HomePage: NextPage = () => {
     setPlanEvents([]);
     setSkillEvents([]);
     setFinalOutput(null);
+    setFinalReplyHistory([]);
+    setFinalReplyHistoryOpen(false);
     setLastEvent(null);
     setPlanFilter("");
     setSkillFilter("");
@@ -335,6 +349,19 @@ const HomePage: NextPage = () => {
     setConfirmationRequest(null);
     setProgressPct(null);
     setRunError(null);
+    if (typeof document !== "undefined" && finalReplyHighlightTargetRef.current) {
+      const target = document.getElementById(
+        `chat-message-${finalReplyHighlightTargetRef.current}`,
+      );
+      if (target) {
+        target.classList.remove("ring-2", "ring-sky-400", "ring-offset-2", "ring-offset-slate-950");
+      }
+      finalReplyHighlightTargetRef.current = null;
+    }
+    if (finalReplyHighlightTimeoutRef.current != null && typeof window !== "undefined") {
+      window.clearTimeout(finalReplyHighlightTimeoutRef.current);
+      finalReplyHighlightTimeoutRef.current = null;
+    }
   }, []);
 
   const closeStream = useCallback(() => {
@@ -1483,6 +1510,173 @@ const HomePage: NextPage = () => {
     return null;
   }, [finalOutput]);
 
+  useEffect(() => {
+    if (!finalPreview) {
+      return;
+    }
+    const text = finalPreview.trim();
+    if (!text) {
+      return;
+    }
+    setFinalReplyHistory((history) => {
+      const last = history[history.length - 1];
+      if (last && last.content === text) {
+        return history;
+      }
+      return [
+        ...history,
+        {
+          id: generateLocalId(),
+          ts: new Date().toISOString(),
+          content: text,
+          traceId: traceId ?? currentTraceRef.current ?? null,
+        },
+      ];
+    });
+  }, [finalPreview, traceId]);
+
+  const finalReplyMessageId = useMemo(() => {
+    for (let index = chatHistory.length - 1; index >= 0; index -= 1) {
+      const message = chatHistory[index];
+      if (message.role === "assistant") {
+        return message.id;
+      }
+    }
+    return null;
+  }, [chatHistory]);
+
+  const sortedFinalReplyHistory = useMemo(
+    () =>
+      [...finalReplyHistory].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime()),
+    [finalReplyHistory],
+  );
+
+  const handleCopyFinalReply = useCallback(() => {
+    if (!finalPreview) {
+      return;
+    }
+    const text = finalPreview;
+
+    const copy = async () => {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      if (typeof document !== "undefined") {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "true");
+        textarea.style.position = "absolute";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const successful = document.execCommand?.("copy");
+        document.body.removeChild(textarea);
+        if (!successful) {
+          throw new Error("copy-failed");
+        }
+        return;
+      }
+      throw new Error("copy-unsupported");
+    };
+
+    void (async () => {
+      try {
+        await copy();
+        showToast({
+          title: t("toast.success.title"),
+          message: t("conversation.finalReply.copySuccess"),
+          dismissLabel: t("toast.dismiss"),
+          tone: "success",
+        });
+      } catch {
+        showToast({
+          title: t("toast.error.title"),
+          message: t("conversation.finalReply.copyError"),
+          dismissLabel: t("toast.dismiss"),
+          tone: "error",
+        });
+      }
+    })();
+  }, [finalPreview, showToast, t]);
+
+  const handleLocateFinalReply = useCallback(() => {
+    if (!finalReplyMessageId) {
+      showToast({
+        title: t("toast.info.title"),
+        message: t("conversation.finalReply.locateUnavailable"),
+        dismissLabel: t("toast.dismiss"),
+        tone: "info",
+      });
+      return;
+    }
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    if (
+      finalReplyHighlightTargetRef.current &&
+      finalReplyHighlightTargetRef.current !== finalReplyMessageId
+    ) {
+      const previous = document.getElementById(
+        `chat-message-${finalReplyHighlightTargetRef.current}`,
+      );
+      if (previous) {
+        previous.classList.remove(
+          "ring-2",
+          "ring-sky-400",
+          "ring-offset-2",
+          "ring-offset-slate-950",
+        );
+      }
+    }
+
+    const element = document.getElementById(`chat-message-${finalReplyMessageId}`);
+    if (!element) {
+      showToast({
+        title: t("toast.error.title"),
+        message: t("conversation.finalReply.locateError"),
+        dismissLabel: t("toast.dismiss"),
+        tone: "error",
+      });
+      return;
+    }
+
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    element.classList.add("ring-2", "ring-sky-400", "ring-offset-2", "ring-offset-slate-950");
+    finalReplyHighlightTargetRef.current = finalReplyMessageId;
+
+    if (typeof window !== "undefined") {
+      if (finalReplyHighlightTimeoutRef.current != null) {
+        window.clearTimeout(finalReplyHighlightTimeoutRef.current);
+      }
+      const highlightId = finalReplyMessageId;
+      finalReplyHighlightTimeoutRef.current = window.setTimeout(() => {
+        const target = document.getElementById(`chat-message-${highlightId}`);
+        if (target) {
+          target.classList.remove(
+            "ring-2",
+            "ring-sky-400",
+            "ring-offset-2",
+            "ring-offset-slate-950",
+          );
+        }
+        if (finalReplyHighlightTargetRef.current === highlightId) {
+          finalReplyHighlightTargetRef.current = null;
+        }
+        finalReplyHighlightTimeoutRef.current = null;
+      }, 1600);
+    }
+  }, [finalReplyMessageId, showToast, t]);
+
+  const handleOpenFinalReplyHistory = useCallback(() => {
+    setFinalReplyHistoryOpen(true);
+  }, []);
+
+  const handleCloseFinalReplyHistory = useCallback(() => {
+    setFinalReplyHistoryOpen(false);
+  }, []);
+
   const episodeItems = useMemo(() => {
     if (!draftEpisode) {
       return episodes;
@@ -1836,14 +2030,18 @@ const HomePage: NextPage = () => {
         ) : null}
       </div>
 
-      <ChatMessageList messages={chatHistory} isRunning={runStatus === "running"} />
+      <FinalReplyCard
+        label={t("conversation.finalReply.title")}
+        content={finalPreview ?? ""}
+        sticky
+        historyCount={finalReplyHistory.length}
+        anchorId={finalReplyMessageId ?? undefined}
+        onCopy={handleCopyFinalReply}
+        onLocate={handleLocateFinalReply}
+        onOpenHistory={handleOpenFinalReplyHistory}
+      />
 
-      {finalPreview ? (
-        <div className={`${insetSurfaceClass} border border-sky-500/40 bg-sky-500/5 p-4`}>
-          <div className={`${labelClass} text-sky-200`}>{t("conversation.finalOutputTitle")}</div>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">{finalPreview}</p>
-        </div>
-      ) : null}
+      <ChatMessageList messages={chatHistory} isRunning={runStatus === "running"} />
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <label htmlFor="prompt" className={`${labelClass} text-slate-300`}>
@@ -2072,6 +2270,70 @@ const HomePage: NextPage = () => {
           </div>
         ) : null}
       </main>
+
+      {finalReplyHistoryOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
+          <div
+            className={modalBackdropClass}
+            aria-hidden="true"
+            onClick={handleCloseFinalReplyHistory}
+          />
+          <div
+            className={modalSurfaceClass}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="final-reply-history-title"
+            data-testid="final-reply-history-modal"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h2 id="final-reply-history-title" className={`${headingClass} text-xl`}>
+                {t("conversation.finalReply.historyTitle")}
+              </h2>
+              <button
+                type="button"
+                onClick={handleCloseFinalReplyHistory}
+                className={`${outlineButtonClass} px-3 py-1 text-xs`}
+              >
+                {t("conversation.finalReply.closeHistory")}
+              </button>
+            </div>
+            {sortedFinalReplyHistory.length === 0 ? (
+              <p className={`${subtleTextClass} mt-4 text-sm`}>
+                {t("conversation.finalReply.historyEmpty")}
+              </p>
+            ) : (
+              <ul className="mt-4 max-h-96 space-y-4 overflow-y-auto pr-1">
+                {sortedFinalReplyHistory.map((entry, index) => (
+                  <li
+                    key={entry.id}
+                    className={`${insetSurfaceClass} border border-slate-800/70 bg-slate-950/60 p-4`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className={`${labelClass} text-sky-200`}>
+                        {t("conversation.finalReply.historyItem", {
+                          index: sortedFinalReplyHistory.length - index,
+                        })}
+                      </span>
+                      <span className={`${subtleTextClass} text-xs`}>
+                        {formatDateTime(entry.ts)}
+                      </span>
+                    </div>
+                    {entry.traceId ? (
+                      <p className={`${subtleTextClass} mt-1 text-xs`}>
+                        {t("conversation.finalReply.historyTrace", { traceId: entry.traceId })}
+                      </p>
+                    ) : null}
+                    <p className="mt-3 whitespace-pre-wrap text-sm text-slate-100">
+                      {entry.content}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       {confirmationRequest ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
           <div className={modalBackdropClass} aria-hidden="true" />

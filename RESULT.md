@@ -1,8 +1,9 @@
 # RESULT
 - 改了什么：抽象 `components/useLocalToast.tsx` 统一 Toast 状态、动作按钮与配色，并让 `pages/index.tsx` 与 `pages/episodes.tsx` 复用该容器及国际化文案；聊天页 `handleRun`/`handleGuardianDecision`/`refreshEpisodes`、保存对话等路径改为触发 Toast，同时保留系统消息；补充 `tests/useLocalToast.test.tsx` 校验容器渲染；新增 `servers/api/src/episodes/*` 服务/控制器/模块，配合 `servers/api/src/runs/runs.service.ts` 与 `servers/api/src/database/database.service.ts` 扩展，打通 Episode 列表、详情与回放；补上 `pages/api/episodes/*`、`lib/episodes.ts` 与 `pages/episodes.tsx`，提供骨架屏 + Toast 的 UI；完善 `pages/api/guardian/*` 与 `pages/api/guardian/state.ts`，实现预算/告警/审批接口及 SSE，前端不再 404，并新增 `tests/api/guardianRoutes.test.ts` 做契约回归；`servers/api/src/runs/run-kernel.factory.ts` 在缺失 `OPENAI_API_KEY` 时回落到本地 Stub Kernel；重构聊天页为三栏布局（左侧会话上下文、中部对话流、右侧 Guardian/运行指标/调试信息），新增原始响应折叠、首屏状态条；扩展聊天页左栏，接入 Episode 搜索/列表/操作、新建对话按钮与导出 JSONL，并补全中英文 Toast/文案；同时完善 `scripts/replay.mjs` 与 `reproduce.sh` 支撑最小复现。
-- 为何改：聊天页此前仅追加系统消息提示失败，缺乏明显的 Toast 反馈，影响异常路径可感体验；Episodes 页 Toast 为临时实现且无国际化，需抽象复用；SRS 阶段三 A5/A6 要求 Episode/回放接口闭环，Guardian 面板原本 404 影响主路径体验；tests/api/episodesController.test.ts、Guardian 相关测试缺失导致红线无法通过。
-- 如何验证：执行 `pnpm lint`、`pnpm typecheck`、`pnpm test`（新增 `tests/useLocalToast.test.tsx` 覆盖 Toast 容器；日志见 artifacts/api/pnpm-test.log，其中包含 Guardian 契约测试）；运行 `pnpm replay` 产出 `reports/0a1341b9-5f04-4451-8b24-6f3eec242eaa-replay.json`；手动验收记录见 `artifacts/ux/episodes-smoke.md`。
-- 如何回滚：按 `artifacts/roll/episodes-rollback.md` 删除新增模块/脚本并恢复受影响文件；或在拥有权限的环境使用 `git checkout --` 逐一回滚文件。
+- 本轮新增：抽离最终答复渲染为 `components/chat/FinalReplyCard.tsx`，在聊天中栏顶部以 `sticky` 固定卡片，加入复制、定位气泡、版本回溯按钮，并与历史面板弹层联动；聊天页追踪最终答复历史并提供滚动定位与高亮；同步更新中英文 i18n 与相关测试，确保滚动时卡片持续可见。
+- 为何改：聊天页此前仅追加系统消息提示失败，缺乏明显的 Toast 反馈，影响异常路径可感体验；Episodes 页 Toast 为临时实现且无国际化，需抽象复用；SRS 阶段三 A5/A6 要求 Episode/回放接口闭环，Guardian 面板原本 404 影响主路径体验；tests/api/episodesController.test.ts、Guardian 相关测试缺失导致红线无法通过；最终答复区块随滚动移出视野，缺乏复制/定位/回溯功能，不利于操作者快速获取答案与核查历史。
+- 如何验证：执行 `pnpm lint`、`pnpm typecheck`、`pnpm test`（新增 `tests/useLocalToast.test.tsx` 覆盖 Toast 容器与 `tests/chatComponents.test.tsx`、`tests/chatMessageList.test.tsx` 校验最终答复卡片与锚点；日志见 `artifacts/api/pnpm-test.log`），运行 `pnpm replay` 产出 `reports/0a1341b9-5f04-4451-8b24-6f3eec242eaa-replay.json`；手动验收记录见 `artifacts/ux/episodes-smoke.md`。
+- 如何回滚：按 `artifacts/roll/episodes-rollback.md` 删除新增模块/脚本并恢复受影响文件；或在拥有权限的环境使用 `git checkout -- <path>` 逐一回滚文件。
 
 ## 需求澄清（中文）
 - 业务目标：推进“阶段三（Episode 回放）”，让 `/api/episodes`、`/api/episodes/{id}`、`/api/episodes/{id}/replay` 与新 UI/脚本完成回放闭环，提供评分 diff 证据；并统一聊天页与 Episodes 页的错误 Toast，使运行失败/审批失败等异常具备即时反馈。
@@ -11,6 +12,13 @@
 - UI 验收或条件（≥2 条）：1) 列表&详情骨架屏，首屏可感等待 ≤1.0s (#ASSUMPTION：以 Chrome DevTools Slow 3G 测得)；2) 错误 Toast + 一键重试 (#ASSUMPTION：通过断开 dev server 进行手动校验)；3) (#ASSUMPTION) 聊天页运行失败弹出 Toast，提示可在手动测试中验证。
 - 依赖与契约：依赖 `runs` 表、Episode JSONL 文件、`runtime/events|episode` 结构、Nest `EpisodesService`、可选 `DatabaseService` 注入；遵循 `/api/agent/start`、`/api/runs/:id` 现有契约，并对 Guardian 前端契约 `/api/guardian/budget|alerts/stream|approvals` 做本地实现。
 - 假设：#ASSUMPTION: 评分来源为 `run.score` 或 `review.scored` 的 `value/score` 字段；#ASSUMPTION: 录屏与 Web-Vitals 由人工在交付后补齐，当前以 `artifacts/ux/episodes-smoke.md` 记录验证步骤。
+
+### 本轮补充（最终答复卡片）
+- 业务目标：让运行完成后的最终答复在聊天中栏保持可见，支持复制、定位及历史回溯，提升主路径复核效率。
+- 范围：仅改动聊天页中栏与相关组件/i18n/测试，不触及后端 API 与 Guardian 面板逻辑。
+- 使用场景：主路径——操作者滚动查看长对话时，仍可从顶部卡片快速复制/定位最终答复；异常路径——历史面板为空时提示无版本，或目标气泡缺失时给出 Toast。
+- UI 验收要点：1) 最终答复卡片在滚动聊天记录时持续固定在中栏顶部；2) 点击定位按钮会滚动并高亮答复气泡；3) 版本回溯面板展示按时间倒序的历史；#ASSUMPTION：复制按钮成功写入系统剪贴板（以浏览器开发者工具验证）。
+- 依赖：复用 `useLocalToast` 与现有聊天消息结构；假设浏览器环境支持 `navigator.clipboard`，并在缺失时退回 `document.execCommand`。
 
 ## 栈与命令
 - 包管理器：pnpm（依据 pnpm-lock.yaml）
@@ -22,6 +30,7 @@
 - Next API & 脚本：`pages/api/episodes/index.ts`、`[traceId]/index.ts`、`[traceId]/replay.ts` 代理远端/本地服务；`scripts/replay.mjs` 读取 JSONL 生成差值报告；`reproduce.sh` 提供最小复现（安装→测试→回放）。
 - 前端 Toast：`components/useLocalToast.tsx` 提供复用的 Toast 状态容器；`pages/index.tsx` 接入错误/成功提示并在 `handleRun`、`handleGuardianDecision`、`refreshEpisodes` 与保存对话路径触发；`pages/episodes.tsx` 复用该容器并接入国际化；`locales/*/common.json` 补充 Toast 文案。
 - 前端 UI：`lib/episodes.ts` 新增数据访问层；`pages/episodes.tsx` 渲染骨架屏、Toast、回放按钮与事件表；Guardian 面板依赖的 `/api/guardian/*` 现已返回稳定数据；`artifacts/ux/episodes-smoke.md` 记录手动验收；`pages/index.tsx` 接入 Episode 列表、搜索、草稿占位与操作按钮，新建对话按钮复用现有重置逻辑，并通过 Toast 提示结果；`locales/en/common.json`、`locales/zh-CN/common.json` 补全对话与 Episode 相关文案。
+- 前端最终答复：`components/chat/FinalReplyCard.tsx` 固定最终答复卡片，集成复制/定位/历史按钮；`pages/index.tsx` 维护最终答复历史、滚动定位与高亮、历史面板弹层，并调用新组件；`components/ChatMessageList.tsx` 为气泡补充 DOM 锚点；`locales/*/common.json` 更新“最终答复”文案与操作提示；`tests/chatComponents.test.tsx`、`tests/chatMessageList.test.tsx` 覆盖新交互。
 - Guardian API：`pages/api/guardian/state.ts` 提供默认预算与告警、SSE 广播及审批状态更新；`pages/api/guardian/budget.ts`、`alerts/stream.ts`、`approvals.ts` 暴露契约，并通过 `updateGuardianAlert` 广播结果。
 - 测试辅助：`tests/api/support/testApp.ts` 在测试容器中兜底提供 EpisodesController；`tests/api/episodesController.test.ts` 去除无效 expect；`tests/api/guardianRoutes.test.ts` 新增预算/审批/SSE 契约测试；`tests/useLocalToast.test.tsx` 覆盖 Toast 容器渲染。
 
