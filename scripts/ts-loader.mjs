@@ -9,6 +9,7 @@ const STUB_MODULES = {
   "next/link": new URL("../tests/stubs/next-link.tsx", import.meta.url).href,
   "next/head": new URL("../tests/stubs/next-head.tsx", import.meta.url).href,
   "next/document": new URL("../tests/stubs/next-document.tsx", import.meta.url).href,
+  vitest: new URL("../packages/vitest/index.js", import.meta.url).href,
 };
 const COMPILER_OPTIONS = {
   module: ts.ModuleKind.ESNext,

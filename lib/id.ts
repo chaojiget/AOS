@@ -17,5 +17,10 @@ export function formatShortId(value: string, length = DEFAULT_LENGTH): string {
   if (value.length <= safeLength) {
     return value;
   }
-  return `${value.slice(0, safeLength - 1)}…`;
+  let sliceLength = safeLength;
+  const hyphenIndex = value.lastIndexOf("-");
+  if (hyphenIndex > safeLength) {
+    sliceLength = hyphenIndex;
+  }
+  return `${value.slice(0, sliceLength)}…`;
 }
