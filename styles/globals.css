@@ -1,3 +1,125 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --theme-shell-bg: #020617;
+  --theme-shell-text: #f8fafc;
+  --theme-header-bg: rgba(15, 23, 42, 0.72);
+  --theme-header-border: rgba(51, 65, 85, 0.72);
+  --theme-heading: #f8fafc;
+  --theme-text-strong: #e2e8f0;
+  --theme-subtle-text: #94a3b8;
+  --theme-label: #cbd5f5;
+  --theme-badge-bg: rgba(15, 23, 42, 0.72);
+  --theme-badge-border: rgba(56, 189, 248, 0.4);
+  --theme-badge-text: #bae6fd;
+  --theme-panel-bg: rgba(15, 23, 42, 0.62);
+  --theme-panel-border: rgba(30, 41, 59, 0.75);
+  --theme-inset-bg: rgba(2, 6, 23, 0.7);
+  --theme-inset-border: rgba(30, 41, 59, 0.75);
+  --theme-pill-bg: rgba(15, 23, 42, 0.6);
+  --theme-pill-border: rgba(51, 65, 85, 0.72);
+  --theme-pill-text: #e2e8f0;
+  --theme-input-bg: rgba(2, 6, 23, 0.72);
+  --theme-input-border: rgba(51, 65, 85, 0.72);
+  --theme-input-text: #f8fafc;
+  --theme-input-placeholder: #64748b;
+  --theme-surface-highlight: rgba(30, 64, 175, 0.15);
+  --theme-border-soft: rgba(51, 65, 85, 0.6);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --theme-shell-bg: #f8fafc;
+  --theme-shell-text: #0f172a;
+  --theme-header-bg: rgba(241, 245, 249, 0.88);
+  --theme-header-border: rgba(203, 213, 225, 0.88);
+  --theme-heading: #0f172a;
+  --theme-text-strong: #1e293b;
+  --theme-subtle-text: #475569;
+  --theme-label: #1d4ed8;
+  --theme-badge-bg: rgba(224, 231, 255, 0.85);
+  --theme-badge-border: rgba(99, 102, 241, 0.55);
+  --theme-badge-text: #1e3a8a;
+  --theme-panel-bg: rgba(255, 255, 255, 0.9);
+  --theme-panel-border: rgba(203, 213, 225, 0.85);
+  --theme-inset-bg: rgba(241, 245, 249, 0.92);
+  --theme-inset-border: rgba(148, 163, 184, 0.7);
+  --theme-pill-bg: rgba(226, 232, 240, 0.92);
+  --theme-pill-border: rgba(148, 163, 184, 0.7);
+  --theme-pill-text: #0f172a;
+  --theme-input-bg: rgba(255, 255, 255, 0.95);
+  --theme-input-border: rgba(148, 163, 184, 0.7);
+  --theme-input-text: #0f172a;
+  --theme-input-placeholder: #64748b;
+  --theme-surface-highlight: rgba(37, 99, 235, 0.1);
+  --theme-border-soft: rgba(148, 163, 184, 0.6);
+}
+
+.theme-shell {
+  background-color: var(--theme-shell-bg) !important;
+  color: var(--theme-shell-text) !important;
+}
+
+.theme-header-surface {
+  background-color: var(--theme-header-bg) !important;
+  border-color: var(--theme-header-border) !important;
+}
+
+.theme-panel-surface {
+  background-color: var(--theme-panel-bg) !important;
+  border-color: var(--theme-panel-border) !important;
+}
+
+.theme-inset-surface {
+  background-color: var(--theme-inset-bg) !important;
+  border-color: var(--theme-inset-border) !important;
+}
+
+.theme-pill-group {
+  background-color: var(--theme-pill-bg) !important;
+  border-color: var(--theme-pill-border) !important;
+  color: var(--theme-pill-text) !important;
+}
+
+.theme-input-surface {
+  background-color: var(--theme-input-bg) !important;
+  border-color: var(--theme-input-border) !important;
+  color: var(--theme-input-text) !important;
+}
+
+.theme-input-surface::placeholder {
+  color: var(--theme-input-placeholder) !important;
+}
+
+.theme-heading {
+  color: var(--theme-heading) !important;
+}
+
+.theme-subtle-text {
+  color: var(--theme-subtle-text) !important;
+}
+
+.theme-label {
+  color: var(--theme-label) !important;
+}
+
+.theme-badge {
+  background-color: var(--theme-badge-bg) !important;
+  border-color: var(--theme-badge-border) !important;
+  color: var(--theme-badge-text) !important;
+}
+
+.theme-text-strong {
+  color: var(--theme-text-strong) !important;
+}
+
+.theme-text-muted {
+  color: var(--theme-subtle-text) !important;
+}
+
+.theme-border-soft {
+  border-color: var(--theme-border-soft) !important;
+}

@@ -1,13 +1,16 @@
 import { FormEventHandler, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NextPage } from "next";
+import { useRouter } from "next/router";
 
 import ChatMessageList, { type ChatHistoryMessage } from "../components/ChatMessageList";
+import HeaderPrimaryNav, { type HeaderPrimaryNavItem } from "../components/HeaderPrimaryNav";
 import LogFlowPanel from "../components/LogFlowPanel";
 import PlanTimeline, {
   type PlanTimelineEvent,
   type PlanTimelineStep,
 } from "../components/PlanTimeline";
 import SkillPanel, { type SkillEvent } from "../components/SkillPanel";
+import RunStatusIndicator, { type RunIndicatorState } from "../components/RunStatusIndicator";
 import { useLocalToast } from "../components/useLocalToast";
 import { fetchEpisodeDetail, fetchEpisodes, type EpisodeListItem } from "../lib/episodes";
 import { useI18n } from "../lib/i18n/index";
@@ -250,6 +253,7 @@ const extractTokens = (payload: any): number | null => {
 
 const HomePage: NextPage = () => {
   const { t, locale } = useI18n();
+  const router = useRouter();
   const { ToastContainer, showToast, dismissToast } = useLocalToast();
   const [input, setInput] = useState("");
   const [runStatus, setRunStatus] = useState<RunStatus>("idle");
@@ -290,12 +294,98 @@ const HomePage: NextPage = () => {
   const [activeEpisodeId, setActiveEpisodeId] = useState<string | null>(null);
   const [loadingEpisodeId, setLoadingEpisodeId] = useState<string | null>(null);
   const [downloadingEpisodeId, setDownloadingEpisodeId] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const eventSourceRef = useRef<EventSource | null>(null);
   const retryTimerRef = useRef<number | null>(null);
   const retryAttemptRef = useRef(0);
   const currentTraceRef = useRef<string | undefined>(undefined);
+  const helpDialogRef = useRef<HTMLDivElement | null>(null);
+  const helpCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
 
   const draftInput = useMemo(() => input.trim(), [input]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem("app-theme");
+    if (stored === "dark" || stored === "light") {
+      setTheme(stored);
+      return;
+    }
+    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+      setTheme("light");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.theme = theme;
+    }
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("app-theme", theme);
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    if (!helpOpen) {
+      return;
+    }
+    const dialog = helpDialogRef.current;
+    if (!dialog) {
+      return;
+    }
+
+    previouslyFocusedElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+
+    const focusTarget = helpCloseButtonRef.current ?? focusable[0] ?? null;
+    if (focusTarget) {
+      if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(() => {
+          focusTarget.focus();
+        });
+      } else {
+        focusTarget.focus();
+      }
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setHelpOpen(false);
+        return;
+      }
+      if (event.key === "Tab" && focusable.length > 0) {
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey) {
+          if (document.activeElement === first || document.activeElement === dialog) {
+            event.preventDefault();
+            last.focus();
+          }
+        } else if (document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      if (previouslyFocusedElementRef.current) {
+        previouslyFocusedElementRef.current.focus();
+      }
+    };
+  }, [helpOpen]);
 
   const refreshEpisodes = useCallback(async () => {
     setEpisodesLoading(true);
@@ -335,6 +425,10 @@ const HomePage: NextPage = () => {
     setConfirmationRequest(null);
     setProgressPct(null);
     setRunError(null);
+  }, []);
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
   }, []);
 
   const closeStream = useCallback(() => {
@@ -1313,6 +1407,19 @@ const HomePage: NextPage = () => {
     [showToast, t, upsertGuardianAlert],
   );
 
+  const primaryNavItems = useMemo<HeaderPrimaryNavItem[]>(
+    () =>
+      [
+        { href: "/", label: t("layout.nav.chat") },
+        { href: "/episodes", label: t("layout.nav.episodes") },
+        { href: "/skills", label: t("layout.nav.skills") },
+      ].map((item) => ({
+        ...item,
+        isActive: router.pathname === item.href,
+      })),
+    [router.pathname, t],
+  );
+
   const tabItems = useMemo(
     () => [
       { id: "chat" as const, label: t("layout.tabs.chat") },
@@ -1321,30 +1428,76 @@ const HomePage: NextPage = () => {
     [t],
   );
 
-  const statusText = useMemo(() => {
+  const runIndicator = useMemo((): { label: string; state: RunIndicatorState } => {
     if (runStatus === "error") {
-      return runError ?? t("chat.statusIndicator.error");
+      return {
+        state: "error",
+        label: runError ?? t("chat.statusIndicator.error"),
+      };
     }
     if (runStatus === "running") {
-      return t("chat.statusIndicator.running");
+      return {
+        state: "running",
+        label: t("chat.statusIndicator.running"),
+      };
     }
     if (runStatus === "awaiting-confirmation") {
-      return t("chat.statusIndicator.awaitingConfirmation");
+      return {
+        state: "running",
+        label: t("chat.statusIndicator.awaitingConfirmation"),
+      };
     }
     if (chatHistory.length > 0) {
-      return t("chat.statusIndicator.ready");
+      return {
+        state: "idle",
+        label: t("chat.statusIndicator.ready"),
+      };
     }
-    return t("chat.statusIndicator.idle");
+    return {
+      state: "idle",
+      label: t("chat.statusIndicator.idle"),
+    };
   }, [chatHistory.length, runError, runStatus, t]);
 
-  const statusTone =
-    runStatus === "error"
-      ? "text-orange-300"
-      : runStatus === "running"
-        ? "text-sky-200"
-        : runStatus === "awaiting-confirmation"
-          ? "text-amber-200"
-          : "text-slate-200";
+  const runStatusLabel = runIndicator.label;
+  const runIndicatorState = runIndicator.state;
+
+  const themeToggleText =
+    theme === "dark" ? t("layout.themeToggle.light") : t("layout.themeToggle.dark");
+  const themeToggleDescription =
+    theme === "dark" ? t("layout.themeToggle.toLight") : t("layout.themeToggle.toDark");
+  const helpButtonLabel = t("layout.help.button");
+  const helpButtonDescription = t("layout.help.ariaLabel");
+  const primaryNavLabel = t("layout.primaryNavLabel");
+  const helpShortcuts = useMemo(
+    () => [
+      {
+        id: "run",
+        keys: t("layout.help.shortcuts.run.keys"),
+        description: t("layout.help.shortcuts.run.description"),
+      },
+      {
+        id: "newline",
+        keys: t("layout.help.shortcuts.newline.keys"),
+        description: t("layout.help.shortcuts.newline.description"),
+      },
+      {
+        id: "focus",
+        keys: t("layout.help.shortcuts.focus.keys"),
+        description: t("layout.help.shortcuts.focus.description"),
+      },
+    ],
+    [t],
+  );
+
+  const helpCommands = useMemo(
+    () => [
+      { id: "refresh", description: t("layout.help.commands.refresh") },
+      { id: "download", description: t("layout.help.commands.download") },
+      { id: "theme", description: t("layout.help.commands.theme") },
+    ],
+    [t],
+  );
 
   const disableSave = !chatHistory.length && !draftInput;
 
@@ -1718,36 +1871,39 @@ const HomePage: NextPage = () => {
           <h3 id="run-stats-title" className={headingClass}>
             {t("chat.metrics.heading")}
           </h3>
-          <span className={`${badgeClass} ${statusTone} bg-transparent normal-case`}>
-            {statusText}
-          </span>
+          <RunStatusIndicator
+            state={runIndicatorState}
+            label={runStatusLabel}
+            size="sm"
+            data-testid="panel-run-status"
+          />
         </div>
         <dl className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.traceId")}</dt>
-            <dd className="font-mono text-sm text-slate-200">{traceId ?? "–"}</dd>
+            <dd className="font-mono text-sm text-slate-200 theme-text-strong">{traceId ?? "–"}</dd>
           </div>
           <div className="space-y-2">
             <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.progress")}</dt>
-            <dd className="text-sm text-slate-200">
+            <dd className="text-sm text-slate-200 theme-text-strong">
               {typeof progressPct === "number" ? `${Math.round(progressPct * 100)}%` : "–"}
             </dd>
           </div>
           <div className="space-y-2">
             <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.latency")}</dt>
-            <dd className="text-sm text-slate-200">
+            <dd className="text-sm text-slate-200 theme-text-strong">
               {metrics.latency > 0 ? `${metrics.latency.toFixed(0)} ms` : "–"}
             </dd>
           </div>
           <div className="space-y-2">
             <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.cost")}</dt>
-            <dd className="text-sm text-slate-200">
+            <dd className="text-sm text-slate-200 theme-text-strong">
               {metrics.cost > 0 ? metrics.cost.toFixed(4) : "–"}
             </dd>
           </div>
           <div className="space-y-2">
             <dt className={`${labelClass} text-slate-400`}>{t("chat.metrics.tokens")}</dt>
-            <dd className="text-sm text-slate-200">
+            <dd className="text-sm text-slate-200 theme-text-strong">
               {metrics.tokens > 0 ? metrics.tokens.toLocaleString() : "–"}
             </dd>
           </div>
@@ -1828,11 +1984,16 @@ const HomePage: NextPage = () => {
         {t("conversation.heading")}
       </h3>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className={`${badgeClass} ${statusTone} bg-transparent normal-case`}>
-          {statusText}
-        </span>
+        <RunStatusIndicator
+          state={runIndicatorState}
+          label={runStatusLabel}
+          size="sm"
+          data-testid="conversation-run-status"
+        />
         {traceId ? (
-          <span className="font-mono text-xs text-slate-400 sm:text-sm">{traceId}</span>
+          <span className="font-mono text-xs text-slate-400 theme-text-muted sm:text-sm">
+            {traceId}
+          </span>
         ) : null}
       </div>
 
@@ -1874,7 +2035,7 @@ const HomePage: NextPage = () => {
                 ? t("chat.submit.confirming")
                 : t("chat.submit.run")}
           </button>
-          <span className={`${subtleTextClass} text-sm`}>{statusText}</span>
+          <span className={`${subtleTextClass} text-sm`}>{runStatusLabel}</span>
         </div>
       </form>
     </section>
@@ -1899,10 +2060,55 @@ const HomePage: NextPage = () => {
   return (
     <div className={shellClass} data-testid="chat-shell">
       <header className={`${headerSurfaceClass} px-6 py-8 sm:px-8`} data-testid="chat-header">
-        <div className="mx-auto w-full max-w-6xl space-y-3">
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-50">
-            {t("layout.title")}
-          </h1>
+        <div className="mx-auto w-full max-w-6xl space-y-6">
+          <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center">
+            <div className="flex items-center gap-4">
+              <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-400 text-lg font-black text-slate-950 shadow-[0_18px_45px_rgba(56,189,248,0.35)]">
+                A
+              </span>
+              <div>
+                <span className={labelClass}>{t("layout.productLabel")}</span>
+                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-50 theme-heading sm:text-3xl">
+                  {t("layout.title")}
+                </h1>
+              </div>
+            </div>
+            <HeaderPrimaryNav
+              items={primaryNavItems}
+              ariaLabel={primaryNavLabel}
+              data-testid="primary-nav"
+              className="flex justify-center"
+            />
+            <div className="flex flex-wrap items-center justify-start gap-3 lg:justify-end">
+              <RunStatusIndicator
+                state={runIndicatorState}
+                label={runStatusLabel}
+                size="sm"
+                data-testid="header-run-status"
+              />
+              <button
+                type="button"
+                onClick={() => setHelpOpen(true)}
+                className={`${outlineButtonClass} px-3 py-1 text-xs`}
+                aria-haspopup="dialog"
+                aria-expanded={helpOpen}
+                aria-controls="help-overlay"
+                aria-label={helpButtonDescription}
+                data-testid="help-trigger"
+              >
+                {helpButtonLabel}
+              </button>
+              <button
+                type="button"
+                onClick={handleToggleTheme}
+                className={`${outlineButtonClass} px-3 py-1 text-xs`}
+                aria-label={themeToggleDescription}
+                data-testid="theme-toggle"
+              >
+                {themeToggleText}
+              </button>
+            </div>
+          </div>
           <p className={`${subtleTextClass} max-w-3xl text-sm sm:text-base`}>
             {t("layout.subtitle")}
           </p>
@@ -2072,6 +2278,97 @@ const HomePage: NextPage = () => {
           </div>
         ) : null}
       </main>
+      {helpOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          role="presentation"
+          data-testid="help-overlay-backdrop"
+        >
+          <div
+            className={modalBackdropClass}
+            aria-hidden="true"
+            onClick={() => setHelpOpen(false)}
+          />
+          <div
+            ref={helpDialogRef}
+            className={`${modalSurfaceClass} max-h-[80vh] w-full max-w-2xl overflow-y-auto`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="help-dialog-title"
+            aria-describedby="help-dialog-description"
+            id="help-overlay"
+            data-testid="help-overlay"
+          >
+            <div className="space-y-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-2">
+                  <h2 id="help-dialog-title" className={`${headingClass} text-2xl`}>
+                    {t("layout.help.title")}
+                  </h2>
+                  <p id="help-dialog-description" className={`${subtleTextClass} text-sm`}>
+                    {t("layout.help.subtitle")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  ref={helpCloseButtonRef}
+                  className={`${outlineButtonClass} px-3 py-1 text-xs`}
+                  onClick={() => setHelpOpen(false)}
+                  data-testid="help-close"
+                >
+                  {t("layout.help.close")}
+                </button>
+              </div>
+              <section
+                aria-labelledby="help-shortcuts-heading"
+                className={`${insetSurfaceClass} space-y-4 p-5`}
+              >
+                <div className="space-y-2">
+                  <h3 id="help-shortcuts-heading" className={`${labelClass} text-xs`}>
+                    {t("layout.help.shortcuts.title")}
+                  </h3>
+                  <p className={`${subtleTextClass} text-sm`}>
+                    {t("layout.help.shortcuts.description")}
+                  </p>
+                </div>
+                <ul className="space-y-3">
+                  {helpShortcuts.map((item) => (
+                    <li
+                      key={item.id}
+                      className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <span className="font-mono text-sm text-slate-200 theme-text-strong">
+                        {item.keys}
+                      </span>
+                      <span className={`${subtleTextClass} text-sm`}>{item.description}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+              <section
+                aria-labelledby="help-commands-heading"
+                className={`${insetSurfaceClass} space-y-4 p-5`}
+              >
+                <div className="space-y-2">
+                  <h3 id="help-commands-heading" className={`${labelClass} text-xs`}>
+                    {t("layout.help.commands.title")}
+                  </h3>
+                  <p className={`${subtleTextClass} text-sm`}>
+                    {t("layout.help.commands.description")}
+                  </p>
+                </div>
+                <ul className="space-y-3">
+                  {helpCommands.map((item) => (
+                    <li key={item.id} className={`${subtleTextClass} text-sm`}>
+                      {item.description}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {confirmationRequest ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
           <div className={modalBackdropClass} aria-hidden="true" />

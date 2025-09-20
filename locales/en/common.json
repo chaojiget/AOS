@@ -5,6 +5,49 @@
     "tabs": {
       "chat": "Chat",
       "logflow": "LogFlow"
+    },
+    "productLabel": "AgentOS",
+    "primaryNavLabel": "Primary navigation",
+    "nav": {
+      "chat": "Chat",
+      "episodes": "Episodes",
+      "skills": "Skills"
+    },
+    "themeToggle": {
+      "light": "Light",
+      "dark": "Dark",
+      "toLight": "Switch to light theme",
+      "toDark": "Switch to dark theme"
+    },
+    "help": {
+      "button": "Help",
+      "ariaLabel": "Open help and keyboard shortcuts",
+      "title": "Help & shortcuts",
+      "subtitle": "Stay in flow with the most useful commands.",
+      "close": "Close help",
+      "shortcuts": {
+        "title": "Keyboard shortcuts",
+        "description": "Use shortcuts to keep the run loop fast.",
+        "run": {
+          "keys": "⌘ / Ctrl + Enter",
+          "description": "Run the current prompt"
+        },
+        "newline": {
+          "keys": "Shift + Enter",
+          "description": "Insert a new line in the input"
+        },
+        "focus": {
+          "keys": "/",
+          "description": "Focus the chat input"
+        }
+      },
+      "commands": {
+        "title": "Common commands",
+        "description": "These cover the most frequent review paths.",
+        "refresh": "Use \"Refresh\" in the Episodes list to load the latest run.",
+        "download": "Select \"Export JSONL\" to download the current conversation.",
+        "theme": "Switch between dark and light using the theme toggle."
+      }
     }
   },
   "toast": {
