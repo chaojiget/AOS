@@ -28,10 +28,10 @@ export const badgeClass =
   "inline-flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-900/70 px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-slate-300 theme-badge";
 
 export const primaryButtonClass =
-  "inline-flex items-center justify-center rounded-full bg-sky-400 px-5 py-2 text-sm font-semibold text-slate-950 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 enabled:hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex items-center justify-center rounded-full bg-sky-400 px-5 py-2 text-sm font-semibold text-slate-950 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 enabled:hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-60 theme-button-enhanced";
 
 export const outlineButtonClass =
-  "inline-flex items-center justify-center rounded-full border border-sky-400/70 px-5 py-2 text-sm font-semibold text-sky-200 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 enabled:hover:border-sky-300 enabled:hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center rounded-full border border-sky-400/70 px-5 py-2 text-sm font-semibold text-sky-200 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 enabled:hover:border-sky-300 enabled:hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-50 theme-button-enhanced";
 
 export const modalBackdropClass =
   "fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm transition-opacity";

@@ -12,16 +12,16 @@ interface RunStatusIndicatorProps {
 
 const STATE_STYLES: Record<RunIndicatorState, { container: string; dot: string }> = {
   idle: {
-    container: "border border-slate-600 bg-slate-800 text-slate-100",
+    container: "border border-slate-600 bg-slate-800 text-slate-100 pulse-animation",
     dot: "bg-slate-200",
   },
   running: {
-    container: "border border-emerald-600 bg-emerald-500 text-emerald-950",
-    dot: "bg-emerald-900/80",
+    container: "border border-emerald-600 bg-emerald-500 text-emerald-950 pulse-animation",
+    dot: "bg-emerald-900/80 animate-pulse",
   },
   error: {
     container: "border border-rose-400 bg-rose-500 text-rose-50",
-    dot: "bg-rose-100",
+    dot: "bg-rose-100 animate-bounce",
   },
 };
 
