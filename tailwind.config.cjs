@@ -1,4 +1,4 @@
-/** @type {import('tailwindcss').Config} */
+/** @type {import("tailwindcss").Config} */
 module.exports = {
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
@@ -8,6 +8,12 @@ module.exports = {
   darkMode: "class",
   theme: {
     extend: {
+      gridTemplateColumns: {
+        shell: "270px minmax(520px,1fr) 340px",
+      },
+      transitionDuration: {
+        16: "16ms",
+      },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
       },
