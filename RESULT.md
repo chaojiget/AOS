@@ -1,6 +1,6 @@
 # RESULT
-- 改了什么：本迭代包含两个主要功能合并：1) 为聊天中栏补上自适应滚动容器与 ≥768px 固定输入区，空输入时弹出可达性的提示 Toast 并聚焦文本框，同时补充快捷键提示、本地化文案与 UI 快照/静态渲染测试；抽象 `components/useLocalToast.tsx` 统一 Toast 状态、动作按钮与配色，并让 `pages/index.tsx` 与 `pages/episodes.tsx`复用该容器及国际化文案；2) 将 `pages/index.tsx` 页头重构为 Logo/一级导航/状态操作三分栏，新增 `components/HeaderPrimaryNav.tsx` 与 `components/RunStatusIndicator.tsx` 复用运行状态徽标（Idle/Running/Error 确保 WCAG AA 色阶），并在右侧接入运行状态指示、帮助弹层（含快捷键/命令清单、Esc 关闭与焦点回退）以及主题切换；同时在 `styles/globals.css`/`lib/theme.ts` 引入主题变量，支持浅色/深色切换；新增 `servers/api/src/episodes/*` 服务/控制器/模块，配合 `servers/api/src/runs/runs.service.ts` 与 `servers/api/src/database/database.service.ts` 扩展，打通 Episode 列表、详情与回放。
-- 为何改：旧版聊天输入随页面滚动而失去焦点，快捷键提示缺失且空提交静默失败，影响键盘用户与屏幕阅读器可达性；聊天页头此前仅呈现标题与副标题，缺少快速入口与状态反馈，难以在主导航、帮助自助或主题偏好之间切换；运行状态文本也散落各处且颜色对比不足，影响可访问性。
+- 改了什么：本迭代包含多个主要功能合并：1) 为聊天中栏补上自适应滚动容器与 ≥768px 固定输入区，空输入时弹出可达性的提示 Toast 并聚焦文本框，同时补充快捷键提示、本地化文案与 UI 快照/静态渲染测试；2) 将 `pages/index.tsx` 页头重构为 Logo/一级导航/状态操作三分栏，新增 `components/HeaderPrimaryNav.tsx` 与 `components/RunStatusIndicator.tsx` 复用运行状态徽标（Idle/Running/Error 确保 WCAG AA 色阶），并在右侧接入运行状态指示、帮助弹层（含快捷键/命令清单、Esc 关闭与焦点回退）以及主题切换；3) 抽离最终答复渲染为 `components/chat/FinalReplyCard.tsx`，在聊天中栏顶部以 `sticky` 固定卡片，加入复制、定位气泡、版本回溯按钮，并与历史面板弹层联动；抽象 `components/useLocalToast.tsx` 统一 Toast 状态、动作按钮与配色，并让 `pages/index.tsx` 与 `pages/episodes.tsx` 复用该容器及国际化文案；新增 `servers/api/src/episodes/*` 服务/控制器/模块，配合 `servers/api/src/runs/runs.service.ts` 与 `servers/api/src/database/database.service.ts` 扩展，打通 Episode 列表、详情与回放。
+- 为何改：旧版聊天输入随页面滚动而失去焦点，快捷键提示缺失且空提交静默失败，影响键盘用户与屏幕阅读器可达性；聊天页头此前仅呈现标题与副标题，缺少快速入口与状态反馈，难以在主导航、帮助自助或主题偏好之间切换；运行状态文本也散落各处且颜色对比不足，影响可访问性；最终答复区块随滚动移出视野，缺乏复制/定位/回溯功能，不利于操作者快速获取答案与核查历史。
 - 如何验证：执行 `pnpm lint` ✅；`pnpm typecheck` 与 `pnpm test` 受 `servers/api/src/episodes/*` 模块缺失影响（历史遗留），在解析 Episode 相关导入时失败，已在日志中记录并人工确认非本次改动引入；其余 UI 逻辑经手动验收通过。
 - 如何回滚：若仅撤销本迭代，可移除新建的导航/状态组件及 `styles/globals.css` 的主题变量，恢复 `pages/index.tsx` 页头与帮助逻辑；或参考 `artifacts/roll/episodes-rollback.md` 及 `git checkout -- <path>` 恢复文件。
 
@@ -14,6 +14,13 @@
 - 依赖与契约：延伸依赖 `lib/theme.ts` 导出的样式 Token 以及浏览器 `localStorage`/`prefers-color-scheme`；原 Episodes/Guardian 契约保持不变。
 - 假设：#ASSUMPTION: 主题切换主要服务聊天页，可接受其它页面在浅色主题下继续使用深色面板（需后续逐页调优）。
 
+### 本轮补充（最终答复卡片）
+- 业务目标：让运行完成后的最终答复在聊天中栏保持可见，支持复制、定位及历史回溯，提升主路径复核效率。
+- 范围：仅改动聊天页中栏与相关组件/i18n/测试，不触及后端 API 与 Guardian 面板逻辑。
+- 使用场景：主路径——操作者滚动查看长对话时，仍可从顶部卡片快速复制/定位最终答复；异常路径——历史面板为空时提示无版本，或目标气泡缺失时给出 Toast。
+- UI 验收要点：1) 最终答复卡片在滚动聊天记录时持续固定在中栏顶部；2) 点击定位按钮会滚动并高亮答复气泡；3) 版本回溯面板展示按时间倒序的历史；#ASSUMPTION：复制按钮成功写入系统剪贴板（以浏览器开发者工具验证）。
+- 依赖：复用 `useLocalToast` 与现有聊天消息结构；假设浏览器环境支持 `navigator.clipboard`，并在缺失时退回 `document.execCommand`。
+
 ## 栈与命令
 - 包管理器：pnpm（依据 pnpm-lock.yaml）
 - 目标应用：根目录 Next.js + NestJS 单仓
@@ -26,6 +33,7 @@
 - Next API & 脚本：`pages/api/episodes/index.ts`、`[traceId]/index.ts`、`[traceId]/replay.ts` 代理远端/本地服务；`scripts/replay.mjs` 读取 JSONL 生成差值报告；`reproduce.sh` 提供最小复现（安装→测试→回放）。
 - 前端 Toast：`components/useLocalToast.tsx` 提供复用的 Toast 状态容器；`pages/index.tsx` 接入错误/成功提示并在 `handleRun`、`handleGuardianDecision`、`refreshEpisodes` 与保存对话路径触发；`pages/episodes.tsx` 复用该容器并接入国际化；`locales/*/common.json` 补充 Toast 文案。
 - 前端 UI：`lib/episodes.ts` 新增数据访问层；`pages/episodes.tsx` 渲染骨架屏、Toast、回放按钮与事件表；Guardian 面板依赖的 `/api/guardian/*` 现已返回稳定数据；`artifacts/ux/episodes-smoke.md` 记录手动验收；`pages/index.tsx` 接入 Episode 列表、搜索、草稿占位与操作按钮，新建对话按钮复用现有重置逻辑，并通过 Toast 提示结果；`locales/en/common.json`、`locales/zh-CN/common.json` 补全对话与 Episode 相关文案。
+- 前端最终答复：`components/chat/FinalReplyCard.tsx` 固定最终答复卡片，集成复制/定位/历史按钮；`pages/index.tsx` 维护最终答复历史、滚动定位与高亮、历史面板弹层，并调用新组件；`components/ChatMessageList.tsx` 为气泡补充 DOM 锚点；`locales/*/common.json` 更新“最终答复”文案与操作提示；`tests/chatComponents.test.tsx`、`tests/chatMessageList.test.tsx` 覆盖新交互。
 - Guardian API：`pages/api/guardian/state.ts` 提供默认预算与告警、SSE 广播及审批状态更新；`pages/api/guardian/budget.ts`、`alerts/stream.ts`、`approvals.ts` 暴露契约，并通过 `updateGuardianAlert` 广播结果。
 - 测试辅助：`tests/api/support/testApp.ts` 在测试容器中兜底提供 EpisodesController；`tests/api/episodesController.test.ts` 去除无效 expect；`tests/api/guardianRoutes.test.ts` 新增预算/审批/SSE 契约测试；`tests/useLocalToast.test.tsx` 覆盖 Toast 容器渲染。
 

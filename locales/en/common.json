@@ -72,7 +72,21 @@
     "downloadJsonl": "Download JSONL",
     "saveButton": "Save conversation",
     "draftLabel": "Draft input",
-    "finalOutputTitle": "Latest final output snapshot",
+    "finalReply": {
+      "title": "Final reply",
+      "copy": "Copy",
+      "copySuccess": "Final reply copied to clipboard.",
+      "copyError": "Failed to copy the final reply.",
+      "locate": "Locate bubble",
+      "locateUnavailable": "No reply bubble is available yet.",
+      "locateError": "Could not find the reply bubble.",
+      "history": "History ({count})",
+      "historyTitle": "Reply version history",
+      "historyEmpty": "No final reply has been generated yet.",
+      "historyItem": "Version {index}",
+      "historyTrace": "Trace ID: {traceId}",
+      "closeHistory": "Close"
+    },
     "episodes": {
       "heading": "Episodes",
       "subtitle": "Recent runs and saved drafts.",

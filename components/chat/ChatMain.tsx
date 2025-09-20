@@ -1,11 +1,10 @@
 import type { ChangeEvent, FC, FormEventHandler, KeyboardEvent } from "react";
 
 import ChatMessageList, { type ChatHistoryMessage } from "../ChatMessageList";
+import FinalReplyCard from "./FinalReplyCard";
 import {
   badgeClass,
-  insetSurfaceClass,
   inputSurfaceClass,
-  labelClass,
   panelSurfaceClass,
   primaryButtonClass,
   subtleTextClass,
@@ -20,6 +19,11 @@ interface ChatMainProps {
   isRunning: boolean;
   finalPreview?: string | null;
   finalPreviewLabel: string;
+  finalPreviewAnchorId?: string | null;
+  finalPreviewHistoryCount?: number;
+  onCopyFinalPreview?: () => void;
+  onLocateFinalPreview?: () => void;
+  onOpenFinalPreviewHistory?: () => void;
   inputLabel: string;
   inputPlaceholder: string;
   inputValue: string;
@@ -40,6 +44,11 @@ const ChatMain: FC<ChatMainProps> = ({
   isRunning,
   finalPreview,
   finalPreviewLabel,
+  finalPreviewAnchorId,
+  finalPreviewHistoryCount,
+  onCopyFinalPreview,
+  onLocateFinalPreview,
+  onOpenFinalPreviewHistory,
   inputLabel,
   inputPlaceholder,
   inputValue,
@@ -79,14 +88,18 @@ const ChatMain: FC<ChatMainProps> = ({
         ) : null}
       </div>
 
-      <ChatMessageList messages={messages} isRunning={isRunning} />
+      <FinalReplyCard
+        label={finalPreviewLabel}
+        content={finalPreview ?? ""}
+        sticky
+        historyCount={finalPreviewHistoryCount}
+        anchorId={finalPreviewAnchorId ?? undefined}
+        onCopy={onCopyFinalPreview}
+        onLocate={onLocateFinalPreview}
+        onOpenHistory={onOpenFinalPreviewHistory}
+      />
 
-      {finalPreview ? (
-        <div className={`${insetSurfaceClass} border border-sky-500/40 bg-sky-500/5 p-4`}>
-          <div className={`${labelClass} text-sky-200`}>{finalPreviewLabel}</div>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">{finalPreview}</p>
-        </div>
-      ) : null}
+      <ChatMessageList messages={messages} isRunning={isRunning} />
 
       <form onSubmit={onSubmit} className="space-y-4">
         <label htmlFor="prompt" className={`${labelClass} text-slate-300`}>

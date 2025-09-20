@@ -47,6 +47,7 @@ describe("ChatMessageList", () => {
     expect(html.includes('data-group-role="assistant"')).toBe(true);
     expect(html.includes('data-status="pending"')).toBe(true);
     expect(html.includes('data-msg-id="msg-assistant-1"')).toBe(true);
+    expect(html.includes('id="chat-message-a-1"')).toBe(true);
     expect(html.includes("Hello")).toBe(true);
     expect(html.includes("Hi, how can I help?")).toBe(true);
     expect(html.includes("Tell me a joke.")).toBe(true);

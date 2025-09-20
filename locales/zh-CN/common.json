@@ -72,7 +72,21 @@
     "downloadJsonl": "下载 JSONL",
     "saveButton": "保存对话",
     "draftLabel": "草稿输入",
-    "finalOutputTitle": "最新最终输出快照",
+    "finalReply": {
+      "title": "最终答复",
+      "copy": "复制",
+      "copySuccess": "最终答复已复制到剪贴板。",
+      "copyError": "无法复制最终答复。",
+      "locate": "定位气泡",
+      "locateUnavailable": "暂无可定位的答复气泡。",
+      "locateError": "未找到最终答复气泡。",
+      "history": "历史版本 ({count})",
+      "historyTitle": "答复版本回溯",
+      "historyEmpty": "尚未生成任何最终答复。",
+      "historyItem": "版本 {index}",
+      "historyTrace": "追踪 ID：{traceId}",
+      "closeHistory": "关闭"
+    },
     "episodes": {
       "heading": "历史回放",
       "subtitle": "最近的运行记录与草稿。",
