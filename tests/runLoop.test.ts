@@ -72,17 +72,17 @@ describe("runLoop", () => {
       },
     };
 
-  const result = await runLoop(
-    kernel,
-    (event: CoreEvent, span?: EmitSpanOptions) => {
-      emitted.push({ event, span });
-    },
-    { maxIterations: 3, context: { traceId: "trace-run-loop", input: "hi" } },
-  );
+    const result = await runLoop(
+      kernel,
+      (event: CoreEvent, span?: EmitSpanOptions) => {
+        emitted.push({ event, span });
+      },
+      { maxIterations: 3, context: { traceId: "trace-run-loop", input: "hi" } },
+    );
 
-  expect(result.reason).toBe("completed");
-  expect(result.final).toBe("HI THERE");
-  expect(result.metrics.stepCount).toBe(2);
+    expect(result.reason).toBe("completed");
+    expect(result.final).toBe("HI THERE");
+    expect(result.metrics.stepCount).toBe(2);
     expect(emitted.some((item) => item.event.type === "plan")).toBeTruthy();
     const planEvent = emitted.find(isPlanEvent);
     expect(planEvent?.span?.spanId).toBe("plan-1");

@@ -191,7 +191,10 @@ function makeMatchers(received, negate = false) {
       ensure(contains, `Expected array ${negate ? "not " : ""}to contain ${format(expected)}`);
     },
     toBeDefined() {
-      ensure(received !== undefined, `Expected value ${negate ? "to be undefined" : "to be defined"}`);
+      ensure(
+        received !== undefined,
+        `Expected value ${negate ? "to be undefined" : "to be defined"}`,
+      );
     },
     toMatchObject(expected) {
       if (!isObject(received) || !isObject(expected)) {
@@ -239,18 +242,20 @@ function createAsyncMatchers(promise, negate = false) {
     }
   };
 
-  const wrap = (method) => async (...args) => {
-    const outcome = await ensureRejected();
-    if (!outcome.rejected) {
-      return;
-    }
-    const matchers = makeMatchers(outcome.reason, negate);
-    const fn = matchers[method];
-    if (typeof fn !== "function") {
-      throw new Error(`Async matcher ${method} is not supported`);
-    }
-    return fn.apply(matchers, args);
-  };
+  const wrap =
+    (method) =>
+    async (...args) => {
+      const outcome = await ensureRejected();
+      if (!outcome.rejected) {
+        return;
+      }
+      const matchers = makeMatchers(outcome.reason, negate);
+      const fn = matchers[method];
+      if (typeof fn !== "function") {
+        throw new Error(`Async matcher ${method} is not supported`);
+      }
+      return fn.apply(matchers, args);
+    };
 
   return {
     toMatchObject: wrap("toMatchObject"),

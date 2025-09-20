@@ -127,7 +127,8 @@ interface SampleEvent {
 
 function extractAnalysisMetadata(record: SkillRecord | null): ExistingAnalysisMetadata {
   const template = record?.template_json as Record<string, unknown> | undefined;
-  const analysis = template && typeof template === "object" ? (template.analysis as any) : undefined;
+  const analysis =
+    template && typeof template === "object" ? (template.analysis as any) : undefined;
   const eventIds = new Set<string>();
   const sampleEvents: SampleEvent[] = [];
   let successCount = 0;
@@ -150,8 +151,10 @@ function extractAnalysisMetadata(record: SkillRecord | null): ExistingAnalysisMe
           input: (entry as any).input,
           output: (entry as any).output,
           success: Boolean((entry as any).success),
-          timestamp: typeof (entry as any).timestamp === "string" ? (entry as any).timestamp : undefined,
-          traceId: typeof (entry as any).trace_id === "string" ? (entry as any).trace_id : undefined,
+          timestamp:
+            typeof (entry as any).timestamp === "string" ? (entry as any).timestamp : undefined,
+          traceId:
+            typeof (entry as any).trace_id === "string" ? (entry as any).trace_id : undefined,
         });
       }
     }
@@ -244,7 +247,10 @@ export class HeuristicSkillSummariser implements SkillSummariser {
 }
 
 export class FileEventsRepository implements EventsRepository {
-  constructor(private readonly filePath = process.env.AOS_EVENTS_PATH ?? join(process.cwd(), "runtime", "events.json")) {}
+  constructor(
+    private readonly filePath = process.env.AOS_EVENTS_PATH ??
+      join(process.cwd(), "runtime", "events.json"),
+  ) {}
 
   async listToolEvents(): Promise<ToolCallEvent[]> {
     try {
@@ -279,20 +285,45 @@ function normaliseEvent(raw: unknown): ToolCallEvent | null {
   }
   const data = raw as Record<string, unknown>;
   const id = typeof data.id === "string" ? data.id : null;
-  const toolName = typeof data.toolName === "string" ? data.toolName : typeof data.tool_name === "string" ? data.tool_name : null;
-  const traceId = typeof data.traceId === "string" ? data.traceId : typeof data.trace_id === "string" ? data.trace_id : null;
-  const timestamp = typeof data.timestamp === "string" ? data.timestamp : typeof data.ts === "string" ? data.ts : new Date().toISOString();
+  const toolName =
+    typeof data.toolName === "string"
+      ? data.toolName
+      : typeof data.tool_name === "string"
+        ? data.tool_name
+        : null;
+  const traceId =
+    typeof data.traceId === "string"
+      ? data.traceId
+      : typeof data.trace_id === "string"
+        ? data.trace_id
+        : null;
+  const timestamp =
+    typeof data.timestamp === "string"
+      ? data.timestamp
+      : typeof data.ts === "string"
+        ? data.ts
+        : new Date().toISOString();
   if (!id || !toolName || !traceId) {
     return null;
   }
-  const spanId = typeof data.spanId === "string" ? data.spanId : typeof data.span_id === "string" ? data.span_id : undefined;
+  const spanId =
+    typeof data.spanId === "string"
+      ? data.spanId
+      : typeof data.span_id === "string"
+        ? data.span_id
+        : undefined;
   const parentSpanId =
     typeof data.parentSpanId === "string"
       ? data.parentSpanId
       : typeof data.parent_span_id === "string"
         ? data.parent_span_id
         : undefined;
-  const callId = typeof data.callId === "string" ? data.callId : typeof data.call_id === "string" ? data.call_id : undefined;
+  const callId =
+    typeof data.callId === "string"
+      ? data.callId
+      : typeof data.call_id === "string"
+        ? data.call_id
+        : undefined;
   const successRaw = data.success;
   const success = typeof successRaw === "boolean" ? successRaw : successRaw === 1;
   const tags = Array.isArray(data.tags)
@@ -314,7 +345,8 @@ function normaliseEvent(raw: unknown): ToolCallEvent | null {
     error: typeof data.error === "string" ? data.error : undefined,
     tags,
     category,
-    metadata: typeof data.metadata === "object" ? (data.metadata as Record<string, unknown>) : undefined,
+    metadata:
+      typeof data.metadata === "object" ? (data.metadata as Record<string, unknown>) : undefined,
   } satisfies ToolCallEvent;
 }
 
@@ -500,7 +532,10 @@ export class SkillAnalysisPipeline {
     return { record, stats };
   }
 
-  private determineReviewStatus(current: ReviewStatus | undefined, usedCount: number): ReviewStatus {
+  private determineReviewStatus(
+    current: ReviewStatus | undefined,
+    usedCount: number,
+  ): ReviewStatus {
     if (current === "approved" || current === "rejected") {
       return current;
     }

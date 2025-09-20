@@ -56,12 +56,12 @@ cp .env.example .env.local
 
 然后按照实际部署情况填写下列变量：
 
-| 变量 | 说明 |
-| --- | --- |
+| 变量              | 说明                                                          |
+| ----------------- | ------------------------------------------------------------- |
 | `OPENAI_BASE_URL` | OpenAI 兼容服务的基础 URL，例如 `https://api.openai.com/v1`。 |
-| `OPENAI_API_KEY` | 调用服务所需的 API Key，请替换为真实凭据。 |
-| `OPENAI_MODEL` | 默认使用的模型名称，如 `gpt-4o-mini`，可按需调整。 |
-| `OPENAI_ORG` | （可选）部分供应商要求的组织或项目标识，用于路由请求。 |
+| `OPENAI_API_KEY`  | 调用服务所需的 API Key，请替换为真实凭据。                    |
+| `OPENAI_MODEL`    | 默认使用的模型名称，如 `gpt-4o-mini`，可按需调整。            |
+| `OPENAI_ORG`      | （可选）部分供应商要求的组织或项目标识，用于路由请求。        |
 
 `.env.local` 被列入 `.gitignore`，不会提交到版本库；仅示例文件 `.env.example` 会被跟踪，用于说明所需配置。
 

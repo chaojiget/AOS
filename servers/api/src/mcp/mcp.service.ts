@@ -93,11 +93,7 @@ export class McpService {
     }
 
     if (trimmed) {
-      await this.database
-        .db!
-        .delete(mcpConfigs)
-        .where(eq(mcpConfigs.id, trimmed))
-        .run();
+      await this.database.db!.delete(mcpConfigs).where(eq(mcpConfigs.id, trimmed)).run();
     }
 
     const rows = this.database.db!.select().from(mcpConfigs).all();

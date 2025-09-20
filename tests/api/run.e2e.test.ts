@@ -75,7 +75,10 @@ class StubKernelFactory implements RunKernelFactory {
 class SensitiveKernel implements AgentKernel {
   private planned = false;
 
-  constructor(private readonly toolInvoker: ToolInvoker, private readonly traceId: string) {}
+  constructor(
+    private readonly toolInvoker: ToolInvoker,
+    private readonly traceId: string,
+  ) {}
 
   async perceive(): Promise<void> {}
 
@@ -98,10 +101,13 @@ class SensitiveKernel implements AgentKernel {
   }
 
   async act(step: PlanStep): Promise<ActionOutcome> {
-    const result = await this.toolInvoker({ name: step.op, args: step.args }, {
-      trace_id: this.traceId,
-      span_id: step.id,
-    });
+    const result = await this.toolInvoker(
+      { name: step.op, args: step.args },
+      {
+        trace_id: this.traceId,
+        span_id: step.id,
+      },
+    );
     return { step, result } satisfies ActionOutcome;
   }
 
@@ -262,8 +268,7 @@ describe("API run endpoints", () => {
       const rejectEvents = await runsService.getRunEvents(rejectId);
       const rejectRequest = rejectEvents.find((evt) => evt.type === "user.confirm.request");
       expect(rejectRequest).toBeDefined();
-      const rejectRequestId =
-        (rejectRequest?.data as any)?.request_id ?? rejectRequest?.id ?? "";
+      const rejectRequestId = (rejectRequest?.data as any)?.request_id ?? rejectRequest?.id ?? "";
       expect(typeof rejectRequestId).toBe("string");
 
       await runsService.decideApproval(rejectId, rejectRequestId, "reject");

@@ -10,7 +10,12 @@ import {
   type RunLoopBudget,
 } from "../../../../core/agent";
 import type { ApprovalDecision, SensitiveToolApprovalRequest } from "../../../../adapters/core";
-import { EventBus, createRunEvent, wrapCoreEvent, type EventEnvelope } from "../../../../runtime/events";
+import {
+  EventBus,
+  createRunEvent,
+  wrapCoreEvent,
+  type EventEnvelope,
+} from "../../../../runtime/events";
 import { EpisodeLogger } from "../../../../runtime/episode";
 import type { ChatMessage } from "../../../../types/chat";
 import { DatabaseService } from "../database/database.service";
@@ -211,11 +216,9 @@ export class RunsService {
       runId,
       message: request.message,
       budget: request.budget ?? null,
-    }).catch(
-      (error) => {
-        this.logger.error(`failed to persist run.started event for ${runId}`, error as Error);
-      },
-    );
+    }).catch((error) => {
+      this.logger.error(`failed to persist run.started event for ${runId}`, error as Error);
+    });
 
     this.executeRun(runId, request).catch((error) => {
       this.logger.error(`run ${runId} crashed`, error as Error);
@@ -292,20 +295,14 @@ export class RunsService {
     if (this.database.isMemoryMode()) {
       this.database.updateRun(runId, patch);
     } else {
-      await this.database
-        .db!.update(runs)
-        .set(patch)
-        .where(eq(runs.id, runId))
-        .run();
+      await this.database.db!.update(runs).set(patch).where(eq(runs.id, runId)).run();
     }
   }
 
   private async waitForApproval(request: SensitiveToolApprovalRequest): Promise<ApprovalDecision> {
     const key = this.buildApprovalKey(request.runId, request.requestId);
     if (this.pendingApprovals.has(key)) {
-      return Promise.reject(
-        new Error(`duplicate approval request ${request.requestId}`),
-      );
+      return Promise.reject(new Error(`duplicate approval request ${request.requestId}`));
     }
 
     await this.setRunStatus(request.runId, "awaiting_confirmation");
@@ -344,8 +341,7 @@ export class RunsService {
     const history = request.history ?? [];
 
     const approvalAdapter = {
-      awaitApproval: (request: SensitiveToolApprovalRequest) =>
-        this.waitForApproval(request),
+      awaitApproval: (request: SensitiveToolApprovalRequest) => this.waitForApproval(request),
     };
 
     const kernel = await this.kernelFactory.createKernel({

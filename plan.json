@@ -25,7 +25,7 @@
       "id": "S1",
       "action": "tool",
       "input": { "command": "git fetch --all --prune" },
-      "expect": "本地同步最新远程引用" 
+      "expect": "本地同步最新远程引用"
     },
     {
       "id": "S2",

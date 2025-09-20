@@ -52,7 +52,11 @@ function validateUrl(urlString: string): void {
     }
 
     // 检查是否为IPv6私有地址
-    if (url.hostname.match(/^((::1)|(::ffff:(:0+)?192\.|::ffff:(:0+)?10\.|::ffff:(:0+)?172\.(1[6-9]|2\d|3[01])\.))/)) {
+    if (
+      url.hostname.match(
+        /^((::1)|(::ffff:(:0+)?192\.|::ffff:(:0+)?10\.|::ffff:(:0+)?172\.(1[6-9]|2\d|3[01])\.))/,
+      )
+    ) {
       throw new Error("不允许访问IPv6私有地址");
     }
 
@@ -60,7 +64,6 @@ function validateUrl(urlString: string): void {
     if (["localhost", "127.0.0.1", "0.0.0.0"].includes(url.hostname.toLowerCase())) {
       throw new Error("不允许访问本地主机");
     }
-
   } catch (error) {
     if (error instanceof Error) {
       throw error;

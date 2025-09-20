@@ -113,7 +113,11 @@ export class SqliteSkillsRepository implements SkillsRepository {
 
   async findById(id: string): Promise<SkillRecord | null> {
     await this.ensureDefaults();
-    const rows = await this.db.select().from(schema.skills).where(eq(schema.skills.id, id)).limit(1);
+    const rows = await this.db
+      .select()
+      .from(schema.skills)
+      .where(eq(schema.skills.id, id))
+      .limit(1);
     const match = rows[0];
     return match ? deserializeSkill(match) : null;
   }
@@ -284,7 +288,9 @@ export class SqliteSkillsRepository implements SkillsRepository {
   }
 }
 
-export function createInMemorySkillsRepository(initial: SkillRecord[] = DEFAULT_SKILLS): SkillsRepository {
+export function createInMemorySkillsRepository(
+  initial: SkillRecord[] = DEFAULT_SKILLS,
+): SkillsRepository {
   return new InMemorySkillsRepository(initial);
 }
 

@@ -184,10 +184,18 @@ export async function runLoop(
     if (!budget) {
       return undefined;
     }
-    if (typeof budget.maxSteps === "number" && budget.maxSteps >= 0 && metrics.stepCount >= budget.maxSteps) {
+    if (
+      typeof budget.maxSteps === "number" &&
+      budget.maxSteps >= 0 &&
+      metrics.stepCount >= budget.maxSteps
+    ) {
       return { reason: "step-limit", limit: budget.maxSteps, metrics: { ...metrics } };
     }
-    if (typeof budget.maxCost === "number" && Number.isFinite(budget.maxCost) && metrics.totalCost >= budget.maxCost) {
+    if (
+      typeof budget.maxCost === "number" &&
+      Number.isFinite(budget.maxCost) &&
+      metrics.totalCost >= budget.maxCost
+    ) {
       return { reason: "cost-limit", limit: budget.maxCost, metrics: { ...metrics } };
     }
     if (
@@ -391,7 +399,9 @@ export async function runLoop(
 
     lastReview = await kernel.review(actions);
     const reviewNotes = Array.isArray(lastReview.notes)
-      ? lastReview.notes.filter((note): note is string => typeof note === "string" && note.trim().length > 0)
+      ? lastReview.notes.filter(
+          (note): note is string => typeof note === "string" && note.trim().length > 0,
+        )
       : [];
     for (const note of reviewNotes) {
       await ensurePromise(

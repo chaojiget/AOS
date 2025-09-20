@@ -69,9 +69,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         res.status(status).json(body ?? { decision });
         return;
       }
-      res.status(status).json(
-        body ?? { error: { message: `approval request failed with status ${status}` } },
-      );
+      res
+        .status(status)
+        .json(body ?? { error: { message: `approval request failed with status ${status}` } });
       return;
     }
 

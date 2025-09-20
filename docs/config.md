@@ -14,13 +14,13 @@ The agent uses an OpenAI-compatible chat completion endpoint for `llm.chat` tool
 
 ## Environment variables
 
-| Variable | Required | Description |
-| --- | --- | --- |
-| `OPENAI_BASE_URL` | No | Base URL for the compatible API. Defaults to `https://api.openai.com/v1`. |
-| `OPENAI_API_KEY` | Yes | API key used for authentication. |
-| `OPENAI_MODEL` | Yes | Chat completion model name (e.g. `gpt-4o-mini`). |
-| `OPENAI_ORG` | No | Optional organization or project identifier header supported by some providers. |
-| `OPENAI_TIMEOUT_MS` | No | Request timeout (milliseconds) for chat completions. Defaults to 30000. |
+| Variable            | Required | Description                                                                     |
+| ------------------- | -------- | ------------------------------------------------------------------------------- |
+| `OPENAI_BASE_URL`   | No       | Base URL for the compatible API. Defaults to `https://api.openai.com/v1`.       |
+| `OPENAI_API_KEY`    | Yes      | API key used for authentication.                                                |
+| `OPENAI_MODEL`      | Yes      | Chat completion model name (e.g. `gpt-4o-mini`).                                |
+| `OPENAI_ORG`        | No       | Optional organization or project identifier header supported by some providers. |
+| `OPENAI_TIMEOUT_MS` | No       | Request timeout (milliseconds) for chat completions. Defaults to 30000.         |
 
 The server, CLI and tests automatically read values from `process.env`. Local development should use `.env.local`; CI can define the same variables in the pipeline secrets store.
 

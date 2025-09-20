@@ -252,7 +252,7 @@ const HomePage: NextPage = () => {
   const [chatHistory, setChatHistory] = useState<ChatHistoryMessage[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "logflow">("chat");
-  const [finalOutput, setFinalOutput] = useState<any>(null);
+  const [finalOutput, setFinalOutput] = useState<unknown>(null);
   const [lastEvent, setLastEvent] = useState<StreamEventEnvelope | null>(null);
   const [planEvents, setPlanEvents] = useState<PlanTimelineEvent[]>([]);
   const [planFilter, setPlanFilter] = useState("");
@@ -653,7 +653,9 @@ const HomePage: NextPage = () => {
       if (kind === "run.finished") {
         const outputs =
           event.data?.final ?? event.data?.outputs ?? event.data?.result ?? event.data;
-        setFinalOutput((previous) => previous ?? outputs);
+        setFinalOutput((previous: unknown) =>
+          previous === null || previous === undefined ? outputs : previous,
+        );
         setRunStatus("completed");
         setProgressPct(1);
         closeStream();
@@ -1264,7 +1266,7 @@ const HomePage: NextPage = () => {
                 </div>
               ) : null}
 
-              {finalOutput ? (
+              {finalOutput != null ? (
                 <div className="space-y-3">
                   <div className={`${labelClass} text-slate-400`}>
                     {t("conversation.finalOutputTitle")}

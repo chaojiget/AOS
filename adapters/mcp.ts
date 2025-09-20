@@ -584,13 +584,13 @@ class WebSocketMCPConnection implements MCPServerConnection {
 function validateCommand(command: string): void {
   // 检查是否包含危险字符或模式
   const dangerousPatterns = [
-    /[;&|`$(){}[\]<>]/,  // shell metacharacters
-    /\.\./,               // directory traversal
-    /^\s*rm\s/i,          // rm command
-    /^\s*rmdir\s/i,       // rmdir command
-    /^\s*del\s/i,         // Windows del command
-    /^\s*format\s/i,      // format command
-    /^\s*shutdown\s/i,    // shutdown command
+    /[;&|`$(){}[\]<>]/, // shell metacharacters
+    /\.\./, // directory traversal
+    /^\s*rm\s/i, // rm command
+    /^\s*rmdir\s/i, // rmdir command
+    /^\s*del\s/i, // Windows del command
+    /^\s*format\s/i, // format command
+    /^\s*shutdown\s/i, // shutdown command
   ];
 
   for (const pattern of dangerousPatterns) {
@@ -1357,8 +1357,9 @@ export class McpAdapter {
     tool: string,
     argsHash: string,
     spanId: string,
-    _options: McpCallOptions, // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _options: McpCallOptions,
   ): Promise<ToolResult> {
+    void _options;
     const key = this.buildKey(serverId, tool, argsHash);
     const queue = this.recorded.get(key);
     if (!queue || queue.length === 0) {

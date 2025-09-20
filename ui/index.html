@@ -192,7 +192,11 @@
           try {
             const payload = JSON.parse(evt.data);
             status.textContent = "Final answer ready";
-            finalOutput.textContent = JSON.stringify(payload.data?.outputs ?? payload.data ?? null, null, 2);
+            finalOutput.textContent = JSON.stringify(
+              payload.data?.outputs ?? payload.data ?? null,
+              null,
+              2,
+            );
           } catch (error) {
             console.error("Failed to parse final answer payload", error);
           }

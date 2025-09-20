@@ -1,11 +1,7 @@
 {
   "shell": {
     "tag": "div",
-    "classes": [
-      "bg-slate-950",
-      "min-h-screen",
-      "text-slate-100"
-    ]
+    "classes": ["bg-slate-950", "min-h-screen", "text-slate-100"]
   },
   "header": {
     "tag": "header",
@@ -22,16 +18,7 @@
   },
   "main": {
     "tag": "main",
-    "classes": [
-      "max-w-6xl",
-      "mx-auto",
-      "pb-16",
-      "pt-10",
-      "px-6",
-      "sm:px-8",
-      "space-y-8",
-      "w-full"
-    ]
+    "classes": ["max-w-6xl", "mx-auto", "pb-16", "pt-10", "px-6", "sm:px-8", "space-y-8", "w-full"]
   },
   "nav": {
     "container": {
@@ -95,11 +82,7 @@
   },
   "layout": {
     "tag": "div",
-    "classes": [
-      "gap-6",
-      "grid",
-      "xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]"
-    ]
+    "classes": ["gap-6", "grid", "xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]"]
   },
   "conversationPanel": {
     "tag": "section",
@@ -116,10 +99,7 @@
   },
   "sidebarPanels": {
     "tag": "div",
-    "classes": [
-      "gap-6",
-      "grid"
-    ]
+    "classes": ["gap-6", "grid"]
   },
   "guardianPanel": {
     "tag": "section",
