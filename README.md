@@ -41,6 +41,9 @@ cp backend/.env.example backend/.env
 
 # 编辑环境变量，设置你的 OpenAI API Key
 nano backend/.env
+
+# （可选）为前端创建 `.env.local` 环境变量文件
+touch .env.local
 ```
 
 ### 3. 配置 OpenAI API Key
@@ -74,6 +77,16 @@ npm start
 
 1. **聊天界面**: 访问 `http://localhost:3000` 开始与AI助手对话
 2. **监控仪表板**: 访问 `http://localhost:3000/telemetry` 查看遥测数据
+
+### 前端环境变量
+
+在根目录创建 `.env.local` 文件，配置前端请求后端时使用的基础地址：
+
+```env
+NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
+```
+
+在部署到不同环境时，只需修改该变量，即可让聊天与遥测页面指向新的后端地址。
 
 ## 🔧 API 端点
 
