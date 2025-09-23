@@ -1,9 +1,25 @@
 const DEFAULT_BACKEND_URL = "http://localhost:3001";
 
-const rawBackendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? DEFAULT_BACKEND_URL;
+const sanitizeUrl = (url: string) => url.replace(/\/+$/, "");
 
-export const API_BASE_URL = rawBackendUrl.replace(/\/+$/, "");
+const resolveBackendUrl = () => {
+  const envUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.trim();
+  if (envUrl) {
+    return sanitizeUrl(envUrl);
+  }
 
-export const CHAT_ENDPOINT = `${API_BASE_URL}/api/chat`;
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    const port = process.env.NEXT_PUBLIC_BACKEND_PORT ?? "3001";
+    return sanitizeUrl(`${protocol}//${hostname}:${port}`);
+  }
 
-export const telemetryEndpoint = (path: string) => `${API_BASE_URL}/api/telemetry/${path}`;
+  return sanitizeUrl(DEFAULT_BACKEND_URL);
+};
+
+export const getApiBaseUrl = () => resolveBackendUrl();
+
+export const getChatEndpoint = () => `${getApiBaseUrl()}/api/chat`;
+
+export const telemetryEndpoint = (path: string) => `${getApiBaseUrl()}/api/telemetry/${path}`;

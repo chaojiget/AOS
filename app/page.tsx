@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Send, Bot, User, Activity, Database, FileText } from "lucide-react";
-import { CHAT_ENDPOINT, API_BASE_URL } from "@/lib/apiConfig";
+import { getChatEndpoint, getApiBaseUrl } from "@/lib/apiConfig";
 
 interface Message {
   id: string;
@@ -79,7 +79,7 @@ export default function ChatPage() {
 
     try {
       // Call the backend API
-      const response = await fetch(CHAT_ENDPOINT, {
+      const response = await fetch(getChatEndpoint(), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -113,7 +113,7 @@ export default function ChatPage() {
       console.error("Error sending message:", error);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `抱歉，连接服务器时遇到问题。请确保后端服务在 ${API_BASE_URL} 上运行并提供 /api/chat 接口。错误信息: ${error instanceof Error ? error.message : '未知错误'}`,
+        content: `抱歉，连接服务器时遇到问题。请确保后端服务在 ${getApiBaseUrl()} 上运行并提供 /api/chat 接口。错误信息: ${error instanceof Error ? error.message : '未知错误'}`,
         role: "assistant",
         timestamp: new Date()
       };
