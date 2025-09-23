@@ -3,7 +3,7 @@ import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import { DynamicTool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { trace, context, SpanStatusCode } from '@opentelemetry/api';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
 
 // Define tools for the agent
 const searchTool = new DynamicTool({
@@ -49,9 +49,13 @@ const timeToolTool = new DynamicTool({
 export class ChatAgent {
   private agent: any;
   private tracer = trace.getTracer('chat-agent');
+  private readonly model: ChatOpenAI;
+  private toolsEnabled = true;
 
   constructor() {
-    const model = new ChatOpenAI({
+    this.toolsEnabled = process.env.AGENT_ENABLE_TOOLS !== 'false';
+
+    this.model = new ChatOpenAI({
       modelName: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
       temperature: 0.7,
       openAIApiKey: process.env.OPENAI_API_KEY,
@@ -60,10 +64,12 @@ export class ChatAgent {
       },
     });
 
-    this.agent = createReactAgent({
-      llm: model,
-      tools: [searchTool, calculatorTool, timeToolTool],
-    });
+    if (this.shouldUseTools()) {
+      this.agent = createReactAgent({
+        llm: this.model,
+        tools: [searchTool, calculatorTool, timeToolTool],
+      });
+    }
   }
 
   async processMessage(message: string, traceId?: string): Promise<{
@@ -83,11 +89,7 @@ export class ChatAgent {
         });
 
         // Invoke the agent with the user message
-        const result = await this.agent.invoke({
-          messages: [new HumanMessage(message)],
-        });
-
-        const response = result.messages[result.messages.length - 1].content;
+        const response = await this.invokeWithFallback(message);
         const duration = Date.now() - startTime;
 
         span.setAttributes({
@@ -129,6 +131,77 @@ export class ChatAgent {
         span.end();
       }
     });
+  }
+
+  private shouldUseTools(): boolean {
+    return this.toolsEnabled;
+  }
+
+  private async invokeWithFallback(message: string): Promise<string> {
+    try {
+      return await this.invokeAgent(message);
+    } catch (error) {
+      if (this.toolsEnabled && this.isToolUnsupportedError(error)) {
+        console.warn('检测到当前模型不支持工具调用，回退为纯对话模式');
+        this.disableAgentTools();
+        return await this.invokeAgent(message);
+      }
+      throw error;
+    }
+  }
+
+  private async invokeAgent(message: string): Promise<string> {
+    if (this.toolsEnabled && this.agent) {
+      const result = await this.agent.invoke({
+        messages: [new HumanMessage(message)],
+      });
+      const agentResponse = result.messages[result.messages.length - 1];
+      return this.extractContent(agentResponse?.content ?? '');
+    }
+
+    const directResponse = await this.model.invoke([new HumanMessage(message)]);
+    return this.extractContent(directResponse.content);
+  }
+
+  private extractContent(content: AIMessage['content']): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    if (Array.isArray(content)) {
+      return content
+        .map(part => {
+          if (typeof part === 'string') {
+            return part;
+          }
+          if (part.type === 'text' && 'text' in part) {
+            return part.text ?? '';
+          }
+          return '';
+        })
+        .join('')
+        .trim();
+    }
+
+    return '';
+  }
+
+  private isToolUnsupportedError(error: unknown): boolean {
+    if (error && typeof error === 'object') {
+      const message = error instanceof Error ? error.message : (error as any).error?.message;
+      if (typeof message === 'string' && message.includes('No endpoints found that support tool use')) {
+        return true;
+      }
+      if ('status' in error && (error as any).status === 404 && typeof message === 'string') {
+        return message.toLowerCase().includes('tool');
+      }
+    }
+    return false;
+  }
+
+  private disableAgentTools() {
+    this.toolsEnabled = false;
+    this.agent = undefined;
   }
 
   async getConversationHistory(messages: Array<{ role: string; content: string }>): Promise<any[]> {
