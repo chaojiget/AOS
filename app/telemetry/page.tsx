@@ -17,6 +17,7 @@ import {
   Clock,
   Zap
 } from "lucide-react";
+import { telemetryEndpoint } from "@/lib/apiConfig";
 
 interface TelemetryData {
   traces: any[];
@@ -66,10 +67,10 @@ export default function TelemetryPage() {
       setLoading(true);
 
       const [tracesRes, logsRes, metricsRes, statsRes] = await Promise.all([
-        fetch('http://localhost:3002/api/telemetry/traces?limit=50'),
-        fetch('http://localhost:3002/api/telemetry/logs?limit=100'),
-        fetch('http://localhost:3002/api/telemetry/metrics?limit=50'),
-        fetch('http://localhost:3002/api/telemetry/stats')
+        fetch(`${telemetryEndpoint('traces')}?limit=50`),
+        fetch(`${telemetryEndpoint('logs')}?limit=100`),
+        fetch(`${telemetryEndpoint('metrics')}?limit=50`),
+        fetch(telemetryEndpoint('stats'))
       ]);
 
       const [traces, logs, metrics, stats] = await Promise.all([
