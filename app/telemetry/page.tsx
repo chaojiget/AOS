@@ -53,7 +53,13 @@ export default function TelemetryPage() {
   });
   const [loading, setLoading] = useState(true);
   const [selectedTrace, setSelectedTrace] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+    setLastUpdated(new Date());
+  }, []);
 
   const fetchTelemetryData = async () => {
     try {
@@ -97,6 +103,7 @@ export default function TelemetryPage() {
   }, []);
 
   const formatTimestamp = (timestamp: number) => {
+    if (!isClient) return '';
     return new Date(timestamp).toLocaleString();
   };
 
@@ -129,10 +136,12 @@ export default function TelemetryPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-xs">
-            <Clock className="h-3 w-3 mr-1" />
-            Last updated: {lastUpdated.toLocaleTimeString()}
-          </Badge>
+          {isClient && lastUpdated && (
+            <Badge variant="outline" className="text-xs">
+              <Clock className="h-3 w-3 mr-1" />
+              Last updated: {lastUpdated.toLocaleTimeString()}
+            </Badge>
+          )}
           <Button
             variant="outline"
             size="sm"

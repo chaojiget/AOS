@@ -25,15 +25,21 @@ interface ChatStats {
 }
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      content: "Hello! I'm your AI assistant. How can I help you today?",
-      role: "assistant",
-      timestamp: new Date(),
-      traceId: "trace-001"
-    }
-  ]);
+  const [isClient, setIsClient] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  useEffect(() => {
+    setIsClient(true);
+    setMessages([
+      {
+        id: "1",
+        content: "Hello! I'm your AI assistant. How can I help you today?",
+        role: "assistant",
+        timestamp: new Date(),
+        traceId: "trace-001"
+      }
+    ]);
+  }, []);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [stats, setStats] = useState<ChatStats>({
@@ -242,10 +248,10 @@ export default function ChatPage() {
                 >
                   <div className="text-sm">{message.content}</div>
                   <div className="flex items-center gap-2 mt-2 text-xs opacity-70">
-                    <span>{message.timestamp.toLocaleTimeString()}</span>
+                    {isClient && <span>{message.timestamp.toLocaleTimeString()}</span>}
                     {message.traceId && (
                       <>
-                        <Separator orientation="vertical" className="h-3" />
+                        {isClient && <Separator orientation="vertical" className="h-3" />}
                         <span className="font-mono">{message.traceId}</span>
                       </>
                     )}
