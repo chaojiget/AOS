@@ -129,17 +129,17 @@ export default function TelemetryPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Activity className="h-6 w-6" />
-            OpenTelemetry Dashboard
+            OpenTelemetry 监控仪表板
           </h1>
           <p className="text-muted-foreground">
-            Real-time monitoring and observability for AOS Chat
+            AOS 聊天应用实时监控与可观测性
           </p>
         </div>
         <div className="flex items-center gap-2">
           {isClient && lastUpdated && (
             <Badge variant="outline" className="text-xs">
               <Clock className="h-3 w-3 mr-1" />
-              Last updated: {lastUpdated.toLocaleTimeString()}
+最后更新: {lastUpdated.toLocaleTimeString()}
             </Badge>
           )}
           <Button
@@ -149,7 +149,7 @@ export default function TelemetryPage() {
             disabled={loading}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            刷新
           </Button>
         </div>
       </div>
@@ -161,13 +161,13 @@ export default function TelemetryPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <FileText className="h-4 w-4" />
-                Total Traces
+                总追踪数
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{data.stats.total.traces}</div>
               <p className="text-xs text-muted-foreground">
-                {data.stats.recent.traces} in last hour
+过去一小时 {data.stats.recent.traces} 条
               </p>
             </CardContent>
           </Card>
@@ -176,7 +176,7 @@ export default function TelemetryPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <Zap className="h-4 w-4" />
-                Avg Response Time
+                平均响应时间
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -184,7 +184,7 @@ export default function TelemetryPage() {
                 {data.stats.performance.avgResponseTime}ms
               </div>
               <p className="text-xs text-muted-foreground">
-                Across all requests
+所有请求平均值
               </p>
             </CardContent>
           </Card>
@@ -193,7 +193,7 @@ export default function TelemetryPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <AlertCircle className="h-4 w-4" />
-                Error Rate
+                错误率
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -201,7 +201,7 @@ export default function TelemetryPage() {
                 {data.stats.performance.errorRate.toFixed(1)}%
               </div>
               <p className="text-xs text-muted-foreground">
-                {data.stats.performance.totalErrors} errors
+{data.stats.performance.totalErrors} 个错误
               </p>
             </CardContent>
           </Card>
@@ -210,13 +210,13 @@ export default function TelemetryPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
-                Recent Activity
+                最近活动
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{data.stats.recent.logs}</div>
               <p className="text-xs text-muted-foreground">
-                Log entries in last hour
+过去一小时的日志条数
               </p>
             </CardContent>
           </Card>
@@ -229,7 +229,7 @@ export default function TelemetryPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Database className="h-5 w-5" />
-              Recent Traces
+              最近追踪
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -280,7 +280,7 @@ export default function TelemetryPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Recent Logs
+              最近日志
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -299,7 +299,7 @@ export default function TelemetryPage() {
                     <div className="text-sm">{log.message}</div>
                     {log.trace_id && (
                       <div className="text-xs text-muted-foreground font-mono mt-1">
-                        Trace: {log.trace_id}
+                        追踪: {log.trace_id}
                       </div>
                     )}
                   </div>
@@ -315,7 +315,7 @@ export default function TelemetryPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
-            Recent Metrics
+            最近指标
           </CardTitle>
         </CardHeader>
         <CardContent>

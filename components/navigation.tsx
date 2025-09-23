@@ -25,7 +25,7 @@ export function Navigation() {
                   className="flex items-center space-x-2"
                 >
                   <Bot className="h-4 w-4" />
-                  <span>Chat</span>
+                  <span>聊天</span>
                 </Button>
               </Link>
 
@@ -35,7 +35,7 @@ export function Navigation() {
                   className="flex items-center space-x-2"
                 >
                   <Activity className="h-4 w-4" />
-                  <span>Telemetry</span>
+                  <span>监控</span>
                 </Button>
               </Link>
             </div>
@@ -43,7 +43,7 @@ export function Navigation() {
 
           <div className="flex items-center space-x-4">
             <div className="text-sm text-muted-foreground">
-              AI Chat with OpenTelemetry
+              AI聊天与监控系统
             </div>
           </div>
         </div>

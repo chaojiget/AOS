@@ -33,7 +33,7 @@ export default function ChatPage() {
     setMessages([
       {
         id: "1",
-        content: "Hello! I'm your AI assistant. How can I help you today?",
+        content: "你好！我是你的AI助手。有什么可以帮助你的吗？",
         role: "assistant",
         timestamp: new Date(),
         traceId: "trace-001"
@@ -112,7 +112,7 @@ export default function ChatPage() {
       console.error("Error sending message:", error);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `Sorry, I'm having trouble connecting to the server. Please make sure the backend is running on port 3001. Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        content: `抱歉，连接服务器时遇到问题。请确保后端服务运行在3002端口。错误信息: ${error instanceof Error ? error.message : '未知错误'}`,
         role: "assistant",
         timestamp: new Date()
       };
@@ -137,20 +137,20 @@ export default function ChatPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
               <Activity className="h-5 w-5" />
-              System Monitoring
+              系统监控
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Total Messages</span>
+              <span className="text-sm text-muted-foreground">总消息数</span>
               <Badge variant="secondary">{stats.totalMessages}</Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Avg Response Time</span>
+              <span className="text-sm text-muted-foreground">平均响应时间</span>
               <Badge variant="outline">{stats.responseTime}ms</Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Active Traces</span>
+              <span className="text-sm text-muted-foreground">活跃追踪</span>
               <Badge variant="default">{stats.activeTraces}</Badge>
             </div>
           </CardContent>
@@ -160,22 +160,22 @@ export default function ChatPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
               <Database className="h-5 w-5" />
-              OpenTelemetry
+              遥测系统
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <div className="h-2 w-2 bg-green-500 rounded-full"></div>
-                <span className="text-sm">SQLite Connected</span>
+                <span className="text-sm">数据库已连接</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
-                <span className="text-sm">Traces Collecting</span>
+                <span className="text-sm">追踪收集中</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-2 w-2 bg-orange-500 rounded-full"></div>
-                <span className="text-sm">Metrics Active</span>
+                <span className="text-sm">指标活跃</span>
               </div>
             </div>
           </CardContent>
@@ -185,7 +185,7 @@ export default function ChatPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Recent Traces
+              最近追踪
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -214,10 +214,10 @@ export default function ChatPage() {
         <div className="border-b p-4">
           <h1 className="text-xl font-semibold flex items-center gap-2">
             <Bot className="h-6 w-6" />
-            AOS AI Assistant
+            AOS AI 助手
           </h1>
           <p className="text-sm text-muted-foreground">
-            Powered by LangGraph with OpenTelemetry monitoring
+            基于LangGraph构建，支持OpenTelemetry监控
           </p>
         </div>
 
@@ -295,7 +295,7 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type your message..."
+                placeholder="输入你的消息..."
                 className="flex-1"
                 disabled={isLoading}
               />
@@ -308,7 +308,7 @@ export default function ChatPage() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-2 text-center">
-              Press Enter to send, Shift+Enter for new line
+              按回车发送，Shift+回车换行
             </p>
           </div>
         </div>

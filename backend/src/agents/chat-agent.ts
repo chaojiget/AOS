@@ -52,9 +52,12 @@ export class ChatAgent {
 
   constructor() {
     const model = new ChatOpenAI({
-      modelName: 'gpt-3.5-turbo',
+      modelName: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
       temperature: 0.7,
       openAIApiKey: process.env.OPENAI_API_KEY,
+      configuration: {
+        baseURL: process.env.OPENAI_BASE_URL,
+      },
     });
 
     this.agent = createReactAgent({
@@ -76,7 +79,7 @@ export class ChatAgent {
         span.setAttributes({
           'agent.message.input': message,
           'agent.trace_id': spanTraceId,
-          'agent.model': 'gpt-3.5-turbo',
+          'agent.model': process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
         });
 
         // Invoke the agent with the user message
