@@ -21,5 +21,6 @@ const resolveBackendUrl = () => {
 export const getApiBaseUrl = () => resolveBackendUrl();
 
 export const getChatEndpoint = () => `${getApiBaseUrl()}/api/chat`;
+export const getChatStreamEndpoint = () => `${getApiBaseUrl()}/api/chat/stream`;
 
 export const telemetryEndpoint = (path: string) => `${getApiBaseUrl()}/api/telemetry/${path}`;

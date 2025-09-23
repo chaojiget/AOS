@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Send, Bot, User, Activity, Database, FileText } from "lucide-react";
-import { getChatEndpoint, getApiBaseUrl } from "@/lib/apiConfig";
+import { getApiBaseUrl, getChatStreamEndpoint } from "@/lib/apiConfig";
 
 interface Message {
   id: string;
@@ -25,21 +25,32 @@ interface ChatStats {
   activeTraces: number;
 }
 
+type SessionMeta = { id: string; title: string };
+
 export default function ChatPage() {
   const [isClient, setIsClient] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [conversationId, setConversationId] = useState<string>("default");
+  const [sessions, setSessionsState] = useState<SessionMeta[]>([]);
 
   useEffect(() => {
     setIsClient(true);
-    setMessages([
-      {
+    const cid = getConversationId();
+    setConversationId(cid);
+    const stored = loadMessages(cid);
+    if (stored && stored.length) {
+      setMessages(stored);
+    } else {
+      const welcome = {
         id: "1",
         content: "你好！我是你的AI助手。有什么可以帮助你的吗？",
         role: "assistant",
         timestamp: new Date(),
         traceId: "trace-001"
-      }
-    ]);
+      } as Message;
+      setMessages([welcome]);
+      saveMessages(cid, [welcome]);
+    }
   }, []);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -61,8 +72,82 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    setSessionsState(readSessionsFromStorage());
+  }, []);
+
+  const getConversationId = () => {
+    if (typeof window === "undefined") return "default";
+    const key = "conversationId";
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(key, id);
+    }
+    return id;
+  };
+
+  const saveMessages = (cid: string, list: Message[]) => {
+    if (typeof window === "undefined") return;
+    const compact = list.map(m => ({ id: m.id, content: m.content, role: m.role, timestamp: m.timestamp.toISOString(), traceId: m.traceId }));
+    localStorage.setItem(`messages:${cid}`, JSON.stringify(compact));
+  };
+
+  const loadMessages = (cid: string): Message[] | null => {
+    if (typeof window === "undefined") return null;
+    const raw = localStorage.getItem(`messages:${cid}`);
+    if (!raw) return null;
+    try {
+      const arr = JSON.parse(raw) as any[];
+      return arr.map(x => ({ id: x.id, content: x.content, role: x.role, timestamp: new Date(x.timestamp), traceId: x.traceId }));
+    } catch {
+      return null;
+    }
+  };
+
+  const readSessionsFromStorage = (): SessionMeta[] => {
+    if (typeof window === "undefined") return [];
+    const raw = localStorage.getItem("sessions");
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as SessionMeta[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const persistSessions = (update: SessionMeta[] | ((prev: SessionMeta[]) => SessionMeta[])) => {
+    setSessionsState(prev => {
+      const next = typeof update === "function" ? (update as (prev: SessionMeta[]) => SessionMeta[])(prev) : update;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("sessions", JSON.stringify(next));
+      }
+      return next;
+    });
+  };
+
+  const switchConversation = (cid: string) => {
+    if (typeof window !== "undefined") localStorage.setItem("conversationId", cid);
+    setConversationId(cid);
+    persistSessions(prev => (prev.some(session => session.id === cid) ? prev : [...prev, { id: cid, title: "" }]));
+    const loaded = loadMessages(cid);
+    if (loaded && loaded.length) {
+      setMessages(loaded);
+    } else {
+      const fallback = [
+        { id: "1", content: "你好！我是你的AI助手。有什么可以帮助你的吗？", role: "assistant", timestamp: new Date(), traceId: "trace-001" }
+      ];
+      setMessages(fallback);
+      saveMessages(cid, fallback);
+    }
+  };
+
   const sendMessage = async () => {
     if (!input.trim()) return;
+
+    const cid = getConversationId();
+    setConversationId(cid);
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -71,43 +156,75 @@ export default function ChatPage() {
       timestamp: new Date()
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => {
+      const next = [...prev, userMessage];
+      saveMessages(cid, next);
+      return next;
+    });
     setInput("");
     setIsLoading(true);
 
     const startTime = Date.now();
 
     try {
-      // Call the backend API
-      const response = await fetch(getChatEndpoint(), {
+      // 流式调用后端
+      const response = await fetch(getChatStreamEndpoint(), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ message: input })
+        body: JSON.stringify({ message: input, conversationId: cid })
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP ${response.status}`);
       }
 
-      const data = await response.json();
-      const responseTime = Date.now() - startTime;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: data.message || "I'm sorry, I couldn't process your request right now.",
-        role: "assistant",
-        timestamp: new Date(),
-        traceId: data.traceId || `trace-${Date.now()}`
-      };
+      const assistantId = (Date.now() + 1).toString();
+      setMessages(prev => {
+        const next = [
+          ...prev,
+          { id: assistantId, content: "", role: "assistant", timestamp: new Date() }
+        ];
+        saveMessages(cid, next);
+        return next;
+      });
 
-      setMessages(prev => [...prev, assistantMessage]);
-      setStats(prev => ({
-        totalMessages: prev.totalMessages + 2,
-        responseTime: data.responseTime || responseTime,
-        activeTraces: prev.activeTraces + 1
-      }));
+      let traceId: string | undefined;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunkText = decoder.decode(value, { stream: true });
+        const lines = chunkText.split(/\n\n/).map(l => l.trim()).filter(Boolean);
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          const dataStr = line.slice(5).trim();
+          try {
+            const evt = JSON.parse(dataStr);
+            if (evt.chunk) {
+              setMessages(prev => {
+                const next = prev.map(m => m.id === assistantId ? { ...m, content: (m.content || "") + evt.chunk, traceId: evt.traceId || m.traceId } : m);
+                saveMessages(cid, next);
+                return next;
+              });
+              traceId = evt.traceId || traceId;
+            }
+            if (evt.done) {
+              const responseTime = Date.now() - startTime;
+              setStats(prev => ({
+                totalMessages: prev.totalMessages + 2,
+                responseTime,
+                activeTraces: prev.activeTraces + 1
+              }));
+            }
+            if (evt.error) throw new Error(evt.error);
+          } catch {}
+        }
+      }
 
     } catch (error) {
       console.error("Error sending message:", error);
@@ -117,7 +234,11 @@ export default function ChatPage() {
         role: "assistant",
         timestamp: new Date()
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => {
+        const next = [...prev, errorMessage];
+        saveMessages(cid, next);
+        return next;
+      });
     } finally {
       setIsLoading(false);
     }
@@ -198,11 +319,76 @@ export default function ChatPage() {
                   .map((message) => (
                     <div key={message.id} className="text-xs p-2 bg-muted rounded">
                       <div className="font-mono text-blue-600">{message.traceId}</div>
-                      <div className="text-muted-foreground">
-                        {message.timestamp.toLocaleTimeString()}
+                      <div className="text-muted-foreground flex justify-between">
+                        <span>{message.timestamp.toLocaleTimeString()}</span>
+                        <span className="font-mono">{conversationId}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-muted-foreground truncate">
+                        {(messages.find(msg => msg.role === 'user')?.content || '')
+                          .split(/\s+/)
+                          .slice(0, 5)
+                          .join(' ')}
                       </div>
                     </div>
                   ))}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              会话摘要
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">会话ID</span>
+                <span className="font-mono">{conversationId}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">首句</span>
+                <div className="mt-1 font-mono truncate">
+                  {(messages.find(msg => msg.role === 'user')?.content || '')
+                    .split(/\s+/)
+                    .slice(0, 5)
+                    .join(' ')}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3 flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              历史会话
+            </CardTitle>
+            <Button size="sm" variant="secondary" onClick={() => {
+              const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+              localStorage.setItem("conversationId", id);
+              setConversationId(id);
+              const welcome = { id: "1", content: "你好！我是你的AI助手。有什么可以帮助你的吗？", role: "assistant", timestamp: new Date(), traceId: "trace-001" } as Message;
+              setMessages([welcome]);
+              saveMessages(id, [welcome]);
+              persistSessions(prev => [...prev, { id, title: "" }]);
+            }}>新会话</Button>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-40">
+              <div className="space-y-2">
+                {sessions.slice(-50).reverse().map(s => (
+                  <div key={s.id} className="p-2 rounded border hover:bg-muted cursor-pointer" onClick={() => switchConversation(s.id)}>
+                    <div className="flex justify-between text-xs">
+                      <span className="font-mono truncate max-w-[60%]">{s.id}</span>
+                      <span className="text-muted-foreground truncate max-w-[40%]">{s.title}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </ScrollArea>
           </CardContent>

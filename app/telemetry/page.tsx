@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Database,
   Activity,
@@ -54,13 +55,29 @@ export default function TelemetryPage() {
   });
   const [loading, setLoading] = useState(true);
   const [selectedTrace, setSelectedTrace] = useState<string | null>(null);
+  const [traceDetail, setTraceDetail] = useState<any[]>([]);
+  const [traceLoading, setTraceLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);
+  const [sessionList, setSessionList] = useState<Array<{ id: string; title: string }>>([]);
+  const [selectedSession, setSelectedSession] = useState<string | null>(null);
+  const [sessionMessages, setSessionMessages] = useState<Array<{ id: string; role: string; content: string; timestamp: Date; traceId?: string }>>([]);
 
   useEffect(() => {
     setIsClient(true);
     setLastUpdated(new Date());
   }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+    const raw = localStorage.getItem("sessions");
+    try {
+      const list = raw ? (JSON.parse(raw) as Array<{ id: string; title: string }>) : [];
+      setSessionList(list);
+    } catch {
+      setSessionList([]);
+    }
+  }, [isClient]);
 
   const fetchTelemetryData = async () => {
     try {
@@ -103,6 +120,41 @@ export default function TelemetryPage() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const load = async () => {
+      if (!selectedTrace) return;
+      try {
+        setTraceLoading(true);
+        const res = await fetch(telemetryEndpoint(`traces/${selectedTrace}`));
+        const json = await res.json();
+        setTraceDetail(json.trace || []);
+      } catch {
+        setTraceDetail([]);
+      } finally {
+        setTraceLoading(false);
+      }
+    };
+    load();
+  }, [selectedTrace]);
+
+  const openSession = (id: string) => {
+    if (!isClient) return;
+    const raw = localStorage.getItem(`messages:${id}`);
+    if (!raw) {
+      setSessionMessages([]);
+      setSelectedSession(id);
+      return;
+    }
+    try {
+      const arr = JSON.parse(raw) as Array<{ id: string; role: string; content: string; timestamp: string; traceId?: string }>;
+      const msgs = arr.map(m => ({ ...m, timestamp: new Date(m.timestamp) }));
+      setSessionMessages(msgs);
+    } catch {
+      setSessionMessages([]);
+    }
+    setSelectedSession(id);
+  };
+
   const formatTimestamp = (timestamp: number) => {
     if (!isClient) return '';
     return new Date(timestamp).toLocaleString();
@@ -125,6 +177,69 @@ export default function TelemetryPage() {
 
   return (
     <div className="p-6 space-y-6 bg-background min-h-screen">
+      <Dialog open={!!selectedTrace} onOpenChange={(o) => { if (!o) setSelectedTrace(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>追踪详情</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {traceLoading && <div className="text-sm text-muted-foreground">加载中…</div>}
+            {!traceLoading && traceDetail.length === 0 && (
+              <div className="text-sm text-muted-foreground">无数据</div>
+            )}
+            {!traceLoading && traceDetail.length > 0 && (
+              <ScrollArea className="h-96">
+                <div className="space-y-2">
+                  {traceDetail.map((span: any) => (
+                    <div key={span.span_id} className="p-3 border rounded">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">{span.operation_name}</Badge>
+                        <Badge variant={span.status === '0' ? 'default' : 'destructive'} className="text-xs">{span.status === '0' ? 'OK' : 'ERROR'}</Badge>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground font-mono">
+                        <div>span: {span.span_id}</div>
+                        <div>trace: {span.trace_id}</div>
+                        <div>开始: {formatTimestamp(span.start_time)}</div>
+                        <div>耗时: {formatDuration(span.duration)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!selectedSession} onOpenChange={(o) => { if (!o) setSelectedSession(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>会话详情 {selectedSession && <span className="font-mono text-xs text-muted-foreground">{selectedSession}</span>}</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-96">
+            <div className="space-y-3">
+              {sessionMessages.map(m => (
+                <div key={m.id} className="p-3 rounded border">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant={m.role === 'user' ? 'secondary' : 'default'} className="text-xs">{m.role}</Badge>
+                    <span className="text-muted-foreground">{isClient ? m.timestamp.toLocaleString() : ''}</span>
+                    {m.traceId && (
+                      <>
+                        <Separator orientation="vertical" className="h-3" />
+                        <span className="font-mono">{m.traceId}</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="mt-2 text-sm whitespace-pre-wrap">{m.content}</div>
+                </div>
+              ))}
+              {sessionMessages.length === 0 && (
+                <div className="text-sm text-muted-foreground">暂无消息</div>
+              )}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -265,7 +380,7 @@ export default function TelemetryPage() {
                       <div className="text-sm font-medium">
                         {formatDuration(trace.duration)}
                       </div>
-                      <Button variant="ghost" size="sm">
+                      <Button variant="ghost" size="sm" onClick={() => setSelectedTrace(trace.trace_id)}>
                         <Eye className="h-3 w-3" />
                       </Button>
                     </div>
@@ -310,6 +425,32 @@ export default function TelemetryPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            会话记录
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-60">
+            <div className="space-y-2">
+              {isClient && sessionList.length === 0 && (
+                <div className="text-sm text-muted-foreground">暂无会话</div>
+              )}
+              {sessionList.slice(-100).reverse().map(s => (
+                <div key={s.id} className="p-2 border rounded hover:bg-muted cursor-pointer" onClick={() => openSession(s.id)}>
+                  <div className="flex justify-between text-xs">
+                    <span className="font-mono truncate max-w-[60%]">{s.id}</span>
+                    <span className="text-muted-foreground truncate max-w-[40%]">{s.title}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </CardContent>
+      </Card>
 
       {/* Metrics */}
       <Card>
