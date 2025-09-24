@@ -10,7 +10,8 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { chatRoutes } from './routes/chat';
 import { telemetryRoutes } from './routes/telemetry';
-import { trace, context } from '@opentelemetry/api';
+import { trace } from '@opentelemetry/api';
+import { closePool } from './db/postgres';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -106,11 +107,13 @@ app.listen(PORT, () => {
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully');
   await sdk.shutdown();
+  await closePool();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully');
   await sdk.shutdown();
+  await closePool();
   process.exit(0);
 });

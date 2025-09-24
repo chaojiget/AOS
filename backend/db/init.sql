@@ -1,0 +1,8 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name='pgmq') THEN
+    EXECUTE 'CREATE EXTENSION IF NOT EXISTS pgmq';
+  END IF;
+END
+$$;

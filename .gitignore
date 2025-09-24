@@ -41,3 +41,4 @@ next-env.d.ts
 # Misc
 *.pem
 backend/var/checkpoints/*
+backend/db/data/*

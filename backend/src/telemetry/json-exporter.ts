@@ -1,4 +1,4 @@
-import { SpanExporter, ReadableSpan } from '@opentelemetry/sdk-node';
+import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 import { ExportResult, ExportResultCode } from '@opentelemetry/core';
 import { promises as fs } from 'fs';
 import path from 'path';

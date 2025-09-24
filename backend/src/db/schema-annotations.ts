@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import type { Pool } from 'pg';
 
 type AnnotationScope = 'database' | 'table' | 'column';
 
@@ -16,7 +16,7 @@ const ANNOTATIONS: SchemaAnnotation[] = [
     scope: 'database',
     name: 'main',
     label: 'AOS 会话检查点库',
-    description: 'LangGraph SqliteSaver 生成的主数据库，用于持久化聊天流程的检查点与写入事件，以便故障恢复和会话追踪。',
+    description: 'LangGraph PostgresSaver 用于持久化聊天流程的检查点与写入事件，以便故障恢复和会话追踪。',
     tags: ['checkpoint', 'langgraph', 'runtime-state'],
   },
   {
@@ -72,8 +72,8 @@ const ANNOTATIONS: SchemaAnnotation[] = [
     parent: 'checkpoints',
     name: 'checkpoint',
     label: '状态数据',
-    description: '序列化后的对话状态二进制数据（BLOB），包含消息、工具调用等上下文。',
-    tags: ['blob', 'state'],
+    description: '序列化后的对话状态二进制数据（BYTEA），包含消息、工具调用等上下文。',
+    tags: ['bytea', 'state'],
   },
   {
     scope: 'column',
@@ -81,7 +81,7 @@ const ANNOTATIONS: SchemaAnnotation[] = [
     name: 'metadata',
     label: '附加元数据',
     description: '序列化的元数据字段，存放流程控制或自定义扩展信息。',
-    tags: ['blob', 'metadata'],
+    tags: ['bytea', 'metadata'],
   },
   {
     scope: 'table',
@@ -152,62 +152,72 @@ const ANNOTATIONS: SchemaAnnotation[] = [
     parent: 'writes',
     name: 'value',
     label: '写入值',
-    description: 'BLOB 形式的序列化写入数据，是回放构建状态所需的原始记录。',
-    tags: ['blob', 'state'],
+    description: 'BYTEA 形式的序列化写入数据，是回放构建状态所需的原始记录。',
+    tags: ['bytea', 'state'],
   },
 ];
 
-export const ensureCheckpointSchemaAnnotations = (dbPath: string) => {
-  let db: InstanceType<typeof Database> | undefined;
+export const ensureCheckpointSchemaAnnotations = async (pool: Pool) => {
+  const client = await pool.connect();
+  let txStarted = false;
   try {
-    db = new Database(dbPath);
-    db.exec(`
+    await client.query(`
       CREATE TABLE IF NOT EXISTS schema_annotations (
         scope TEXT NOT NULL,
         name TEXT NOT NULL,
         parent TEXT NOT NULL DEFAULT '',
         label TEXT NOT NULL,
         description TEXT NOT NULL,
-        tags TEXT NOT NULL,
-        updated_at INTEGER NOT NULL,
+        tags TEXT[] NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
         PRIMARY KEY (scope, name, parent)
       );
     `);
 
-    const upsert = db.prepare(`
+    const now = new Date().toISOString();
+    const upsert = `
       INSERT INTO schema_annotations (scope, name, parent, label, description, tags, updated_at)
-      VALUES (@scope, @name, @parent, @label, @description, @tags, @updatedAt)
-      ON CONFLICT(scope, name, parent) DO UPDATE SET
-        label = excluded.label,
-        description = excluded.description,
-        tags = excluded.tags,
-        updated_at = excluded.updated_at
-    `);
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (scope, name, parent) DO UPDATE SET
+        label = EXCLUDED.label,
+        description = EXCLUDED.description,
+        tags = EXCLUDED.tags,
+        updated_at = EXCLUDED.updated_at
+    `;
 
-    const now = Date.now();
-    const insertMany = db.transaction((annotations: SchemaAnnotation[]) => {
-      for (const annotation of annotations) {
-        upsert.run({
-          scope: annotation.scope,
-          name: annotation.name,
-          parent: annotation.parent ?? (annotation.scope === 'database' ? '' : 'main'),
-          label: annotation.label,
-          description: annotation.description,
-          tags: JSON.stringify(annotation.tags),
-          updatedAt: now,
-        });
+    await client.query('BEGIN');
+    txStarted = true;
+    for (const annotation of ANNOTATIONS) {
+      const parent = annotation.parent ?? (annotation.scope === 'database' ? '' : 'main');
+      await client.query(upsert, [
+        annotation.scope,
+        annotation.name,
+        parent,
+        annotation.label,
+        annotation.description,
+        annotation.tags,
+        now,
+      ]);
+    }
+    await client.query('COMMIT');
+    txStarted = false;
+  } catch (error) {
+    if (txStarted) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // ignore rollback errors
       }
-    });
-
-    insertMany(ANNOTATIONS);
+    }
+    throw error;
   } finally {
-    db?.close();
+    client.release();
   }
 };
 
-export const ensureCheckpointSchemaAnnotationsSafe = (dbPath: string) => {
+export const ensureCheckpointSchemaAnnotationsSafe = async (pool: Pool) => {
   try {
-    ensureCheckpointSchemaAnnotations(dbPath);
+    await ensureCheckpointSchemaAnnotations(pool);
   } catch (error) {
     console.warn('[schema-annotations] 注释同步失败:', error);
   }

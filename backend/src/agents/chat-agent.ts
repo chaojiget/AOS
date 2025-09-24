@@ -1,9 +1,10 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { StateGraph, MessagesAnnotation, START } from '@langchain/langgraph';
-import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
+import { PostgresSaver } from '../db/postgres-saver';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { ensureCheckpointSchemaAnnotationsSafe } from '../db/schema-annotations';
+import { getPool } from '../db/postgres';
 
 
 export class ChatAgent {
@@ -11,6 +12,7 @@ export class ChatAgent {
   private tracer = trace.getTracer('chat-agent');
   private readonly model: ChatOpenAI;
   private initPromise: Promise<void>;
+  private readonly pool = getPool();
 
   constructor() {
     this.model = new ChatOpenAI({
@@ -87,10 +89,9 @@ export class ChatAgent {
   }
 
   private async setupAgent() {
-    const dbPath = process.env.LANGGRAPH_CHECKPOINT_PATH || process.env.CHECKPOINT_DB_PATH || './chat_checkpoints.sqlite';
-    const checkpointer = SqliteSaver.fromConnString(dbPath);
-    checkpointer.setup();
-    ensureCheckpointSchemaAnnotationsSafe(dbPath);
+    const checkpointer = PostgresSaver.fromPool(this.pool);
+    await checkpointer.setup();
+    await ensureCheckpointSchemaAnnotationsSafe(this.pool);
 
     const callModel = async (state: typeof MessagesAnnotation.State) => {
       const sys = process.env.AGENT_SYSTEM_PROMPT || '你是对话助手。请根据历史对话记住并使用用户提供的个人信息与上下文。';
@@ -100,7 +101,7 @@ export class ChatAgent {
       return { messages: [response] };
     };
 
-    const builder = new StateGraph(MessagesAnnotation);
+    const builder: any = new StateGraph(MessagesAnnotation);
     builder.addNode('call_model', callModel);
     builder.addEdge(START, 'call_model');
     this.agent = builder.compile({ checkpointer });

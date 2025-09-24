@@ -2,11 +2,19 @@
 
 一个使用 Next.js、LangGraph 和 OpenTelemetry 构建的AI聊天应用，具有实时监控和追踪功能。
 
+## 📈 项目进度（更新于 2025-03-08）
+
+- ✅ 后端：Express + LangGraph 聊天代理已完成，支持会话上下文、SSE 流式输出与 OpenAI 模型配置。
+- ✅ 后端：LangGraph 检查点存储迁移至 PostgreSQL，复用连接池并自动同步 schema 注释。
+- ✅ 后端：OpenTelemetry 埋点生效，遥测数据以 JSON 形式写入 `backend/telemetry-data`，并通过 `/api/telemetry/*` API 提供追踪、日志、指标以及统计查询。
+- ✅ 前端：Next.js 聊天工作台上线，具备本地多会话存储、追踪 ID 展示以及实时输入提示，默认连通流式聊天接口。
+- ✅ 前端：遥测仪表板页面可视化最近追踪、日志、指标，并可回放本地历史会话、关联 Trace 详情。
+
 ## 🚀 特性
 
 - **AI聊天助手**: 基于 LangGraph 构建的智能对话系统
 - **实时监控**: 使用 OpenTelemetry 收集遥测数据
-- **数据存储**: SQLite 数据库存储日志、追踪和指标
+- **数据存储**: PostgreSQL 持久化 LangGraph 检查点，遥测落盘为 JSON 文件
 - **现代UI**: 使用 shadcn/ui 组件构建的响应式界面
 - **前后端分离**: Next.js 前端 + Node.js 后端
 
@@ -26,7 +34,7 @@
 - **Express**: Web 框架
 - **LangGraph**: AI Agent 框架
 - **OpenTelemetry**: 可观测性
-- **SQLite**: 数据存储
+- **PostgreSQL**: LangGraph 检查点存储
 - **TypeScript**: 类型安全
 
 ## 📦 安装
@@ -50,6 +58,13 @@ nano backend/.env
 touch .env.local
 ```
 
+`backend/.env` 需同时填入数据库连接串，示例：
+
+```env
+DATABASE_URL=postgres://aos:aos@localhost:5432/aos
+LANGGRAPH_CHECKPOINT_URL=${DATABASE_URL}
+```
+
 ### 3. 配置 OpenAI API Key
 
 在 `backend/.env` 文件中设置：
@@ -63,6 +78,9 @@ OPENAI_API_KEY=your_openai_api_key_here
 ### 开发模式
 
 ```bash
+# 启动 Postgres（首次运行会初始化 pgvector 扩展）
+docker-compose up postgres -d
+
 # 同时启动前端和后端
 npm run dev
 
@@ -117,13 +135,10 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
 - **日志聚合**: 结构化日志存储和查询
 - **可视化仪表板**: 实时数据展示
 
-## 🔍 数据库结构
+## 🔍 数据存储
 
-SQLite 数据库包含以下表：
-
-- `traces`: 存储OpenTelemetry追踪数据
-- `logs`: 存储应用日志
-- `metrics`: 存储性能指标
+- **PostgreSQL**：LangGraph 检查点与写入历史，自动创建 `checkpoints`、`writes`、`schema_annotations` 表。
+- **JSON 文件**：OpenTelemetry 追踪、日志、指标落盘于 `backend/telemetry-data` 目录，便于快速查看与备份。
 
 ## 🛡️ 安全性
 
@@ -170,8 +185,8 @@ AOS/
    - 检查 API 额度
 
 3. **数据库错误**
-   - 确保有写入权限
-   - 检查 SQLite 文件路径
+   - 确保本地 Postgres 服务已启动（`docker-compose ps`）
+   - 检查 `DATABASE_URL`/`LANGGRAPH_CHECKPOINT_URL` 是否配置正确
 
 ## 📄 许可证
 
