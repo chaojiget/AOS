@@ -3,6 +3,7 @@ import { StateGraph, MessagesAnnotation, START } from '@langchain/langgraph';
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
+import { ensureCheckpointSchemaAnnotationsSafe } from '../db/schema-annotations';
 
 
 export class ChatAgent {
@@ -89,6 +90,7 @@ export class ChatAgent {
     const dbPath = process.env.LANGGRAPH_CHECKPOINT_PATH || process.env.CHECKPOINT_DB_PATH || './chat_checkpoints.sqlite';
     const checkpointer = SqliteSaver.fromConnString(dbPath);
     checkpointer.setup();
+    ensureCheckpointSchemaAnnotationsSafe(dbPath);
 
     const callModel = async (state: typeof MessagesAnnotation.State) => {
       const sys = process.env.AGENT_SYSTEM_PROMPT || '你是对话助手。请根据历史对话记住并使用用户提供的个人信息与上下文。';
