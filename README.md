@@ -62,7 +62,7 @@ touch .env.local
 
 ```env
 DATABASE_URL=postgres://aos:aos@localhost:5432/aos
-LANGGRAPH_CHECKPOINT_URL=${DATABASE_URL}
+LANGGRAPH_CHECKPOINT_URL=postgres://aos:aos@localhost:5432/aos
 ```
 
 ### 3. 配置 OpenAI API Key
