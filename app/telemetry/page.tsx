@@ -46,6 +46,25 @@ interface TraceEntry {
   status: string;
 }
 
+interface SessionMessage {
+  id: string;
+  role: string;
+  content: string;
+  timestamp: Date;
+  traceId?: string;
+}
+
+interface SessionOverview {
+  id: string;
+  title: string;
+  messageCount: number;
+  firstMessageAt: Date | null;
+  lastMessageAt: Date | null;
+  lastMessageRole?: string;
+  lastMessagePreview?: string;
+  traceCount: number;
+}
+
 export default function TelemetryPage() {
   const [data, setData] = useState<TelemetryData>({
     traces: [],
@@ -61,7 +80,8 @@ export default function TelemetryPage() {
   const [isClient, setIsClient] = useState(false);
   const [sessionList, setSessionList] = useState<Array<{ id: string; title: string }>>([]);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
-  const [sessionMessages, setSessionMessages] = useState<Array<{ id: string; role: string; content: string; timestamp: Date; traceId?: string }>>([]);
+  const [sessionMessages, setSessionMessages] = useState<SessionMessage[]>([]);
+  const [sessionOverview, setSessionOverview] = useState<SessionOverview[]>([]);
 
   useEffect(() => {
     setIsClient(true);
@@ -78,6 +98,59 @@ export default function TelemetryPage() {
       setSessionList([]);
     }
   }, [isClient]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    const overviewList = sessionList.map(session => {
+      let messageCount = 0;
+      let firstMessageAt: Date | null = null;
+      let lastMessageAt: Date | null = null;
+      let lastMessageRole: string | undefined;
+      let lastMessagePreview: string | undefined;
+      let traceCount = 0;
+
+      try {
+        const raw = localStorage.getItem(`messages:${session.id}`);
+        if (raw) {
+          const parsed = JSON.parse(raw) as Array<{ id: string; role: string; content: string; timestamp: string; traceId?: string }>;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            messageCount = parsed.length;
+            const first = parsed[0];
+            const last = parsed[parsed.length - 1];
+            firstMessageAt = first?.timestamp ? new Date(first.timestamp) : null;
+            lastMessageAt = last?.timestamp ? new Date(last.timestamp) : null;
+            lastMessageRole = last?.role;
+            const previewSource = typeof last?.content === "string" ? last.content.trim() : "";
+            if (previewSource) {
+              lastMessagePreview = previewSource.length > 60 ? `${previewSource.slice(0, 60)}…` : previewSource;
+            }
+            traceCount = parsed.reduce((acc, item) => (item.traceId ? acc + 1 : acc), 0);
+          }
+        }
+      } catch {
+        // 忽略解析异常，保持默认统计
+      }
+
+      return {
+        id: session.id,
+        title: session.title || "",
+        messageCount,
+        firstMessageAt,
+        lastMessageAt,
+        lastMessageRole,
+        lastMessagePreview,
+        traceCount
+      } satisfies SessionOverview;
+    });
+
+    overviewList.sort((a, b) => {
+      const lastA = a.lastMessageAt ? a.lastMessageAt.getTime() : 0;
+      const lastB = b.lastMessageAt ? b.lastMessageAt.getTime() : 0;
+      return lastB - lastA;
+    });
+
+    setSessionOverview(overviewList);
+  }, [isClient, sessionList]);
 
   const fetchTelemetryData = async () => {
     try {
@@ -175,6 +248,19 @@ export default function TelemetryPage() {
     }
   };
 
+  const selectedSessionOverview = selectedSession
+    ? sessionOverview.find(session => session.id === selectedSession)
+    : undefined;
+
+  const sessionSummary = sessionMessages.length
+    ? {
+        messageCount: sessionMessages.length,
+        traceCount: sessionMessages.filter(message => !!message.traceId).length,
+        startAt: sessionMessages[0].timestamp,
+        endAt: sessionMessages[sessionMessages.length - 1].timestamp
+      }
+    : null;
+
   return (
     <div className="p-6 space-y-6 bg-background min-h-screen">
       <Dialog open={!!selectedTrace} onOpenChange={(o) => { if (!o) setSelectedTrace(null); }}>
@@ -214,28 +300,64 @@ export default function TelemetryPage() {
       <Dialog open={!!selectedSession} onOpenChange={(o) => { if (!o) setSelectedSession(null); }}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>会话详情 {selectedSession && <span className="font-mono text-xs text-muted-foreground">{selectedSession}</span>}</DialogTitle>
-          </DialogHeader>
-          <ScrollArea className="h-96">
-            <div className="space-y-3">
-              {sessionMessages.map(m => (
-                <div key={m.id} className="p-3 rounded border">
-                  <div className="flex items-center gap-2 text-xs">
-                    <Badge variant={m.role === 'user' ? 'secondary' : 'default'} className="text-xs">{m.role}</Badge>
-                    <span className="text-muted-foreground">{isClient ? m.timestamp.toLocaleString() : ''}</span>
-                    {m.traceId && (
-                      <>
-                        <Separator orientation="vertical" className="h-3" />
-                        <span className="font-mono">{m.traceId}</span>
-                      </>
-                    )}
-                  </div>
-                  <div className="mt-2 text-sm whitespace-pre-wrap">{m.content}</div>
-                </div>
-              ))}
-              {sessionMessages.length === 0 && (
-                <div className="text-sm text-muted-foreground">暂无消息</div>
+            <DialogTitle className="space-y-1">
+              <span>会话详情</span>
+              {selectedSession && (
+                <span className="block font-mono text-xs text-muted-foreground">{selectedSession}</span>
               )}
+            </DialogTitle>
+            {selectedSessionOverview?.title && (
+              <p className="text-sm text-muted-foreground">备注：{selectedSessionOverview.title}</p>
+            )}
+          </DialogHeader>
+          {sessionSummary && (
+            <div className="mb-4 grid gap-3 rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground sm:grid-cols-2">
+              <div>消息总数：{sessionSummary.messageCount}</div>
+              <div>关联追踪：{sessionSummary.traceCount > 0 ? `${sessionSummary.traceCount} 个` : '无'}</div>
+              <div>起始时间：{isClient ? sessionSummary.startAt.toLocaleString() : ''}</div>
+              <div>结束时间：{isClient ? sessionSummary.endAt.toLocaleString() : ''}</div>
+            </div>
+          )}
+          <ScrollArea className="h-96 pr-2">
+            <div className="relative">
+              <div className="absolute left-3 top-0 bottom-0 w-px bg-border" aria-hidden />
+              <div className="space-y-4 pb-2">
+                {sessionMessages.map(m => (
+                  <div key={m.id} className="relative rounded-md border bg-card/40 p-3 pl-8">
+                    <span
+                      className={`absolute left-2.5 top-4 h-3 w-3 rounded-full ${m.role === 'user' ? 'bg-secondary' : 'bg-primary'}`}
+                    />
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <Badge variant={m.role === 'user' ? 'secondary' : 'default'} className="text-xs">
+                        {m.role === 'user' ? '用户' : '助手'}
+                      </Badge>
+                      <span className="text-muted-foreground">{isClient ? m.timestamp.toLocaleString() : ''}</span>
+                      {m.traceId && (
+                        <>
+                          <Separator orientation="vertical" className="h-3" />
+                          <Badge variant="outline" className="font-mono text-[10px]">
+                            {m.traceId}
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => setSelectedTrace(m.traceId!)}
+                          >
+                            查看追踪
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    <div className="mt-3 rounded-md bg-muted/50 p-3 text-sm whitespace-pre-wrap">
+                      {m.content}
+                    </div>
+                  </div>
+                ))}
+                {sessionMessages.length === 0 && (
+                  <div className="rounded-md border p-4 text-sm text-muted-foreground">暂无消息</div>
+                )}
+              </div>
             </div>
           </ScrollArea>
         </DialogContent>
@@ -427,26 +549,70 @@ export default function TelemetryPage() {
       </div>
 
       <Card className="mt-6">
-        <CardHeader>
+        <CardHeader className="space-y-1">
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            会话记录
+            会话监控
           </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            汇总本地保存的会话，可快速打开并查看完整对话流程。
+          </p>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-60">
-            <div className="space-y-2">
-              {isClient && sessionList.length === 0 && (
+          <ScrollArea className="h-72">
+            <div className="space-y-3">
+              {!isClient && (
+                <div className="text-sm text-muted-foreground">正在加载会话信息…</div>
+              )}
+              {isClient && sessionOverview.length === 0 && (
                 <div className="text-sm text-muted-foreground">暂无会话</div>
               )}
-              {sessionList.slice(-100).reverse().map(s => (
-                <div key={s.id} className="p-2 border rounded hover:bg-muted cursor-pointer" onClick={() => openSession(s.id)}>
-                  <div className="flex justify-between text-xs">
-                    <span className="font-mono truncate max-w-[60%]">{s.id}</span>
-                    <span className="text-muted-foreground truncate max-w-[40%]">{s.title}</span>
+              {sessionOverview.map(session => {
+                const title = session.title.trim() || session.lastMessagePreview || "未命名会话";
+                return (
+                  <div
+                    key={session.id}
+                    className="group cursor-pointer rounded-lg border p-3 transition-colors hover:bg-muted/60"
+                    onClick={() => openSession(session.id)}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="space-y-1">
+                        <div className="font-mono text-sm">{session.id}</div>
+                        <div className="text-xs text-muted-foreground">{title}</div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={event => {
+                          event.stopPropagation();
+                          openSession(session.id);
+                        }}
+                      >
+                        查看全流程
+                      </Button>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                      <div>消息数：{session.messageCount}</div>
+                      <div>关联追踪：{session.traceCount > 0 ? `${session.traceCount} 个` : '无'}</div>
+                      <div>起始：{session.firstMessageAt ? session.firstMessageAt.toLocaleString() : '—'}</div>
+                      <div>最近：{session.lastMessageAt ? session.lastMessageAt.toLocaleString() : '—'}</div>
+                    </div>
+                    {session.lastMessagePreview && (
+                      <div className="mt-3 rounded bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                        最近内容：{session.lastMessagePreview}
+                      </div>
+                    )}
+                    {session.lastMessageRole && (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <Badge variant={session.lastMessageRole === 'user' ? 'secondary' : 'default'} className="text-xs">
+                          最后发言：{session.lastMessageRole === 'user' ? '用户' : '助手'}
+                        </Badge>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </ScrollArea>
         </CardContent>

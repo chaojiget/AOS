@@ -13,6 +13,7 @@
 ## 🛠️ 技术栈
 
 ### 前端
+
 - **Next.js 15**: React 框架
 - **TypeScript**: 类型安全
 - **Tailwind CSS**: 样式框架
@@ -20,6 +21,7 @@
 - **Lucide React**: 图标库
 
 ### 后端
+
 - **Node.js**: 运行时环境
 - **Express**: Web 框架
 - **LangGraph**: AI Agent 框架
@@ -30,11 +32,13 @@
 ## 📦 安装
 
 ### 1. 安装依赖
+
 ```bash
 npm run install:all
 ```
 
 ### 2. 环境配置
+
 ```bash
 # 复制环境变量模板
 cp backend/.env.example backend/.env
@@ -47,7 +51,9 @@ touch .env.local
 ```
 
 ### 3. 配置 OpenAI API Key
+
 在 `backend/.env` 文件中设置：
+
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
 ```
@@ -55,6 +61,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 ## 🚀 运行
 
 ### 开发模式
+
 ```bash
 # 同时启动前端和后端
 npm run dev
@@ -65,6 +72,7 @@ npm run dev:backend   # 后端: http://localhost:3001
 ```
 
 ### 生产模式
+
 ```bash
 # 构建项目
 npm run build
@@ -91,10 +99,12 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
 ## 🔧 API 端点
 
 ### 聊天 API
+
 - `POST /api/chat` - 发送消息给AI助手
 - `POST /api/chat/stream` - 流式响应
 
 ### 遥测 API
+
 - `GET /api/telemetry/traces` - 获取追踪数据
 - `GET /api/telemetry/logs` - 获取日志数据
 - `GET /api/telemetry/metrics` - 获取指标数据
@@ -110,6 +120,7 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
 ## 🔍 数据库结构
 
 SQLite 数据库包含以下表：
+
 - `traces`: 存储OpenTelemetry追踪数据
 - `logs`: 存储应用日志
 - `metrics`: 存储性能指标
@@ -124,6 +135,7 @@ SQLite 数据库包含以下表：
 ## 📝 开发说明
 
 ### 项目结构
+
 ```
 AOS/
 ├── app/                    # Next.js 应用目录
