@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -19,12 +19,23 @@ import {
   Zap
 } from "lucide-react";
 import { telemetryEndpoint } from "@/lib/apiConfig";
+import type { VariantProps } from "class-variance-authority";
 
-interface TelemetryData {
-  traces: any[];
-  logs: any[];
-  metrics: any[];
-  stats: any;
+type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
+
+interface TraceEntry {
+  id: string;
+  trace_id: string;
+  span_id: string;
+  parent_span_id?: string;
+  operation_name: string;
+  start_time: number;
+  end_time?: number;
+  duration: number;
+  status: string;
+  attributes?: Record<string, unknown>;
+  events?: unknown;
+  created_at?: number;
 }
 
 interface LogEntry {
@@ -33,22 +44,76 @@ interface LogEntry {
   level: string;
   message: string;
   trace_id?: string;
-  attributes?: string;
+  attributes?: Record<string, unknown>;
 }
 
-interface TraceEntry {
+interface MetricEntry {
   id: string;
-  trace_id: string;
-  span_id: string;
-  operation_name: string;
-  start_time: number;
-  duration: number;
-  status: string;
+  name: string;
+  value: number;
+  unit?: string;
+  timestamp: number;
+  attributes?: Record<string, unknown>;
+  created_at?: number;
 }
+
+interface TelemetryStats {
+  total: {
+    traces: number;
+    logs: number;
+    metrics: number;
+  };
+  recent: {
+    traces: number;
+    logs: number;
+    metrics: number;
+    errorLogs: number;
+  };
+  performance: {
+    avgResponseTime: number;
+    totalErrors: number;
+    errorRate: number;
+  };
+  timestamp: string;
+}
+
+interface TelemetryData {
+  traces: TraceEntry[];
+  logs: LogEntry[];
+  metrics: MetricEntry[];
+  stats: TelemetryStats | null;
+}
+
+interface TraceListResponse {
+  traces: TraceEntry[];
+  count: number;
+  timestamp: string;
+}
+
+interface LogListResponse {
+  logs: LogEntry[];
+  count: number;
+  timestamp: string;
+}
+
+interface MetricsListResponse {
+  metrics: MetricEntry[];
+  count: number;
+  timestamp: string;
+}
+
+interface TraceDetailResponse {
+  trace: TraceEntry[];
+  traceId: string;
+  spans: number;
+  timestamp: string;
+}
+
+type SessionMeta = { id: string; title: string };
 
 interface SessionMessage {
   id: string;
-  role: string;
+  role: "user" | "assistant";
   content: string;
   timestamp: Date;
   traceId?: string;
@@ -65,6 +130,31 @@ interface SessionOverview {
   traceCount: number;
 }
 
+interface StoredSessionMessage {
+  id: string;
+  role: string;
+  content: string;
+  timestamp: string;
+  traceId?: string;
+}
+
+const isSessionMeta = (value: unknown): value is SessionMeta => {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.id === 'string' && typeof record.title === 'string';
+};
+
+const isStoredSessionMessage = (value: unknown): value is StoredSessionMessage => {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === 'string'
+    && typeof record.role === 'string'
+    && typeof record.content === 'string'
+    && typeof record.timestamp === 'string'
+  );
+};
+
 export default function TelemetryPage() {
   const [data, setData] = useState<TelemetryData>({
     traces: [],
@@ -74,11 +164,11 @@ export default function TelemetryPage() {
   });
   const [loading, setLoading] = useState(true);
   const [selectedTrace, setSelectedTrace] = useState<string | null>(null);
-  const [traceDetail, setTraceDetail] = useState<any[]>([]);
+  const [traceDetail, setTraceDetail] = useState<TraceEntry[]>([]);
   const [traceLoading, setTraceLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);
-  const [sessionList, setSessionList] = useState<Array<{ id: string; title: string }>>([]);
+  const [sessionList, setSessionList] = useState<SessionMeta[]>([]);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [sessionMessages, setSessionMessages] = useState<SessionMessage[]>([]);
   const [sessionOverview, setSessionOverview] = useState<SessionOverview[]>([]);
@@ -92,7 +182,16 @@ export default function TelemetryPage() {
     if (!isClient) return;
     const raw = localStorage.getItem("sessions");
     try {
-      const list = raw ? (JSON.parse(raw) as Array<{ id: string; title: string }>) : [];
+      if (!raw) {
+        setSessionList([]);
+        return;
+      }
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) {
+        setSessionList([]);
+        return;
+      }
+      const list = parsed.filter(isSessionMeta);
       setSessionList(list);
     } catch {
       setSessionList([]);
@@ -164,17 +263,17 @@ export default function TelemetryPage() {
       ]);
 
       const [traces, logs, metrics, stats] = await Promise.all([
-        tracesRes.json(),
-        logsRes.json(),
-        metricsRes.json(),
-        statsRes.json()
+        tracesRes.json() as Promise<TraceListResponse>,
+        logsRes.json() as Promise<LogListResponse>,
+        metricsRes.json() as Promise<MetricsListResponse>,
+        statsRes.json() as Promise<TelemetryStats>
       ]);
 
       setData({
-        traces: traces.traces || [],
-        logs: logs.logs || [],
-        metrics: metrics.metrics || [],
-        stats: stats
+        traces: traces.traces ?? [],
+        logs: logs.logs ?? [],
+        metrics: metrics.metrics ?? [],
+        stats
       });
 
       setLastUpdated(new Date());
@@ -199,8 +298,8 @@ export default function TelemetryPage() {
       try {
         setTraceLoading(true);
         const res = await fetch(telemetryEndpoint(`traces/${selectedTrace}`));
-        const json = await res.json();
-        setTraceDetail(json.trace || []);
+        const json = (await res.json()) as TraceDetailResponse;
+        setTraceDetail(json.trace ?? []);
       } catch {
         setTraceDetail([]);
       } finally {
@@ -219,8 +318,21 @@ export default function TelemetryPage() {
       return;
     }
     try {
-      const arr = JSON.parse(raw) as Array<{ id: string; role: string; content: string; timestamp: string; traceId?: string }>;
-      const msgs = arr.map(m => ({ ...m, timestamp: new Date(m.timestamp) }));
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) {
+        setSessionMessages([]);
+        setSelectedSession(id);
+        return;
+      }
+      const msgs = parsed
+        .filter(isStoredSessionMessage)
+        .map<SessionMessage>(m => ({
+          id: m.id,
+          role: m.role === 'user' ? 'user' : 'assistant',
+          content: m.content,
+          timestamp: new Date(m.timestamp),
+          traceId: m.traceId,
+        }));
       setSessionMessages(msgs);
     } catch {
       setSessionMessages([]);
@@ -238,7 +350,7 @@ export default function TelemetryPage() {
     return `${(duration / 1000).toFixed(2)}s`;
   };
 
-  const getLevelColor = (level: string) => {
+  const getLevelColor = (level: string): BadgeVariant => {
     switch (level.toLowerCase()) {
       case 'error': return 'destructive';
       case 'warn': case 'warning': return 'secondary';
@@ -276,7 +388,7 @@ export default function TelemetryPage() {
             {!traceLoading && traceDetail.length > 0 && (
               <ScrollArea className="h-96">
                 <div className="space-y-2">
-                  {traceDetail.map((span: any) => (
+                  {traceDetail.map(span => (
                     <div key={span.span_id} className="p-3 border rounded">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="text-xs">{span.operation_name}</Badge>
@@ -524,10 +636,10 @@ export default function TelemetryPage() {
           <CardContent>
             <ScrollArea className="h-80">
               <div className="space-y-2">
-                {data.logs.map((log: LogEntry) => (
+                {data.logs.map(log => (
                   <div key={log.id} className="p-3 border rounded-lg">
                     <div className="flex items-center justify-between mb-2">
-                      <Badge variant={getLevelColor(log.level) as any} className="text-xs">
+                      <Badge variant={getLevelColor(log.level)} className="text-xs">
                         {log.level.toUpperCase()}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
@@ -629,7 +741,7 @@ export default function TelemetryPage() {
         <CardContent>
           <ScrollArea className="h-60">
             <div className="space-y-3">
-              {data.metrics.map((metric: any) => (
+              {data.metrics.map(metric => (
                 <div key={metric.id} className="flex items-center justify-between p-2 border rounded">
                   <div>
                     <div className="font-medium text-sm">{metric.name}</div>
