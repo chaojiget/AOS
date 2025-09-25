@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import { ChatAgent } from '../agents/chat-agent';
-import { JsonTraceExporter } from '../telemetry/json-exporter';
+import { PgmqTelemetryExporter, TelemetryInitializationError, TelemetryStorageError } from '../telemetry/pgmq-exporter';
 
 const router = Router();
 const chatAgent = new ChatAgent();
-const telemetryExporter = new JsonTraceExporter({ dataPath: './telemetry-data' });
+const telemetryExporter = new PgmqTelemetryExporter({ maxQueueLength: 1000 });
 
 router.post('/', async (req, res) => {
   try {
+    await telemetryExporter.ensureReady();
+
     const { message, conversationId, conversationHistory } = req.body;
     const traceId = res.locals.traceId;
 
@@ -18,7 +20,7 @@ router.post('/', async (req, res) => {
       });
     }
 
-    await telemetryExporter.logEvent('info', 'Chat request received', traceId, undefined, {
+    await telemetryExporter.logEvent('info', '收到聊天请求', traceId, undefined, {
       messageLength: message.length,
       hasHistory: !!conversationHistory,
     });
@@ -38,7 +40,7 @@ router.post('/', async (req, res) => {
       status: 'success',
     });
 
-    await telemetryExporter.logEvent('info', 'Chat response sent', traceId, undefined, {
+    await telemetryExporter.logEvent('info', '发送聊天响应', traceId, undefined, {
       responseLength: result.response.length,
       duration: responseTime,
     });
@@ -54,15 +56,34 @@ router.post('/', async (req, res) => {
   } catch (error) {
     const traceId = res.locals.traceId;
 
+    if (error instanceof TelemetryInitializationError) {
+      console.error('PGMQ 扩展不可用，无法写入遥测数据:', error);
+      return res.status(500).json({
+        error: '遥测队列未初始化，服务暂不可用',
+        traceId,
+      });
+    }
+
+    if (error instanceof TelemetryStorageError) {
+      console.error('遥测入队失败:', error);
+      return res.status(500).json({
+        error: '遥测服务异常，无法处理请求',
+        traceId,
+      });
+    }
+
     console.error('Chat route error:', error);
 
-    await telemetryExporter.logEvent('error', `Chat processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`, traceId, undefined, {
-      error: error instanceof Error ? error.stack : 'Unknown error',
-    });
-
-    await telemetryExporter.recordMetric('chat.requests_total', 1, 'count', {
-      status: 'error',
-    });
+    try {
+      await telemetryExporter.logEvent('error', `Chat processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`, traceId, undefined, {
+        error: error instanceof Error ? error.stack : 'Unknown error',
+      });
+      await telemetryExporter.recordMetric('chat.requests_total', 1, 'count', {
+        status: 'error',
+      });
+    } catch (telemetryError) {
+      console.error('记录遥测失败:', telemetryError);
+    }
 
     res.status(500).json({
       error: 'Failed to process chat message',
@@ -74,6 +95,8 @@ router.post('/', async (req, res) => {
 
 router.post('/stream', async (req, res) => {
   try {
+    await telemetryExporter.ensureReady();
+
     const { message, conversationId, conversationHistory } = req.body;
     const traceId = res.locals.traceId;
 
@@ -89,7 +112,7 @@ router.post('/stream', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    await telemetryExporter.logEvent('info', 'Streaming chat request received', traceId, undefined, {
+    await telemetryExporter.logEvent('info', '收到流式聊天请求', traceId, undefined, {
       messageLength: message.length,
     });
 
@@ -100,7 +123,7 @@ router.post('/stream', async (req, res) => {
       res.write(`data: ${JSON.stringify({ done: true, traceId })}\n\n`);
       res.end();
 
-      await telemetryExporter.logEvent('info', 'Streaming response completed', traceId);
+      await telemetryExporter.logEvent('info', '流式响应完成', traceId);
 
     } catch (streamError) {
       console.error('Streaming error:', streamError);
@@ -117,9 +140,29 @@ router.post('/stream', async (req, res) => {
   } catch (error) {
     const traceId = res.locals.traceId;
 
+    if (error instanceof TelemetryInitializationError) {
+      console.error('PGMQ 扩展不可用，无法写入遥测数据:', error);
+      return res.status(500).json({
+        error: '遥测队列未初始化，服务暂不可用',
+        traceId,
+      });
+    }
+
+    if (error instanceof TelemetryStorageError) {
+      console.error('遥测入队失败:', error);
+      return res.status(500).json({
+        error: '遥测服务异常，无法处理请求',
+        traceId,
+      });
+    }
+
     console.error('Stream route error:', error);
 
-    await telemetryExporter.logEvent('error', `Stream setup failed: ${error instanceof Error ? error.message : 'Unknown error'}`, traceId);
+    try {
+      await telemetryExporter.logEvent('error', `Stream setup failed: ${error instanceof Error ? error.message : 'Unknown error'}`, traceId);
+    } catch (telemetryError) {
+      console.error('记录遥测失败:', telemetryError);
+    }
 
     res.status(500).json({
       error: 'Failed to setup streaming',

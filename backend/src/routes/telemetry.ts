@@ -1,12 +1,41 @@
-import { Router } from 'express';
-import { JsonTraceExporter } from '../telemetry/json-exporter';
+import { Router, type Response } from 'express';
+import {
+  PgmqTelemetryExporter,
+  TelemetryInitializationError,
+  TelemetryStorageError,
+} from '../telemetry/pgmq-exporter';
 
 const router = Router();
-const telemetryExporter = new JsonTraceExporter({ dataPath: './telemetry-data' });
+const telemetryExporter = new PgmqTelemetryExporter({ maxQueueLength: 1000 });
 
-// GET /api/telemetry/traces - Get recent traces
+const handleTelemetryError = (res: Response, error: unknown, traceId?: string) => {
+  if (error instanceof TelemetryInitializationError) {
+    console.error('PGMQ 扩展不可用，无法写入遥测数据:', error);
+    res.status(500).json({
+      error: '遥测队列未初始化，服务暂不可用',
+      traceId,
+    });
+    return true;
+  }
+
+  if (error instanceof TelemetryStorageError) {
+    console.error('遥测入队失败:', error);
+    res.status(500).json({
+      error: '遥测服务异常，请稍后重试',
+      traceId,
+    });
+    return true;
+  }
+
+  return false;
+};
+
 router.get('/traces', async (req, res) => {
+  const traceId = res.locals.traceId;
+
   try {
+    await telemetryExporter.ensureReady();
+
     const limit = parseInt(req.query.limit as string) || 50;
     const traces = await telemetryExporter.getTraces(limit);
 
@@ -16,54 +45,63 @@ router.get('/traces', async (req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    if (handleTelemetryError(res, error, traceId)) {
+      return;
+    }
+
     console.error('Error fetching traces:', error);
     res.status(500).json({
       error: 'Failed to fetch traces',
-      traceId: res.locals.traceId,
+      traceId,
     });
   }
 });
 
-// GET /api/telemetry/traces/:traceId - Get specific trace
 router.get('/traces/:traceId', async (req, res) => {
+  const { traceId: targetTraceId } = req.params;
+  const traceId = res.locals.traceId;
+
   try {
-    const { traceId } = req.params;
-    const trace = await telemetryExporter.getTraceById(traceId);
+    await telemetryExporter.ensureReady();
+
+    const trace = await telemetryExporter.getTraceById(targetTraceId);
 
     if (!trace || trace.length === 0) {
       return res.status(404).json({
         error: 'Trace not found',
-        traceId: res.locals.traceId,
+        traceId,
       });
     }
 
     res.json({
       trace,
-      traceId,
+      traceId: targetTraceId,
       spans: trace.length,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    if (handleTelemetryError(res, error, traceId)) {
+      return;
+    }
+
     console.error('Error fetching trace:', error);
     res.status(500).json({
       error: 'Failed to fetch trace',
-      traceId: res.locals.traceId,
+      traceId,
     });
   }
 });
 
-// GET /api/telemetry/logs - Get recent logs
 router.get('/logs', async (req, res) => {
+  const traceId = res.locals.traceId;
+
   try {
+    await telemetryExporter.ensureReady();
+
     const limit = parseInt(req.query.limit as string) || 100;
-    const level = req.query.level as string;
+    const level = req.query.level as string | undefined;
 
-    let logs = await telemetryExporter.getLogs(limit);
-
-    // Filter by level if specified
-    if (level) {
-      logs = logs.filter(log => log.level === level);
-    }
+    const logs = await telemetryExporter.getLogs(limit, { level });
 
     res.json({
       logs,
@@ -71,26 +109,28 @@ router.get('/logs', async (req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    if (handleTelemetryError(res, error, traceId)) {
+      return;
+    }
+
     console.error('Error fetching logs:', error);
     res.status(500).json({
       error: 'Failed to fetch logs',
-      traceId: res.locals.traceId,
+      traceId,
     });
   }
 });
 
-// GET /api/telemetry/metrics - Get recent metrics
 router.get('/metrics', async (req, res) => {
+  const traceId = res.locals.traceId;
+
   try {
+    await telemetryExporter.ensureReady();
+
     const limit = parseInt(req.query.limit as string) || 100;
-    const name = req.query.name as string;
+    const name = req.query.name as string | undefined;
 
-    let metrics = await telemetryExporter.getMetrics(limit);
-
-    // Filter by metric name if specified
-    if (name) {
-      metrics = metrics.filter(metric => metric.name === name);
-    }
+    const metrics = await telemetryExporter.getMetrics(limit, { name });
 
     res.json({
       metrics,
@@ -98,22 +138,28 @@ router.get('/metrics', async (req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    if (handleTelemetryError(res, error, traceId)) {
+      return;
+    }
+
     console.error('Error fetching metrics:', error);
     res.status(500).json({
       error: 'Failed to fetch metrics',
-      traceId: res.locals.traceId,
+      traceId,
     });
   }
 });
 
-// GET /api/telemetry/stats - Get telemetry statistics
 router.get('/stats', async (req, res) => {
+  const traceId = res.locals.traceId;
+
   try {
+    await telemetryExporter.ensureReady();
+
     const traces = await telemetryExporter.getTraces(1000);
     const logs = await telemetryExporter.getLogs(1000);
     const metrics = await telemetryExporter.getMetrics(1000);
 
-    // Calculate some basic statistics
     const now = Date.now();
     const oneHourAgo = now - (60 * 60 * 1000);
 
@@ -148,19 +194,25 @@ router.get('/stats', async (req, res) => {
 
     res.json(stats);
   } catch (error) {
+    if (handleTelemetryError(res, error, traceId)) {
+      return;
+    }
+
     console.error('Error calculating stats:', error);
     res.status(500).json({
       error: 'Failed to calculate telemetry stats',
-      traceId: res.locals.traceId,
+      traceId,
     });
   }
 });
 
-// POST /api/telemetry/logs - Add custom log entry
 router.post('/logs', async (req, res) => {
+  const traceId = res.locals.traceId;
+
   try {
+    await telemetryExporter.ensureReady();
+
     const { level, message, attributes } = req.body;
-    const traceId = res.locals.traceId;
 
     if (!level || !message) {
       return res.status(400).json({
@@ -177,10 +229,14 @@ router.post('/logs', async (req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    if (handleTelemetryError(res, error, traceId)) {
+      return;
+    }
+
     console.error('Error adding log entry:', error);
     res.status(500).json({
       error: 'Failed to add log entry',
-      traceId: res.locals.traceId,
+      traceId,
     });
   }
 });
