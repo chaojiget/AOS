@@ -6,7 +6,7 @@
 
 - ✅ 后端：Express + LangGraph 聊天代理已完成，支持会话上下文、SSE 流式输出与 OpenAI 模型配置。
 - ✅ 后端：LangGraph 检查点存储迁移至 PostgreSQL，复用连接池并自动同步 schema 注释。
-- ✅ 后端：OpenTelemetry 埋点生效，遥测数据以 JSON 形式写入 `backend/telemetry-data`，并通过 `/api/telemetry/*` API 提供追踪、日志、指标以及统计查询。
+- ✅ 后端：OpenTelemetry 埋点生效，默认写入 PostgreSQL 的 PGMQ 队列（可配置 JSON 兜底），`/api/telemetry/*` API 提供追踪、日志、指标以及统计查询。
 - ✅ 前端：Next.js 聊天工作台上线，具备本地多会话存储、追踪 ID 展示以及实时输入提示，默认连通流式聊天接口。
 - ✅ 前端：遥测仪表板页面可视化最近追踪、日志、指标，并可回放本地历史会话、关联 Trace 详情。
 
