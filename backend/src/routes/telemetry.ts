@@ -1,16 +1,16 @@
 import { Router, type Response } from 'express';
 import {
-  PgmqTelemetryExporter,
+  NatsTelemetryExporter,
   TelemetryInitializationError,
   TelemetryStorageError,
-} from '../telemetry/pgmq-exporter';
+} from '../telemetry/nats-exporter';
 
 const router = Router();
-const telemetryExporter = new PgmqTelemetryExporter({ maxQueueLength: 1000 });
+const telemetryExporter = new NatsTelemetryExporter({ maxMessages: 1000 });
 
 const handleTelemetryError = (res: Response, error: unknown, traceId?: string) => {
   if (error instanceof TelemetryInitializationError) {
-    console.error('PGMQ 扩展不可用，无法写入遥测数据:', error);
+    console.error('NATS JetStream 不可用，无法写入遥测数据:', error);
     res.status(500).json({
       error: '遥测队列未初始化，服务暂不可用',
       traceId,
@@ -19,7 +19,7 @@ const handleTelemetryError = (res: Response, error: unknown, traceId?: string) =
   }
 
   if (error instanceof TelemetryStorageError) {
-    console.error('遥测入队失败:', error);
+    console.error('NATS JetStream 遥测入队失败:', error);
     res.status(500).json({
       error: '遥测服务异常，请稍后重试',
       traceId,
@@ -49,7 +49,7 @@ router.get('/traces', async (req, res) => {
       return;
     }
 
-    console.error('Error fetching traces:', error);
+    console.error('获取追踪数据失败:', error);
     res.status(500).json({
       error: 'Failed to fetch traces',
       traceId,
@@ -84,7 +84,7 @@ router.get('/traces/:traceId', async (req, res) => {
       return;
     }
 
-    console.error('Error fetching trace:', error);
+    console.error('获取指定 Trace 失败:', error);
     res.status(500).json({
       error: 'Failed to fetch trace',
       traceId,
@@ -113,7 +113,7 @@ router.get('/logs', async (req, res) => {
       return;
     }
 
-    console.error('Error fetching logs:', error);
+    console.error('获取日志失败:', error);
     res.status(500).json({
       error: 'Failed to fetch logs',
       traceId,
@@ -142,7 +142,7 @@ router.get('/metrics', async (req, res) => {
       return;
     }
 
-    console.error('Error fetching metrics:', error);
+    console.error('获取指标失败:', error);
     res.status(500).json({
       error: 'Failed to fetch metrics',
       traceId,
@@ -198,7 +198,7 @@ router.get('/stats', async (req, res) => {
       return;
     }
 
-    console.error('Error calculating stats:', error);
+    console.error('获取遥测统计失败:', error);
     res.status(500).json({
       error: 'Failed to calculate telemetry stats',
       traceId,
@@ -233,7 +233,7 @@ router.post('/logs', async (req, res) => {
       return;
     }
 
-    console.error('Error adding log entry:', error);
+    console.error('写入日志失败:', error);
     res.status(500).json({
       error: 'Failed to add log entry',
       traceId,

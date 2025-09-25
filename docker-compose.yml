@@ -17,3 +17,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  nats:
+    image: nats:2.10
+    container_name: aos-nats
+    command:
+      - -js
+      - -m
+      - "8222"
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - ./backend/var/nats:/data

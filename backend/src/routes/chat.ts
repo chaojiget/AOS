@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { ChatAgent } from '../agents/chat-agent';
-import { PgmqTelemetryExporter, TelemetryInitializationError, TelemetryStorageError } from '../telemetry/pgmq-exporter';
+import { NatsTelemetryExporter, TelemetryInitializationError, TelemetryStorageError } from '../telemetry/nats-exporter';
 
 const router = Router();
 const chatAgent = new ChatAgent();
-const telemetryExporter = new PgmqTelemetryExporter({ maxQueueLength: 1000 });
+const telemetryExporter = new NatsTelemetryExporter({ maxMessages: 1000 });
 
 router.post('/', async (req, res) => {
   try {
@@ -57,7 +57,7 @@ router.post('/', async (req, res) => {
     const traceId = res.locals.traceId;
 
     if (error instanceof TelemetryInitializationError) {
-      console.error('PGMQ 扩展不可用，无法写入遥测数据:', error);
+      console.error('NATS JetStream 不可用，无法写入遥测数据:', error);
       return res.status(500).json({
         error: '遥测队列未初始化，服务暂不可用',
         traceId,
@@ -65,7 +65,7 @@ router.post('/', async (req, res) => {
     }
 
     if (error instanceof TelemetryStorageError) {
-      console.error('遥测入队失败:', error);
+      console.error('NATS JetStream 遥测入队失败:', error);
       return res.status(500).json({
         error: '遥测服务异常，无法处理请求',
         traceId,
@@ -141,7 +141,7 @@ router.post('/stream', async (req, res) => {
     const traceId = res.locals.traceId;
 
     if (error instanceof TelemetryInitializationError) {
-      console.error('PGMQ 扩展不可用，无法写入遥测数据:', error);
+      console.error('NATS JetStream 不可用，无法写入遥测数据:', error);
       return res.status(500).json({
         error: '遥测队列未初始化，服务暂不可用',
         traceId,
@@ -149,7 +149,7 @@ router.post('/stream', async (req, res) => {
     }
 
     if (error instanceof TelemetryStorageError) {
-      console.error('遥测入队失败:', error);
+      console.error('NATS JetStream 遥测入队失败:', error);
       return res.status(500).json({
         error: '遥测服务异常，无法处理请求',
         traceId,

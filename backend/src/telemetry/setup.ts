@@ -3,24 +3,24 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 import { Resource } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { JsonTraceExporter } from './json-exporter';
-import { PgmqTelemetryExporter, TelemetryInitializationError } from './pgmq-exporter';
+import { NatsTelemetryExporter, TelemetryInitializationError } from './nats-exporter';
 
 const TELEMETRY_DATA_PATH = './telemetry-data';
 
 const createTraceExporter = () => {
-  const backend = (process.env.TELEMETRY_STORAGE || 'pgmq').toLowerCase();
+  const backend = (process.env.TELEMETRY_STORAGE || 'nats').toLowerCase();
 
   if (backend === 'json') {
     return new JsonTraceExporter({ dataPath: TELEMETRY_DATA_PATH });
   }
 
-  const exporter = new PgmqTelemetryExporter({ maxQueueLength: 1000 });
+  const exporter = new NatsTelemetryExporter({ maxMessages: 1000 });
 
   exporter.ensureReady().catch((error) => {
     if (error instanceof TelemetryInitializationError) {
-      console.error('PGMQ 初始化失败，后续追踪将无法写入队列:', error);
+      console.error('NATS JetStream 初始化失败，后续追踪将无法写入队列:', error);
     } else {
-      console.error('PGMQ 初始化过程中出现未知错误:', error);
+      console.error('NATS JetStream 初始化过程中出现未知错误:', error);
     }
   });
 
