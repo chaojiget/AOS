@@ -6,7 +6,7 @@
 
 - ✅ 后端：Express + LangGraph 聊天代理已完成，支持会话上下文、SSE 流式输出与 OpenAI 模型配置。
 - ✅ 后端：LangGraph 检查点存储迁移至 PostgreSQL，复用连接池并自动同步 schema 注释。
-- ✅ 后端：OpenTelemetry 埋点生效，默认写入 PostgreSQL 的 PGMQ 队列（可配置 JSON 兜底），`/api/telemetry/*` API 提供追踪、日志、指标以及统计查询。
+- ✅ 后端：OpenTelemetry 埋点生效，遥测数据写入 PostgreSQL `pgmq` 队列 `telemetry_events`，并通过 `/api/telemetry/*` API 读取队列中的追踪、日志、指标以及统计信息。
 - ✅ 前端：Next.js 聊天工作台上线，具备本地多会话存储、追踪 ID 展示以及实时输入提示，默认连通流式聊天接口。
 - ✅ 前端：遥测仪表板页面可视化最近追踪、日志、指标，并可回放本地历史会话、关联 Trace 详情。
 
@@ -14,7 +14,7 @@
 
 - **AI聊天助手**: 基于 LangGraph 构建的智能对话系统
 - **实时监控**: 使用 OpenTelemetry 收集遥测数据
-- **数据存储**: PostgreSQL 持久化 LangGraph 检查点，遥测落盘为 JSON 文件
+- **数据存储**: PostgreSQL 持久化 LangGraph 检查点，遥测写入 `pgmq` 队列
 - **现代UI**: 使用 shadcn/ui 组件构建的响应式界面
 - **前后端分离**: Next.js 前端 + Node.js 后端
 
@@ -64,6 +64,8 @@ touch .env.local
 DATABASE_URL=postgres://aos:aos@localhost:5432/aos
 LANGGRAPH_CHECKPOINT_URL=postgres://aos:aos@localhost:5432/aos
 ```
+
+> 💡 如果使用自建 PostgreSQL 集群，请确保拥有 `CREATE EXTENSION` 权限，并提前安装 `pgmq` 扩展（例如在 `psql` 中执行 `CREATE EXTENSION IF NOT EXISTS pgmq;`），以便遥测队列正常创建。
 
 ### 3. 配置 OpenAI API Key
 
@@ -138,7 +140,7 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
 ## 🔍 数据存储
 
 - **PostgreSQL**：LangGraph 检查点与写入历史，自动创建 `checkpoints`、`writes`、`schema_annotations` 表。
-- **JSON 文件**：OpenTelemetry 追踪、日志、指标落盘于 `backend/telemetry-data` 目录，便于快速查看与备份。
+- **pgmq 队列**：OpenTelemetry 追踪、日志、指标写入 `telemetry_events` 队列，后端通过 `SELECT * FROM pgmq.read('telemetry_events', limit => 100, vt => 0);` 等查询接口按需消费，可结合 `/api/telemetry/*` API 对接前端仪表板。
 
 ## 🛡️ 安全性
 
@@ -187,6 +189,7 @@ AOS/
 3. **数据库错误**
    - 确保本地 Postgres 服务已启动（`docker-compose ps`）
    - 检查 `DATABASE_URL`/`LANGGRAPH_CHECKPOINT_URL` 是否配置正确
+   - 若提示找不到 `pgmq`，请确认数据库已安装该扩展并授予项目用户 `USAGE`/`SELECT` 权限，必要时重新执行 `CREATE EXTENSION pgmq;`
 
 ## 📄 许可证
 
