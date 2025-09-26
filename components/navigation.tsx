@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Bot, Activity } from "lucide-react";
+import { Bot, Activity, Plug, Cpu } from "lucide-react";
 
 export function Navigation() {
   const pathname = usePathname();
@@ -36,6 +36,26 @@ export function Navigation() {
                 >
                   <Activity className="h-4 w-4" />
                   <span>监控</span>
+                </Button>
+              </Link>
+
+              <Link href="/integrations">
+                <Button
+                  variant={pathname === "/integrations" ? "default" : "ghost"}
+                  className="flex items-center space-x-2"
+                >
+                  <Plug className="h-4 w-4" />
+                  <span>集成</span>
+                </Button>
+              </Link>
+
+              <Link href="/agents">
+                <Button
+                  variant={pathname === "/agents" ? "default" : "ghost"}
+                  className="flex items-center space-x-2"
+                >
+                  <Cpu className="h-4 w-4" />
+                  <span>Agents</span>
                 </Button>
               </Link>
             </div>

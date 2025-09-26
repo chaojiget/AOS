@@ -10,6 +10,8 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { chatRoutes } from './routes/chat';
 import { telemetryRoutes } from './routes/telemetry';
+import { mcpRoutes } from './routes/mcp';
+import { initMcpSubsystem } from './mcp/init';
 import { trace } from '@opentelemetry/api';
 import { closePool } from './db/postgres';
 
@@ -72,6 +74,7 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/api/chat', chatRoutes);
 app.use('/api/telemetry', telemetryRoutes);
+app.use('/mcp', mcpRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -96,12 +99,23 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`🚀 AOS Backend server running on port ${PORT}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/health`);
-  console.log(`💬 Chat API: http://localhost:${PORT}/api/chat`);
-  console.log(`📈 Telemetry API: http://localhost:${PORT}/api/telemetry`);
-});
+const startServer = async () => {
+  try {
+    await initMcpSubsystem();
+    app.listen(PORT, () => {
+      console.log(`🚀 AOS Backend server running on port ${PORT}`);
+      console.log(`📊 Health check: http://localhost:${PORT}/health`);
+      console.log(`💬 Chat API: http://localhost:${PORT}/api/chat`);
+      console.log(`📈 Telemetry API: http://localhost:${PORT}/api/telemetry`);
+      console.log(`🔌 MCP API: http://localhost:${PORT}/mcp`);
+    });
+  } catch (error) {
+    console.error('启动 MCP 子系统失败', error);
+    process.exit(1);
+  }
+};
+
+startServer();
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
