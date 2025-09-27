@@ -8,6 +8,15 @@
 - **配置分层**：系统设置（LLM、OTel、数据库、MCP 网关）与运行时环境（Secrets & Env）解耦，运行时密钥仅在执行期注入，最小权限 + 审计。
 - **消息总线演进**：M0 使用 Postgres outbox + `LISTEN/NOTIFY`，M1 升级 NATS/Redis Streams，M2 引入 ClickHouse 做 OLAP。
 
+### UI 页面现状（2025-09-26）
+- `/` **Chat Hub**：对话工作台 + 价值事件流骨架（已挂载白名单事件卡片占位）。
+- `/telemetry` **Telemetry**：实时指标与 Trace/Log 浏览（现有页面保留）。
+- `/integrations` **Integrations**：MCP 服务列表、增删改、角色/限流配置（已上线）。
+- `/agents` **Agents / Sandbox**：脚本管理、定时配置、手动执行、运行日志（已上线）。
+- `/projects` **Projects**：任务/SOP/回放规划页（新建骨架，承载事件回放入口）。
+- `/memory` **Memory**：用户画像、变量库与记忆编辑占位（新建骨架）。
+- `/settings` **Settings**：LLM/OTel/RBAC 与审计视图占位（新建骨架）。
+
 ## 1. 前端信息架构（IA）
 ```mermaid
 flowchart TB

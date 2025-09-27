@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Bot, Activity, Plug, Cpu } from "lucide-react";
+import {
+  Bot,
+  Activity,
+  Plug,
+  Cpu,
+  ListChecks,
+  BookOpen,
+  Settings,
+} from "lucide-react";
 
 export function Navigation() {
   const pathname = usePathname();
@@ -56,6 +64,36 @@ export function Navigation() {
                 >
                   <Cpu className="h-4 w-4" />
                   <span>Agents</span>
+                </Button>
+              </Link>
+
+              <Link href="/projects">
+                <Button
+                  variant={pathname === "/projects" ? "default" : "ghost"}
+                  className="flex items-center space-x-2"
+                >
+                  <ListChecks className="h-4 w-4" />
+                  <span>项目</span>
+                </Button>
+              </Link>
+
+              <Link href="/memory">
+                <Button
+                  variant={pathname === "/memory" ? "default" : "ghost"}
+                  className="flex items-center space-x-2"
+                >
+                  <BookOpen className="h-4 w-4" />
+                  <span>记忆</span>
+                </Button>
+              </Link>
+
+              <Link href="/settings">
+                <Button
+                  variant={pathname === "/settings" ? "default" : "ghost"}
+                  className="flex items-center space-x-2"
+                >
+                  <Settings className="h-4 w-4" />
+                  <span>设置</span>
                 </Button>
               </Link>
             </div>

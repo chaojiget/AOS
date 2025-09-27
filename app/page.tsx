@@ -9,7 +9,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Send, Bot, User, Activity, Database, FileText, PanelLeft } from "lucide-react";
+import {
+  Send,
+  Bot,
+  User,
+  Activity,
+  Database,
+  FileText,
+  PanelLeft,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  Sparkles,
+} from "lucide-react";
 import { getApiBaseUrl, getChatStreamEndpoint } from "@/lib/apiConfig";
 
 interface Message {
@@ -36,6 +48,20 @@ interface StoredMessageRecord {
   traceId?: string;
 }
 
+type ValueEventType = "progress" | "approval" | "anomaly" | "receipt";
+type ValueEventStatus = "active" | "success" | "warning" | "error";
+
+interface ValueEvent {
+  id: string;
+  title: string;
+  type: ValueEventType;
+  status: ValueEventStatus;
+  timestamp: string;
+  summary: string;
+  traceId?: string;
+  actionLabel?: string;
+}
+
 const isStoredMessageRecord = (value: unknown): value is StoredMessageRecord => {
   if (!value || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;
@@ -60,6 +86,48 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string>("default");
   const [sessions, setSessionsState] = useState<SessionMeta[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [valueEvents] = useState<ValueEvent[]>(() => [
+    {
+      id: "evt-progress-1",
+      title: "任务 #1024 接受",
+      type: "progress",
+      status: "active",
+      timestamp: new Date().toISOString(),
+      summary: "LangGraph Pipeline 已编排完毕，预计 2 分钟内产出首个里程碑。",
+      traceId: "trace-1024",
+      actionLabel: "查看任务",
+    },
+    {
+      id: "evt-approval-1",
+      title: "审批 · 数据修复",
+      type: "approval",
+      status: "warning",
+      timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      summary: "需要确认是否继续执行 Playwright 回归脚本（耗时 ~6 分钟）。",
+      traceId: "trace-1018",
+      actionLabel: "去审批",
+    },
+    {
+      id: "evt-receipt-1",
+      title: "回执 · 周报草稿",
+      type: "receipt",
+      status: "success",
+      timestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
+      summary: "自动生成的周报已上传至 Notion，并同步到 /integrations Webhook。",
+      traceId: "trace-985",
+      actionLabel: "查看回执",
+    },
+    {
+      id: "evt-anomaly-1",
+      title: "异常 · OpenAPI 超时",
+      type: "anomaly",
+      status: "error",
+      timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      summary: "调用外部 CRM OpenAPI 超过 3 次失败，已自动降级为缓存模式。",
+      traceId: "trace-972",
+      actionLabel: "查看追踪",
+    },
+  ]);
 
   useEffect(() => {
     setIsClient(true);
@@ -87,6 +155,93 @@ export default function ChatPage() {
     responseTime: 0,
     activeTraces: 1
   });
+
+  const eventTypeMeta: Record<ValueEventType, { label: string; icon: JSX.Element; badgeClass: string }> = {
+    progress: {
+      label: "任务进度",
+      icon: <Clock className="h-4 w-4 text-blue-500" />,
+      badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-200",
+    },
+    approval: {
+      label: "审批请求",
+      icon: <Sparkles className="h-4 w-4 text-amber-500" />,
+      badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200",
+    },
+    anomaly: {
+      label: "异常告警",
+      icon: <AlertTriangle className="h-4 w-4 text-red-500" />,
+      badgeClass: "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-200",
+    },
+    receipt: {
+      label: "结果回执",
+      icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
+      badgeClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200",
+    },
+  };
+
+  const eventStatusRing: Record<ValueEventStatus, string> = {
+    active: "border-blue-500",
+    success: "border-emerald-500",
+    warning: "border-amber-500",
+    error: "border-red-500",
+  };
+
+  const ValueEventFeed = ({ compact = false }: { compact?: boolean }) => (
+    <div className="flex flex-col gap-3">
+      {valueEvents.map((event) => {
+        const meta = eventTypeMeta[event.type];
+        return (
+          <div
+            key={event.id}
+            className={`rounded-lg border bg-background p-3 shadow-sm transition-colors hover:bg-muted/70 ${
+              compact ? "" : ""}
+            `}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${meta.badgeClass}`}>
+                  {meta.icon}
+                  {meta.label}
+                </span>
+                <span>{event.title}</span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {new Date(event.timestamp).toLocaleTimeString()}
+              </span>
+            </div>
+            <div className={`mt-3 rounded-md border-l-2 bg-muted/60 p-3 text-xs leading-relaxed ${eventStatusRing[event.status]}`}>
+              {event.summary}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {event.traceId && (
+                <Badge variant="outline" className="font-mono">
+                  {event.traceId}
+                </Badge>
+              )}
+              <Badge variant="outline" className="capitalize">
+                状态 · {event.status}
+              </Badge>
+              {!compact && (
+                <span className="text-[11px]">
+                  事件 ID：{event.id}
+                </span>
+              )}
+              {event.actionLabel && (
+                <Button size="sm" variant="ghost" className="ml-auto h-7 px-2 text-xs">
+                  {event.actionLabel}
+                </Button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      {valueEvents.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          暂无价值事件，等待 Orchestrator 推送 `task.*` 或 `anomaly.*`。
+        </p>
+      )}
+    </div>
+  );
 
   const messageContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -497,103 +652,129 @@ export default function ChatPage() {
             </Button>
           </div>
 
-          <div
-            ref={messageContainerRef}
-            className="flex-1 overflow-y-auto px-4 py-6 lg:px-8 lg:py-8"
-          >
-            <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-              {messages.map(message => (
-                <div
-                  key={message.id}
-                  className={`flex gap-3 ${
-                    message.role === 'user' ? 'justify-end' : 'justify-start'
-                  }`}
-                >
-                  {message.role === 'assistant' && (
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback>
-                        <Bot className="h-4 w-4" />
-                      </AvatarFallback>
-                    </Avatar>
-                  )}
+          <div className="flex flex-1 flex-col lg:flex-row">
+            <div className="flex flex-1 flex-col">
+              <div
+                ref={messageContainerRef}
+                className="flex-1 overflow-y-auto px-4 py-6 lg:px-8 lg:py-8"
+              >
+                <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+                  {messages.map(message => (
+                    <div
+                      key={message.id}
+                      className={`flex gap-3 ${
+                        message.role === 'user' ? 'justify-end' : 'justify-start'
+                      }`}
+                    >
+                      {message.role === 'assistant' && (
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback>
+                            <Bot className="h-4 w-4" />
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
 
-                  <div
-                    className={`max-w-full whitespace-pre-wrap break-words rounded-lg p-3 text-sm sm:max-w-[70%] ${
-                      message.role === 'user'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted'
-                    }`}
-                  >
-                    {message.content}
-                    <div className="mt-2 flex items-center gap-2 text-xs opacity-70">
-                      {isClient && <span>{message.timestamp.toLocaleTimeString()}</span>}
-                      {message.traceId && (
-                        <>
-                          {isClient && <Separator orientation="vertical" className="h-3" />}
-                          <span className="font-mono">{message.traceId}</span>
-                        </>
+                      <div
+                        className={`max-w-full whitespace-pre-wrap break-words rounded-lg p-3 text-sm sm:max-w-[70%] ${
+                          message.role === 'user'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted'
+                        }`}
+                      >
+                        {message.content}
+                        <div className="mt-2 flex items-center gap-2 text-xs opacity-70">
+                          {isClient && <span>{message.timestamp.toLocaleTimeString()}</span>}
+                          {message.traceId && (
+                            <>
+                              {isClient && <Separator orientation="vertical" className="h-3" />}
+                              <span className="font-mono">{message.traceId}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {message.role === 'user' && (
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback>
+                            <User className="h-4 w-4" />
+                          </AvatarFallback>
+                        </Avatar>
                       )}
                     </div>
-                  </div>
+                  ))}
 
-                  {message.role === 'user' && (
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback>
-                        <User className="h-4 w-4" />
-                      </AvatarFallback>
-                    </Avatar>
+                  {isLoading && (
+                    <div className="flex gap-3 justify-start">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback>
+                          <Bot className="h-4 w-4" />
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="max-w-full rounded-lg bg-muted p-3 sm:max-w-[70%]">
+                        <div className="flex space-x-1">
+                          <div className="h-2 w-2 animate-bounce rounded-full bg-primary" />
+                          <div
+                            className="h-2 w-2 animate-bounce rounded-full bg-primary"
+                            style={{ animationDelay: '0.1s' }}
+                          />
+                          <div
+                            className="h-2 w-2 animate-bounce rounded-full bg-primary"
+                            style={{ animationDelay: '0.2s' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
-              ))}
+              </div>
 
-              {isLoading && (
-                <div className="flex gap-3 justify-start">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>
-                      <Bot className="h-4 w-4" />
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="max-w-full rounded-lg bg-muted p-3 sm:max-w-[70%]">
-                    <div className="flex space-x-1">
-                      <div className="h-2 w-2 animate-bounce rounded-full bg-primary" />
-                      <div
-                        className="h-2 w-2 animate-bounce rounded-full bg-primary"
-                        style={{ animationDelay: '0.1s' }}
-                      />
-                      <div
-                        className="h-2 w-2 animate-bounce rounded-full bg-primary"
-                        style={{ animationDelay: '0.2s' }}
-                      />
-                    </div>
+              <div className="border-t px-4 py-4 lg:px-8 lg:py-6">
+                <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
+                  <div className="flex gap-2">
+                    <Input
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="输入你的消息..."
+                      className="flex-1"
+                      disabled={isLoading}
+                    />
+                    <Button
+                      onClick={sendMessage}
+                      disabled={isLoading || !input.trim()}
+                      size="icon"
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
                   </div>
+                  <p className="text-center text-xs text-muted-foreground">
+                    按回车发送，Shift+回车换行
+                  </p>
                 </div>
-              )}
+              </div>
             </div>
+
+            <aside className="hidden w-full max-w-sm flex-col gap-4 border-l px-6 py-6 lg:flex">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                    <Sparkles className="h-4 w-4" /> 价值事件流
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    白名单主题：progress / approval / anomaly / receipt
+                  </p>
+                </div>
+                <Badge variant="secondary">{valueEvents.length}</Badge>
+              </div>
+              <ValueEventFeed />
+            </aside>
           </div>
 
-          <div className="border-t px-4 py-4 lg:px-8 lg:py-6">
-            <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
-              <div className="flex gap-2">
-                <Input
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="输入你的消息..."
-                  className="flex-1"
-                  disabled={isLoading}
-                />
-                <Button
-                  onClick={sendMessage}
-                  disabled={isLoading || !input.trim()}
-                  size="icon"
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="text-center text-xs text-muted-foreground">
-                按回车发送，Shift+回车换行
-              </p>
-            </div>
+          <div className="border-t px-4 py-4 lg:hidden">
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <Sparkles className="h-4 w-4" /> 价值事件
+            </h2>
+            <ValueEventFeed compact />
           </div>
         </div>
       </div>
