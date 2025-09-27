@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge, badgeVariants } from "@/components/ui/badge";
@@ -18,7 +18,8 @@ import {
   Clock,
   Zap
 } from "lucide-react";
-import { telemetryEndpoint } from "@/lib/apiConfig";
+import { telemetryEndpoint, getApiBaseUrl } from "@/lib/apiConfig";
+import { getStoredApiToken } from "@/lib/authToken";
 import type { VariantProps } from "class-variance-authority";
 
 type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
@@ -172,11 +173,30 @@ export default function TelemetryPage() {
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [sessionMessages, setSessionMessages] = useState<SessionMessage[]>([]);
   const [sessionOverview, setSessionOverview] = useState<SessionOverview[]>([]);
+  const [apiToken, setApiToken] = useState<string | null>(null);
+  const [logStreamSeed, setLogStreamSeed] = useState(0);
 
   useEffect(() => {
     setIsClient(true);
     setLastUpdated(new Date());
   }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+    const token = getStoredApiToken();
+    if (token) {
+      setApiToken(token);
+    }
+
+    const handler = () => {
+      const refreshed = getStoredApiToken();
+      setApiToken(refreshed ?? null);
+      setLogStreamSeed(prev => prev + 1);
+    };
+
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, [isClient]);
 
   useEffect(() => {
     if (!isClient) return;
@@ -251,15 +271,25 @@ export default function TelemetryPage() {
     setSessionOverview(overviewList);
   }, [isClient, sessionList]);
 
-  const fetchTelemetryData = async () => {
+  const fetchTelemetryData = useCallback(async () => {
     try {
       setLoading(true);
 
+      const headers = apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined;
+      const base = getApiBaseUrl();
+
+      const tracesPromise = fetch(`${telemetryEndpoint('traces')}?limit=50`);
+      const logsPromise = apiToken
+        ? fetch(`${base}/api/logs?limit=100`, { headers })
+        : fetch(`${telemetryEndpoint('logs')}?limit=100`);
+      const metricsPromise = fetch(`${telemetryEndpoint('metrics')}?limit=50`);
+      const statsPromise = fetch(telemetryEndpoint('stats'));
+
       const [tracesRes, logsRes, metricsRes, statsRes] = await Promise.all([
-        fetch(`${telemetryEndpoint('traces')}?limit=50`),
-        fetch(`${telemetryEndpoint('logs')}?limit=100`),
-        fetch(`${telemetryEndpoint('metrics')}?limit=50`),
-        fetch(telemetryEndpoint('stats'))
+        tracesPromise,
+        logsPromise,
+        metricsPromise,
+        statsPromise
       ]);
 
       const [traces, logs, metrics, stats] = await Promise.all([
@@ -269,12 +299,12 @@ export default function TelemetryPage() {
         statsRes.json() as Promise<TelemetryStats>
       ]);
 
-      setData({
+      setData(prev => ({
         traces: traces.traces ?? [],
-        logs: logs.logs ?? [],
+        logs: logs.logs ?? prev.logs,
         metrics: metrics.metrics ?? [],
         stats
-      });
+      }));
 
       setLastUpdated(new Date());
     } catch (error) {
@@ -282,7 +312,7 @@ export default function TelemetryPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiToken]);
 
   useEffect(() => {
     fetchTelemetryData();
@@ -290,7 +320,7 @@ export default function TelemetryPage() {
     // Auto-refresh every 30 seconds
     const interval = setInterval(fetchTelemetryData, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchTelemetryData]);
 
   useEffect(() => {
     const load = async () => {
@@ -308,6 +338,42 @@ export default function TelemetryPage() {
     };
     load();
   }, [selectedTrace]);
+
+  useEffect(() => {
+    if (!isClient || !apiToken) return;
+
+    let cancelled = false;
+    const base = getApiBaseUrl();
+
+    const source = new EventSource(`${base}/api/logs/stream?token=${encodeURIComponent(apiToken)}`);
+
+    source.onmessage = (event) => {
+      try {
+        const log = JSON.parse(event.data) as LogEntry;
+        setData(prev => {
+          const filtered = prev.logs.filter(item => item.id !== log.id);
+          return {
+            ...prev,
+            logs: [log, ...filtered].slice(0, 200),
+          };
+        });
+      } catch (error) {
+        console.error('解析日志流失败 (telemetry)', error);
+      }
+    };
+
+    source.onerror = () => {
+      source.close();
+      if (!cancelled) {
+        setTimeout(() => setLogStreamSeed(prev => prev + 1), 5000);
+      }
+    };
+
+    return () => {
+      cancelled = true;
+      source.close();
+    };
+  }, [apiToken, isClient, logStreamSeed]);
 
   const openSession = (id: string) => {
     if (!isClient) return;

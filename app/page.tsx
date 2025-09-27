@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { getApiBaseUrl, getChatStreamEndpoint } from "@/lib/apiConfig";
+import { getStoredApiToken } from "@/lib/authToken";
 
 interface Message {
   id: string;
@@ -57,9 +58,20 @@ interface ValueEvent {
   type: ValueEventType;
   status: ValueEventStatus;
   timestamp: string;
+  timeLabel?: string;
   summary: string;
   traceId?: string;
   actionLabel?: string;
+}
+
+interface LogEntry {
+  id?: string;
+  timestamp: number;
+  level: string;
+  message: string;
+  trace_id?: string;
+  span_id?: string;
+  attributes?: Record<string, unknown>;
 }
 
 const isStoredMessageRecord = (value: unknown): value is StoredMessageRecord => {
@@ -86,48 +98,8 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string>("default");
   const [sessions, setSessionsState] = useState<SessionMeta[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [valueEvents] = useState<ValueEvent[]>(() => [
-    {
-      id: "evt-progress-1",
-      title: "任务 #1024 接受",
-      type: "progress",
-      status: "active",
-      timestamp: new Date().toISOString(),
-      summary: "LangGraph Pipeline 已编排完毕，预计 2 分钟内产出首个里程碑。",
-      traceId: "trace-1024",
-      actionLabel: "查看任务",
-    },
-    {
-      id: "evt-approval-1",
-      title: "审批 · 数据修复",
-      type: "approval",
-      status: "warning",
-      timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-      summary: "需要确认是否继续执行 Playwright 回归脚本（耗时 ~6 分钟）。",
-      traceId: "trace-1018",
-      actionLabel: "去审批",
-    },
-    {
-      id: "evt-receipt-1",
-      title: "回执 · 周报草稿",
-      type: "receipt",
-      status: "success",
-      timestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
-      summary: "自动生成的周报已上传至 Notion，并同步到 /integrations Webhook。",
-      traceId: "trace-985",
-      actionLabel: "查看回执",
-    },
-    {
-      id: "evt-anomaly-1",
-      title: "异常 · OpenAPI 超时",
-      type: "anomaly",
-      status: "error",
-      timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-      summary: "调用外部 CRM OpenAPI 超过 3 次失败，已自动降级为缓存模式。",
-      traceId: "trace-972",
-      actionLabel: "查看追踪",
-    },
-  ]);
+  const [valueEvents, setValueEvents] = useState<ValueEvent[]>([]);
+  const [apiToken, setApiToken] = useState<string | null>(null);
 
   useEffect(() => {
     setIsClient(true);
@@ -155,6 +127,7 @@ export default function ChatPage() {
     responseTime: 0,
     activeTraces: 1
   });
+  const [logStreamSeed, setLogStreamSeed] = useState(0);
 
   const eventTypeMeta: Record<ValueEventType, { label: string; icon: JSX.Element; badgeClass: string }> = {
     progress: {
@@ -186,6 +159,51 @@ export default function ChatPage() {
     error: "border-red-500",
   };
 
+  const mapLogToEvent = useCallback((log: LogEntry): ValueEvent => {
+    const topic = typeof log.attributes?.topic === 'string' ? log.attributes.topic : undefined;
+    const titleAttr = typeof log.attributes?.title === 'string' ? log.attributes.title : undefined;
+    const lowerLevel = (log.level || '').toLowerCase();
+
+    let type: ValueEventType = 'progress';
+    let status: ValueEventStatus = 'active';
+
+    if (topic?.includes('receipt') || lowerLevel === 'success') {
+      type = 'receipt';
+      status = 'success';
+    } else if (topic?.includes('approval') || lowerLevel === 'warn' || lowerLevel === 'warning') {
+      type = 'approval';
+      status = 'warning';
+    } else if (topic?.includes('anomaly') || lowerLevel === 'error') {
+      type = 'anomaly';
+      status = 'error';
+    }
+
+    const iso = new Date(log.timestamp).toISOString();
+    const timeLabel = new Date(log.timestamp).toLocaleTimeString('zh-CN', {
+      hour12: false,
+    });
+
+    return {
+      id: log.id ?? `${log.timestamp}-${Math.random().toString(36).slice(2, 8)}`,
+      title: titleAttr ?? topic ?? log.message.slice(0, 60) || '日志事件',
+      type,
+      status,
+      timestamp: iso,
+      timeLabel,
+      summary: log.message,
+      traceId: log.trace_id,
+      actionLabel: typeof log.attributes?.action === 'string' ? log.attributes?.action : undefined,
+    };
+  }, []);
+
+  const upsertLogEvent = useCallback((log: LogEntry) => {
+    const event = mapLogToEvent(log);
+    setValueEvents(prev => {
+      const filtered = prev.filter(item => item.id !== event.id);
+      return [event, ...filtered].slice(0, 50);
+    });
+  }, [mapLogToEvent]);
+
   const ValueEventFeed = ({ compact = false }: { compact?: boolean }) => (
     <div className="flex flex-col gap-3">
       {valueEvents.map((event) => {
@@ -206,7 +224,10 @@ export default function ChatPage() {
                 <span>{event.title}</span>
               </div>
               <span className="text-xs text-muted-foreground">
-                {new Date(event.timestamp).toLocaleTimeString()}
+                {event.timeLabel ?? new Date(event.timestamp).toLocaleTimeString('zh-CN', {
+                  hour12: false,
+                  timeZone: 'UTC',
+                })}
               </span>
             </div>
             <div className={`mt-3 rounded-md border-l-2 bg-muted/60 p-3 text-xs leading-relaxed ${eventStatusRing[event.status]}`}>
@@ -258,6 +279,72 @@ export default function ChatPage() {
   useEffect(() => {
     setSessionsState(readSessionsFromStorage());
   }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+    const token = getStoredApiToken();
+    if (token) {
+      setApiToken(token);
+    }
+
+    const handler = () => {
+      const refreshed = getStoredApiToken();
+      setApiToken(refreshed ?? null);
+      setLogStreamSeed(prev => prev + 1);
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, [isClient]);
+
+  useEffect(() => {
+    if (!isClient || !apiToken) {
+      return;
+    }
+
+    let cancelled = false;
+    const base = getApiBaseUrl();
+
+    const fetchInitial = async () => {
+      try {
+        const res = await fetch(`${base}/api/logs?limit=30`, {
+          headers: {
+            Authorization: `Bearer ${apiToken}`,
+          },
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        const logs = Array.isArray(json.logs) ? (json.logs as LogEntry[]) : [];
+        setValueEvents(logs.map(mapLogToEvent));
+      } catch (error) {
+        console.error('加载初始日志失败', error);
+      }
+    };
+
+    fetchInitial();
+
+    const source = new EventSource(`${base}/api/logs/stream?token=${encodeURIComponent(apiToken)}`);
+
+    source.onmessage = (event) => {
+      try {
+        const log = JSON.parse(event.data) as LogEntry;
+        upsertLogEvent(log);
+      } catch (error) {
+        console.error('解析日志流失败', error);
+      }
+    };
+
+    source.onerror = () => {
+      source.close();
+      if (!cancelled) {
+        setTimeout(() => setLogStreamSeed(prev => prev + 1), 5000);
+      }
+    };
+
+    return () => {
+      cancelled = true;
+      source.close();
+    };
+  }, [apiToken, isClient, mapLogToEvent, upsertLogEvent, logStreamSeed]);
 
   const getConversationId = () => {
     if (typeof window === "undefined") return "default";

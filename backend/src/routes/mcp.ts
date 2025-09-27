@@ -13,8 +13,14 @@ import { requireAuth, getAuthContext } from '../auth/middleware';
 import { Role, normalizeRole } from '../auth/roles';
 import { auditFromAuth } from '../audit/logger';
 import { loadAgentRunsForScript } from '../mcp/storage';
+import { getTelemetryExporter } from '../telemetry/provider';
+import {
+  TelemetryInitializationError,
+  TelemetryStorageError,
+} from '../telemetry/nats-exporter';
 
 export const mcpRoutes = Router();
+const telemetryExporter = getTelemetryExporter();
 
 const parseEnv = (input: unknown): Record<string, string> | undefined => {
   if (input == null) return undefined;
@@ -56,6 +62,18 @@ const ensureServiceWritable = (role: Role, service: McpServerConfig) => {
   if (service.allowedRoles && service.allowedRoles.length > 0 && !service.allowedRoles.includes(role)) {
     throw Object.assign(new Error('当前角色无权管理该服务'), { statusCode: 403 });
   }
+};
+
+const handleTelemetryError = (res: any, error: unknown) => {
+  if (error instanceof TelemetryInitializationError) {
+    res.status(503).json({ error: '日志服务未初始化' });
+    return true;
+  }
+  if (error instanceof TelemetryStorageError) {
+    res.status(500).json({ error: '日志服务写入失败' });
+    return true;
+  }
+  return false;
 };
 
 mcpRoutes.get('/registry', requireAuth('mcp.registry.read'), (req, res) => {
@@ -290,5 +308,83 @@ mcpRoutes.delete('/sandbox/scripts/:id', requireAuth('mcp.sandbox.write'), async
     res.status(204).end();
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : '删除脚本失败' });
+  }
+});
+
+mcpRoutes.post('/logs/publish', requireAuth('mcp.logs.write'), async (req, res) => {
+  const auth = getAuthContext(req)!;
+  const { level = 'info', message, traceId, spanId, attributes } = req.body as Record<string, any>;
+
+  if (!message || typeof message !== 'string') {
+    return res.status(400).json({ error: 'message 必须为字符串' });
+  }
+
+  try {
+    await telemetryExporter.ensureReady();
+    await telemetryExporter.logEvent(level, message, traceId, spanId, attributes);
+
+    await auditFromAuth(auth, 'logs.publish', 'logs', {
+      level,
+      traceId: traceId ?? null,
+    });
+
+    res.json({ status: 'accepted', level });
+  } catch (error) {
+    if (handleTelemetryError(res, error)) {
+      return;
+    }
+    console.error('[MCP] 日志写入失败', error);
+    res.status(500).json({ error: '写入日志失败' });
+  }
+});
+
+mcpRoutes.post('/logs/query', requireAuth('mcp.logs.read'), async (req, res) => {
+  const { limit, level, after, traceId } = req.body as {
+    limit?: number;
+    level?: string;
+    after?: number;
+    traceId?: string;
+  };
+
+  try {
+    await telemetryExporter.ensureReady();
+    const logs = await telemetryExporter.getLogs(limit ?? 100, {
+      level,
+      after,
+      traceId,
+    });
+
+    res.json({
+      logs,
+      nextAfter: logs.length > 0 ? logs[0].timestamp : after ?? null,
+    });
+  } catch (error) {
+    if (handleTelemetryError(res, error)) {
+      return;
+    }
+    console.error('[MCP] 查询日志失败', error);
+    res.status(500).json({ error: '查询日志失败' });
+  }
+});
+
+mcpRoutes.post('/logs/subscribe', requireAuth('mcp.logs.subscribe'), async (req, res) => {
+  const { after, limit } = req.body as { after?: number; limit?: number };
+
+  try {
+    await telemetryExporter.ensureReady();
+    const logs = await telemetryExporter.getLogs(limit ?? 100, {
+      after,
+    });
+
+    res.json({
+      logs,
+      nextAfter: logs.length > 0 ? logs[0].timestamp : after ?? null,
+    });
+  } catch (error) {
+    if (handleTelemetryError(res, error)) {
+      return;
+    }
+    console.error('[MCP] 日志订阅轮询失败', error);
+    res.status(500).json({ error: '获取日志失败' });
   }
 });

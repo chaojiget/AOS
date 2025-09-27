@@ -10,6 +10,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { chatRoutes } from './routes/chat';
 import { telemetryRoutes } from './routes/telemetry';
+import { logRoutes } from './routes/logs';
 import { mcpRoutes } from './routes/mcp';
 import { initMcpSubsystem } from './mcp/init';
 import { trace } from '@opentelemetry/api';
@@ -74,6 +75,7 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/api/chat', chatRoutes);
 app.use('/api/telemetry', telemetryRoutes);
+app.use('/api/logs', logRoutes);
 app.use('/mcp', mcpRoutes);
 
 // 404 handler

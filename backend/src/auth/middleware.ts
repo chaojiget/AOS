@@ -20,6 +20,18 @@ const extractToken = (req: Request): string | null => {
     return apiKey.trim();
   }
 
+  const tokenQuery = req.query?.token;
+  if (typeof tokenQuery === 'string' && tokenQuery.trim()) {
+    return tokenQuery.trim();
+  }
+
+  if (Array.isArray(tokenQuery) && tokenQuery.length > 0) {
+    const candidate = tokenQuery[0];
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
   return null;
 };
 

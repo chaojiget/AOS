@@ -14,6 +14,7 @@ import {
   DiscardPolicy,
   StorageType,
   type Stream,
+  type Subscription,
 } from 'nats';
 
 export interface NatsTelemetryOptions {
@@ -207,7 +208,7 @@ export class NatsTelemetryExporter implements SpanExporter {
     return traces.sort((a, b) => a.start_time - b.start_time);
   }
 
-  async getLogs(limit: number = 100, filters?: { level?: string }): Promise<LogEntry[]> {
+  async getLogs(limit: number = 100, filters?: { level?: string; traceId?: string; after?: number }): Promise<LogEntry[]> {
     await this.ensureReady();
     const fetchLimit = filters?.level ? this.maxMessages : limit;
     let logs = await this.fetchMessages<LogEntry>('logs', fetchLimit);
@@ -216,9 +217,40 @@ export class NatsTelemetryExporter implements SpanExporter {
       logs = logs.filter(log => log.level === filters.level);
     }
 
+    if (filters?.traceId) {
+      logs = logs.filter(log => log.trace_id === filters.traceId);
+    }
+
+    if (filters?.after) {
+      logs = logs.filter(log => log.timestamp > filters.after!);
+    }
+
     return logs
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, limit);
+  }
+
+  async createLogSubscription(): Promise<{ iterator: AsyncIterable<LogEntry>; close: () => Promise<void> }> {
+    await this.ensureReady();
+    const { connection } = await this.getNatsHandles();
+    const subject = this.subjects.logs;
+    const subscription = connection.subscribe(subject, { queue: undefined });
+
+    const iterator = this.buildLogIterator(subscription);
+
+    const close = async () => {
+      try {
+        if ('drain' in subscription && typeof subscription.drain === 'function') {
+          await subscription.drain();
+        } else {
+          subscription.unsubscribe();
+        }
+      } catch (error) {
+        console.error('[Telemetry] 关闭日志订阅失败', error);
+      }
+    };
+
+    return { iterator, close };
   }
 
   async getMetrics(limit: number = 100, filters?: { name?: string }): Promise<MetricEntry[]> {
@@ -358,6 +390,23 @@ export class NatsTelemetryExporter implements SpanExporter {
     } catch (error: unknown) {
       throw new TelemetryStorageError('读取 NATS JetStream 消息失败', { cause: error });
     }
+  }
+
+  private buildLogIterator(subscription: Subscription): AsyncIterable<LogEntry> {
+    const self = this;
+
+    const asyncGenerator = async function* (): AsyncIterable<LogEntry> {
+      for await (const message of subscription) {
+        try {
+          const decoded = self.jsonCodec.decode(message.data) as LogEntry;
+          yield decoded;
+        } catch (error) {
+          console.error('[Telemetry] 解码日志消息失败', error);
+        }
+      }
+    };
+
+    return asyncGenerator();
   }
 
   private async getStream(type: TelemetryType): Promise<Stream> {

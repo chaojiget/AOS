@@ -5,6 +5,7 @@ import vm from 'vm';
 import { SandboxRunResult, SandboxScriptDefinition, SandboxRunTrigger } from './types';
 import { deleteScriptFromStorage, loadScriptsFromStorage, saveScriptToStorage } from './storage';
 import { logSandboxRun } from './run-logger';
+import { logClient } from '../services/log-client';
 
 export class McpSandbox {
   private readonly scripts = new Map<string, SandboxScriptDefinition>();
@@ -81,6 +82,18 @@ export class McpSandbox {
 
     const startedAt = new Date();
     const trigger: SandboxRunTrigger = options.trigger ?? 'manual';
+    const runId = randomUUID();
+    await logClient.write({
+      level: 'info',
+      message: `[Sandbox:${script.id}] 脚本开始执行`,
+      traceId: runId,
+      attributes: {
+        scriptId: id,
+        scriptName: script.name,
+        trigger,
+        actor: options.actor,
+      },
+    });
     const code = await fs.readFile(script.entryFile, 'utf-8');
 
     const captured: string[] = [];
@@ -130,9 +143,8 @@ export class McpSandbox {
     const output = captured.join('\n');
     const durationMs = finishedAt.getTime() - startedAt.getTime();
 
-    let runId: string = randomUUID();
     try {
-      runId = await logSandboxRun({
+      await logSandboxRun({
         runId,
         scriptId: id,
         scriptName: script.name,
@@ -146,6 +158,19 @@ export class McpSandbox {
     } catch (logError) {
       console.error(`[Sandbox:${id}] 记录运行结果失败`, logError);
     }
+
+    await logClient.write({
+      level: errorMessage ? 'error' : 'info',
+      message: `[Sandbox:${script.id}] 脚本执行${errorMessage ? '失败' : '完成'}`,
+      traceId: runId,
+      attributes: {
+        scriptId: id,
+        scriptName: script.name,
+        trigger,
+        actor: options.actor,
+        durationMs,
+      },
+    });
 
     return {
       runId,

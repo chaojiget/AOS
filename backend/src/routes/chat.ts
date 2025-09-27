@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { ChatAgent } from '../agents/chat-agent';
-import { NatsTelemetryExporter, TelemetryInitializationError, TelemetryStorageError } from '../telemetry/nats-exporter';
+import { TelemetryInitializationError, TelemetryStorageError } from '../telemetry/nats-exporter';
+import { getTelemetryExporter } from '../telemetry/provider';
+import { logClient } from '../services/log-client';
 
 const router = Router();
 const chatAgent = new ChatAgent();
-const telemetryExporter = new NatsTelemetryExporter({ maxMessages: 1000 });
+const telemetryExporter = getTelemetryExporter();
 
 router.post('/', async (req, res) => {
   try {
@@ -20,9 +22,14 @@ router.post('/', async (req, res) => {
       });
     }
 
-    await telemetryExporter.logEvent('info', '收到聊天请求', traceId, undefined, {
-      messageLength: message.length,
-      hasHistory: !!conversationHistory,
+    await logClient.write({
+      level: 'info',
+      message: '收到聊天请求',
+      traceId,
+      attributes: {
+        messageLength: message.length,
+        hasHistory: !!conversationHistory,
+      },
     });
 
     const startTime = Date.now();
@@ -40,9 +47,14 @@ router.post('/', async (req, res) => {
       status: 'success',
     });
 
-    await telemetryExporter.logEvent('info', '发送聊天响应', traceId, undefined, {
-      responseLength: result.response.length,
-      duration: responseTime,
+    await logClient.write({
+      level: 'info',
+      message: '发送聊天响应',
+      traceId,
+      attributes: {
+        responseLength: result.response.length,
+        duration: responseTime,
+      },
     });
 
     res.json({
@@ -75,8 +87,13 @@ router.post('/', async (req, res) => {
     console.error('Chat route error:', error);
 
     try {
-      await telemetryExporter.logEvent('error', `Chat processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`, traceId, undefined, {
-        error: error instanceof Error ? error.stack : 'Unknown error',
+      await logClient.write({
+        level: 'error',
+        message: `Chat processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        traceId,
+        attributes: {
+          error: error instanceof Error ? error.stack : 'Unknown error',
+        },
       });
       await telemetryExporter.recordMetric('chat.requests_total', 1, 'count', {
         status: 'error',
@@ -112,8 +129,13 @@ router.post('/stream', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    await telemetryExporter.logEvent('info', '收到流式聊天请求', traceId, undefined, {
-      messageLength: message.length,
+    await logClient.write({
+      level: 'info',
+      message: '收到流式聊天请求',
+      traceId,
+      attributes: {
+        messageLength: message.length,
+      },
     });
 
     try {
@@ -123,12 +145,20 @@ router.post('/stream', async (req, res) => {
       res.write(`data: ${JSON.stringify({ done: true, traceId })}\n\n`);
       res.end();
 
-      await telemetryExporter.logEvent('info', '流式响应完成', traceId);
+      await logClient.write({
+        level: 'info',
+        message: '流式响应完成',
+        traceId,
+      });
 
     } catch (streamError) {
       console.error('Streaming error:', streamError);
 
-      await telemetryExporter.logEvent('error', `Streaming failed: ${streamError instanceof Error ? streamError.message : 'Unknown error'}`, traceId);
+      await logClient.write({
+        level: 'error',
+        message: `Streaming failed: ${streamError instanceof Error ? streamError.message : 'Unknown error'}`,
+        traceId,
+      });
 
       res.write(`data: ${JSON.stringify({
         error: 'Streaming failed',
@@ -159,7 +189,11 @@ router.post('/stream', async (req, res) => {
     console.error('Stream route error:', error);
 
     try {
-      await telemetryExporter.logEvent('error', `Stream setup failed: ${error instanceof Error ? error.message : 'Unknown error'}`, traceId);
+      await logClient.write({
+        level: 'error',
+        message: `Stream setup failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        traceId,
+      });
     } catch (telemetryError) {
       console.error('记录遥测失败:', telemetryError);
     }

@@ -1,12 +1,12 @@
 import { Router, type Response } from 'express';
 import {
-  NatsTelemetryExporter,
   TelemetryInitializationError,
   TelemetryStorageError,
 } from '../telemetry/nats-exporter';
+import { getTelemetryExporter } from '../telemetry/provider';
 
 const router = Router();
-const telemetryExporter = new NatsTelemetryExporter({ maxMessages: 1000 });
+const telemetryExporter = getTelemetryExporter();
 
 const handleTelemetryError = (res: Response, error: unknown, traceId?: string) => {
   if (error instanceof TelemetryInitializationError) {
