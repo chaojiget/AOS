@@ -26,6 +26,7 @@ router.post('/', async (req, res) => {
       level: 'info',
       message: '收到聊天请求',
       traceId,
+      topic: 'chat.request',
       attributes: {
         messageLength: message.length,
         hasHistory: !!conversationHistory,
@@ -51,6 +52,7 @@ router.post('/', async (req, res) => {
       level: 'info',
       message: '发送聊天响应',
       traceId,
+      topic: 'chat.response',
       attributes: {
         responseLength: result.response.length,
         duration: responseTime,
@@ -91,6 +93,7 @@ router.post('/', async (req, res) => {
         level: 'error',
         message: `Chat processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         traceId,
+        topic: 'chat.error',
         attributes: {
           error: error instanceof Error ? error.stack : 'Unknown error',
         },
@@ -133,6 +136,7 @@ router.post('/stream', async (req, res) => {
       level: 'info',
       message: '收到流式聊天请求',
       traceId,
+      topic: 'chat.stream.start',
       attributes: {
         messageLength: message.length,
       },
@@ -149,6 +153,7 @@ router.post('/stream', async (req, res) => {
         level: 'info',
         message: '流式响应完成',
         traceId,
+        topic: 'chat.stream.done',
       });
 
     } catch (streamError) {
@@ -158,6 +163,7 @@ router.post('/stream', async (req, res) => {
         level: 'error',
         message: `Streaming failed: ${streamError instanceof Error ? streamError.message : 'Unknown error'}`,
         traceId,
+        topic: 'chat.stream.error',
       });
 
       res.write(`data: ${JSON.stringify({
@@ -193,6 +199,7 @@ router.post('/stream', async (req, res) => {
         level: 'error',
         message: `Stream setup failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         traceId,
+        topic: 'chat.stream.error',
       });
     } catch (telemetryError) {
       console.error('记录遥测失败:', telemetryError);

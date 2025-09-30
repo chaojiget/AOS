@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -175,6 +176,10 @@ export default function TelemetryPage() {
   const [sessionOverview, setSessionOverview] = useState<SessionOverview[]>([]);
   const [apiToken, setApiToken] = useState<string | null>(null);
   const [logStreamSeed, setLogStreamSeed] = useState(0);
+  const [logLevelFilter, setLogLevelFilter] = useState<string>("");
+  const [logTopicFilter, setLogTopicFilter] = useState<string>("");
+  const [logBeforeCursor, setLogBeforeCursor] = useState<number | null>(null);
+  const [logLoading, setLogLoading] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
@@ -271,17 +276,30 @@ export default function TelemetryPage() {
     setSessionOverview(overviewList);
   }, [isClient, sessionList]);
 
-  const fetchTelemetryData = useCallback(async () => {
+  const fetchTelemetryData = useCallback(async (options?: { append?: boolean; before?: number | null }) => {
+    const append = options?.append ?? false;
     try {
-      setLoading(true);
+      if (append) {
+        setLogLoading(true);
+      } else {
+        setLoading(true);
+      }
 
       const headers = apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined;
       const base = getApiBaseUrl();
 
+      const query = new URLSearchParams();
+      query.set('limit', '100');
+      if (logLevelFilter) query.set('level', logLevelFilter);
+      if (logTopicFilter) query.set('topic', logTopicFilter);
+      if (options?.before != null) {
+        query.set('before', String(options.before));
+      }
+
       const tracesPromise = fetch(`${telemetryEndpoint('traces')}?limit=50`);
       const logsPromise = apiToken
-        ? fetch(`${base}/api/logs?limit=100`, { headers })
-        : fetch(`${telemetryEndpoint('logs')}?limit=100`);
+        ? fetch(`${base}/api/logs?${query.toString()}`, { headers })
+        : fetch(`${telemetryEndpoint('logs')}?${query.toString()}`);
       const metricsPromise = fetch(`${telemetryEndpoint('metrics')}?limit=50`);
       const statsPromise = fetch(telemetryEndpoint('stats'));
 
@@ -299,23 +317,38 @@ export default function TelemetryPage() {
         statsRes.json() as Promise<TelemetryStats>
       ]);
 
-      setData(prev => ({
-        traces: traces.traces ?? [],
-        logs: logs.logs ?? prev.logs,
-        metrics: metrics.metrics ?? [],
-        stats
-      }));
+      setData(prev => {
+        const newLogs = logs.logs ?? [];
+        const mergedLogs = append ? [...prev.logs, ...newLogs] : newLogs;
+        return {
+          traces: traces.traces ?? [],
+          logs: mergedLogs,
+          metrics: metrics.metrics ?? [],
+          stats,
+        };
+      });
+
+      if (logs.logs?.length) {
+        const last = logs.logs[logs.logs.length - 1];
+        setLogBeforeCursor(last.timestamp);
+      } else if (!append) {
+        setLogBeforeCursor(null);
+      }
 
       setLastUpdated(new Date());
     } catch (error) {
       console.error('Failed to fetch telemetry data:', error);
     } finally {
-      setLoading(false);
+      if (append) {
+        setLogLoading(false);
+      } else {
+        setLoading(false);
+      }
     }
-  }, [apiToken]);
+  }, [apiToken, logLevelFilter, logTopicFilter]);
 
   useEffect(() => {
-    fetchTelemetryData();
+    fetchTelemetryData({ before: null, append: false });
 
     // Auto-refresh every 30 seconds
     const interval = setInterval(fetchTelemetryData, 30000);
@@ -339,6 +372,33 @@ export default function TelemetryPage() {
     load();
   }, [selectedTrace]);
 
+  const logMatchesFilter = useCallback((log: LogEntry) => {
+    if (logLevelFilter && log.level.toLowerCase() !== logLevelFilter.toLowerCase()) {
+      return false;
+    }
+    if (logTopicFilter) {
+      const topic = typeof log.attributes?.topic === 'string' ? log.attributes.topic : '';
+      if (!topic.includes(logTopicFilter)) {
+        return false;
+      }
+    }
+    return true;
+  }, [logLevelFilter, logTopicFilter]);
+
+  const applyLogFilters = useCallback(() => {
+    setLogBeforeCursor(null);
+    fetchTelemetryData({ append: false, before: null });
+  }, [fetchTelemetryData]);
+
+  const loadOlderLogs = useCallback(async () => {
+    if (logLoading) return;
+    const lastTimestamp = data.logs.length > 0
+      ? data.logs[data.logs.length - 1].timestamp
+      : logBeforeCursor;
+    if (!lastTimestamp) return;
+    await fetchTelemetryData({ append: true, before: lastTimestamp });
+  }, [data.logs, logBeforeCursor, logLoading, fetchTelemetryData]);
+
   useEffect(() => {
     if (!isClient || !apiToken) return;
 
@@ -350,8 +410,12 @@ export default function TelemetryPage() {
     source.onmessage = (event) => {
       try {
         const log = JSON.parse(event.data) as LogEntry;
+        if (!logMatchesFilter(log)) {
+          return;
+        }
         setData(prev => {
-          const filtered = prev.logs.filter(item => item.id !== log.id);
+          const exists = prev.logs.some(item => item.id === log.id);
+          const filtered = exists ? prev.logs.filter(item => item.id !== log.id) : prev.logs;
           return {
             ...prev,
             logs: [log, ...filtered].slice(0, 200),
@@ -373,7 +437,7 @@ export default function TelemetryPage() {
       cancelled = true;
       source.close();
     };
-  }, [apiToken, isClient, logStreamSeed]);
+  }, [apiToken, isClient, logStreamSeed, logMatchesFilter]);
 
   const openSession = (id: string) => {
     if (!isClient) return;
@@ -418,11 +482,17 @@ export default function TelemetryPage() {
 
   const getLevelColor = (level: string): BadgeVariant => {
     switch (level.toLowerCase()) {
-      case 'error': return 'destructive';
-      case 'warn': case 'warning': return 'secondary';
-      case 'info': return 'default';
-      case 'debug': return 'outline';
-      default: return 'default';
+      case 'error':
+        return 'destructive';
+      case 'warn':
+      case 'warning':
+        return 'secondary';
+      case 'info':
+        return 'default';
+      case 'debug':
+        return 'outline';
+      default:
+        return 'default';
     }
   };
 
@@ -700,6 +770,31 @@ export default function TelemetryPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Input
+                placeholder="Topic 包含..."
+                value={logTopicFilter}
+                onChange={(event) => setLogTopicFilter(event.target.value)}
+                className="w-40"
+              />
+              <select
+                value={logLevelFilter}
+                onChange={(event) => setLogLevelFilter(event.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+              >
+                <option value="">全部级别</option>
+                <option value="error">Error</option>
+                <option value="warn">Warn</option>
+                <option value="info">Info</option>
+                <option value="debug">Debug</option>
+              </select>
+              <Button size="sm" onClick={applyLogFilters} disabled={loading || logLoading}>
+                <RefreshCw className="mr-1 h-3 w-3" /> 应用
+              </Button>
+              <Button size="sm" variant="outline" onClick={loadOlderLogs} disabled={logLoading || data.logs.length === 0}>
+                {logLoading ? '加载中...' : '加载更多'}
+              </Button>
+            </div>
             <ScrollArea className="h-80">
               <div className="space-y-2">
                 {data.logs.map(log => (
@@ -718,8 +813,16 @@ export default function TelemetryPage() {
                         追踪: {log.trace_id}
                       </div>
                     )}
+                    {typeof log.attributes?.topic === 'string' && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Topic: {String(log.attributes.topic)}
+                      </div>
+                    )}
                   </div>
                 ))}
+                {data.logs.length === 0 && (
+                  <p className="text-xs text-muted-foreground">暂无日志记录</p>
+                )}
               </div>
             </ScrollArea>
           </CardContent>

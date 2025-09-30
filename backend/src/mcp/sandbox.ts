@@ -87,6 +87,7 @@ export class McpSandbox {
       level: 'info',
       message: `[Sandbox:${script.id}] 脚本开始执行`,
       traceId: runId,
+      topic: 'sandbox.run.start',
       attributes: {
         scriptId: id,
         scriptName: script.name,
@@ -163,6 +164,7 @@ export class McpSandbox {
       level: errorMessage ? 'error' : 'info',
       message: `[Sandbox:${script.id}] 脚本执行${errorMessage ? '失败' : '完成'}`,
       traceId: runId,
+      topic: errorMessage ? 'sandbox.run.error' : 'sandbox.run.success',
       attributes: {
         scriptId: id,
         scriptName: script.name,

@@ -208,7 +208,7 @@ export class NatsTelemetryExporter implements SpanExporter {
     return traces.sort((a, b) => a.start_time - b.start_time);
   }
 
-  async getLogs(limit: number = 100, filters?: { level?: string; traceId?: string; after?: number }): Promise<LogEntry[]> {
+  async getLogs(limit: number = 100, filters?: { level?: string; traceId?: string; after?: number; before?: number; topic?: string }): Promise<LogEntry[]> {
     await this.ensureReady();
     const fetchLimit = filters?.level ? this.maxMessages : limit;
     let logs = await this.fetchMessages<LogEntry>('logs', fetchLimit);
@@ -223,6 +223,17 @@ export class NatsTelemetryExporter implements SpanExporter {
 
     if (filters?.after) {
       logs = logs.filter(log => log.timestamp > filters.after!);
+    }
+
+     if (filters?.before) {
+      logs = logs.filter(log => log.timestamp < filters.before!);
+    }
+
+    if (filters?.topic) {
+      logs = logs.filter((log) => {
+        const topic = (log.attributes as any)?.topic;
+        return typeof topic === 'string' && topic.includes(filters.topic!);
+      });
     }
 
     return logs

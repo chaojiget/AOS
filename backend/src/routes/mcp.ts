@@ -313,7 +313,7 @@ mcpRoutes.delete('/sandbox/scripts/:id', requireAuth('mcp.sandbox.write'), async
 
 mcpRoutes.post('/logs/publish', requireAuth('mcp.logs.write'), async (req, res) => {
   const auth = getAuthContext(req)!;
-  const { level = 'info', message, traceId, spanId, attributes } = req.body as Record<string, any>;
+  const { level = 'info', message, traceId, spanId, topic, attributes } = req.body as Record<string, any>;
 
   if (!message || typeof message !== 'string') {
     return res.status(400).json({ error: 'message 必须为字符串' });
@@ -321,11 +321,16 @@ mcpRoutes.post('/logs/publish', requireAuth('mcp.logs.write'), async (req, res) 
 
   try {
     await telemetryExporter.ensureReady();
-    await telemetryExporter.logEvent(level, message, traceId, spanId, attributes);
+    const mergedAttributes = {
+      ...attributes,
+      ...(topic ? { topic } : {}),
+    };
+    await telemetryExporter.logEvent(level, message, traceId, spanId, mergedAttributes);
 
     await auditFromAuth(auth, 'logs.publish', 'logs', {
       level,
       traceId: traceId ?? null,
+      topic: topic ?? null,
     });
 
     res.json({ status: 'accepted', level });
@@ -339,11 +344,13 @@ mcpRoutes.post('/logs/publish', requireAuth('mcp.logs.write'), async (req, res) 
 });
 
 mcpRoutes.post('/logs/query', requireAuth('mcp.logs.read'), async (req, res) => {
-  const { limit, level, after, traceId } = req.body as {
+  const { limit, level, after, before, traceId, topic } = req.body as {
     limit?: number;
     level?: string;
     after?: number;
+    before?: number;
     traceId?: string;
+    topic?: string;
   };
 
   try {
@@ -351,7 +358,9 @@ mcpRoutes.post('/logs/query', requireAuth('mcp.logs.read'), async (req, res) => 
     const logs = await telemetryExporter.getLogs(limit ?? 100, {
       level,
       after,
+      before,
       traceId,
+      topic,
     });
 
     res.json({
@@ -368,12 +377,14 @@ mcpRoutes.post('/logs/query', requireAuth('mcp.logs.read'), async (req, res) => 
 });
 
 mcpRoutes.post('/logs/subscribe', requireAuth('mcp.logs.subscribe'), async (req, res) => {
-  const { after, limit } = req.body as { after?: number; limit?: number };
+  const { after, before, limit, topic } = req.body as { after?: number; before?: number; limit?: number; topic?: string };
 
   try {
     await telemetryExporter.ensureReady();
     const logs = await telemetryExporter.getLogs(limit ?? 100, {
       after,
+      before,
+      topic,
     });
 
     res.json({

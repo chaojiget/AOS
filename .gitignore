@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 /backend/node_modules/
+/hand-runtime/node_modules/
 
 # Next.js
 .next/
@@ -9,6 +10,7 @@ node_modules/
 # Production builds
 /build
 /backend/dist/
+/hand-runtime/dist/
 
 # Environment variables
 .env

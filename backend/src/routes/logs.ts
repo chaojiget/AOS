@@ -33,7 +33,7 @@ const handleTelemetryError = (res: any, error: unknown, traceId?: string) => {
 
 router.post('/', requireAuth('mcp.logs.write'), async (req, res) => {
   const traceId = res.locals.traceId;
-  const { level = 'info', message, traceId: payloadTraceId, spanId, attributes } = req.body as Record<string, any>;
+  const { level = 'info', message, traceId: payloadTraceId, spanId, topic, attributes } = req.body as Record<string, any>;
 
   if (!message || typeof message !== 'string') {
     return res.status(400).json({
@@ -44,7 +44,11 @@ router.post('/', requireAuth('mcp.logs.write'), async (req, res) => {
 
   try {
     await telemetryExporter.ensureReady();
-    await telemetryExporter.logEvent(level, message, payloadTraceId, spanId, attributes);
+    const mergedAttributes = {
+      ...attributes,
+      ...(topic ? { topic } : {}),
+    };
+    await telemetryExporter.logEvent(level, message, payloadTraceId, spanId, mergedAttributes);
 
     const auth = getAuthContext(req);
     if (auth) {
@@ -82,11 +86,15 @@ router.get('/', requireAuth('mcp.logs.read'), async (req, res) => {
     const level = req.query.level ? String(req.query.level) : undefined;
     const after = req.query.after ? Number(req.query.after) : undefined;
     const targetTraceId = req.query.traceId ? String(req.query.traceId) : undefined;
+    const topic = req.query.topic ? String(req.query.topic) : undefined;
+    const before = req.query.before ? Number(req.query.before) : undefined;
 
     const logs = await telemetryExporter.getLogs(limit, {
       level,
       after,
       traceId: targetTraceId,
+      topic,
+      before,
     });
 
     res.json({
@@ -116,6 +124,7 @@ router.get('/stream', requireAuth('mcp.logs.subscribe'), async (req, res) => {
   res.flushHeaders?.();
 
   let closed = false;
+  let heartbeat: NodeJS.Timeout | null = null;
 
   try {
     const subscription = await telemetryExporter.createLogSubscription();
@@ -124,13 +133,20 @@ router.get('/stream', requireAuth('mcp.logs.subscribe'), async (req, res) => {
       if (closed) return;
       closed = true;
       await subscription.close();
+      if (heartbeat) clearInterval(heartbeat);
     });
 
     req.on('end', async () => {
       if (closed) return;
       closed = true;
       await subscription.close();
+      if (heartbeat) clearInterval(heartbeat);
     });
+
+    heartbeat = setInterval(() => {
+      if (closed) return;
+      res.write(': heartbeat\n\n');
+    }, 15000);
 
     for await (const log of subscription.iterator) {
       if (closed) {
@@ -147,6 +163,7 @@ router.get('/stream', requireAuth('mcp.logs.subscribe'), async (req, res) => {
       res.end();
     }
     closed = true;
+    if (heartbeat) clearInterval(heartbeat);
   }
 });
 

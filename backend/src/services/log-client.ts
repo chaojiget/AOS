@@ -5,6 +5,7 @@ interface LogPayload {
   message: string;
   traceId?: string;
   spanId?: string;
+  topic?: string;
   attributes?: Record<string, unknown>;
 }
 
@@ -27,6 +28,10 @@ const telemetryExporter = getTelemetryExporter();
 export const logClient = {
   async write(payload: LogPayload) {
     const level = payload.level ?? DEFAULT_LEVEL;
+    const attributes = {
+      ...payload.attributes,
+      ...(payload.topic ? { topic: payload.topic } : {}),
+    };
     const token = process.env.INTERNAL_LOG_TOKEN || process.env.AOS_INTERNAL_TOKEN;
 
     if (endpoint) {
@@ -42,7 +47,7 @@ export const logClient = {
             message: payload.message,
             traceId: payload.traceId,
             spanId: payload.spanId,
-            attributes: payload.attributes,
+            attributes,
           }),
         });
         if (!res.ok) {
@@ -55,7 +60,7 @@ export const logClient = {
     }
 
     try {
-      await telemetryExporter.logEvent(level, payload.message, payload.traceId, payload.spanId, payload.attributes);
+      await telemetryExporter.logEvent(level, payload.message, payload.traceId, payload.spanId, attributes);
     } catch (error) {
       console.error('[LogClient] 写入 NATS 日志失败', error);
     }

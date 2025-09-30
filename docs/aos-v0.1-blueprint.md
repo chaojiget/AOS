@@ -160,9 +160,9 @@ sequenceDiagram
 
 > 🔧 **日志服务接口（M0）**
 >
-> - **采集**：`POST /api/logs`（REST）与 `POST /mcp/logs/publish` → 写入 NATS JetStream。
-> - **查询**：`GET /api/logs`、`POST /mcp/logs/query` 支持 `level / traceId / after` 过滤。
-> - **订阅**：`GET /api/logs/stream`（SSE）或 `POST /mcp/logs/subscribe`（轮询增量）；虚拟环境与 AOS Agent 均可通过 MCP 获取事件流。
+> - **采集**：`POST /api/logs`（REST）与 `POST /mcp/logs/publish` → 写入 NATS JetStream；可附带 `topic`、`attributes`。
+> - **查询**：`GET /api/logs`、`POST /mcp/logs/query` 支持 `level / traceId / topic / after / before` 过滤，实现分页与分类检索。
+> - **订阅**：`GET /api/logs/stream`（SSE，含 heartbeat）或 `POST /mcp/logs/subscribe`（轮询增量）；虚拟环境与 AOS Agent 均可通过 MCP 获取实时事件。
 
 ## 4. 配置与权限模型
 - **系统设置（Settings）**：LLM Provider & 模型参数、OTel Exporter、数据库选择（SQLite/PG）、MCP 网关注册表、安全策略（IP 白名单、脱敏规则）。

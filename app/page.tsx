@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { getApiBaseUrl, getChatStreamEndpoint } from "@/lib/apiConfig";
 import { getStoredApiToken } from "@/lib/authToken";
+import Link from "next/link";
 
 interface Message {
   id: string;
@@ -62,6 +63,7 @@ interface ValueEvent {
   summary: string;
   traceId?: string;
   actionLabel?: string;
+  actionHref?: string;
 }
 
 interface LogEntry {
@@ -166,16 +168,27 @@ export default function ChatPage() {
 
     let type: ValueEventType = 'progress';
     let status: ValueEventStatus = 'active';
+    let actionLabel: string | undefined;
+    let actionHref: string | undefined;
 
     if (topic?.includes('receipt') || lowerLevel === 'success') {
       type = 'receipt';
       status = 'success';
+      actionLabel = '查看结果';
+      actionHref = log.trace_id ? `/telemetry?traceId=${encodeURIComponent(log.trace_id)}` : undefined;
     } else if (topic?.includes('approval') || lowerLevel === 'warn' || lowerLevel === 'warning') {
       type = 'approval';
       status = 'warning';
+      actionLabel = '前往审批';
+      actionHref = log.trace_id ? `/projects?traceId=${encodeURIComponent(log.trace_id)}` : '/projects';
     } else if (topic?.includes('anomaly') || lowerLevel === 'error') {
       type = 'anomaly';
       status = 'error';
+      actionLabel = '查看追踪';
+      actionHref = log.trace_id ? `/telemetry?traceId=${encodeURIComponent(log.trace_id)}` : undefined;
+    } else {
+      actionLabel = '查看详情';
+      actionHref = log.trace_id ? `/telemetry?traceId=${encodeURIComponent(log.trace_id)}` : undefined;
     }
 
     const iso = new Date(log.timestamp).toISOString();
@@ -192,7 +205,8 @@ export default function ChatPage() {
       timeLabel,
       summary: log.message,
       traceId: log.trace_id,
-      actionLabel: typeof log.attributes?.action === 'string' ? log.attributes?.action : undefined,
+      actionLabel: typeof log.attributes?.action === 'string' ? log.attributes?.action : actionLabel,
+      actionHref,
     };
   }, []);
 
@@ -247,10 +261,12 @@ export default function ChatPage() {
                   事件 ID：{event.id}
                 </span>
               )}
-              {event.actionLabel && (
-                <Button size="sm" variant="ghost" className="ml-auto h-7 px-2 text-xs">
-                  {event.actionLabel}
-                </Button>
+              {event.actionLabel && event.actionHref && (
+                <Link href={event.actionHref} className="ml-auto">
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">
+                    {event.actionLabel}
+                  </Button>
+                </Link>
               )}
             </div>
           </div>
