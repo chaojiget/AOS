@@ -7,6 +7,7 @@
 - 🚧 安全：MCP 接口接入 RBAC + 审计日志，沙箱运行写入 events/agent_runs，并提供前端 Integrations/Agents 管理页面。
 - 🚧 架构：整理 AOS v0.1 MCP 优先蓝图，明确 IA/接口/数据模型与 M0-M2 里程碑（详见 `docs/aos-v0.1-blueprint.md`）。
 - 🚧 后端：引入 MCP 网关/注册表、沙箱脚本调度骨架，现持久化到 Postgres，支持 `/mcp/*` 接口与 Agent 脚本定时执行。
+- 🚧 Agents：沙箱脚本支持虚拟环境管理，自动提供默认环境，并在独立「沙箱」页面维护变量，运行时可复用共享配置。
 - ✅ 后端：Express + LangGraph 聊天代理已完成，支持会话上下文、SSE 流式输出与 OpenAI 模型配置。
 - ✅ 后端：LangGraph 检查点存储迁移至 PostgreSQL，复用连接池并自动同步 schema 注释。
 - ✅ 后端：OpenTelemetry 埋点生效，遥测数据现已切换至 NATS JetStream，按类型划分 `telemetry.*` 主题流，并通过 `/api/telemetry/*` API 读取追踪、日志、指标以及统计信息。

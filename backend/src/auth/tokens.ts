@@ -15,10 +15,13 @@ const parseTokensConfig = (): TokenDescriptor[] => {
     return [];
   }
 
+  const tokens: TokenDescriptor[] = [];
+
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed
+      tokens.push(
+        ...parsed
         .map((record) => {
           if (!record || typeof record !== 'object') return null;
           const token = typeof (record as any).token === 'string' ? (record as any).token : null;
@@ -33,24 +36,40 @@ const parseTokensConfig = (): TokenDescriptor[] => {
           }
           return descriptor;
         })
-        .filter((entry): entry is TokenDescriptor => entry !== null);
+        .filter((entry): entry is TokenDescriptor => entry !== null),
+      );
     }
 
     if (typeof parsed === 'object' && parsed !== null) {
-      return Object.entries(parsed)
+      tokens.push(
+        ...Object.entries(parsed)
         .map(([token, roleValue]) => {
           if (typeof roleValue !== 'string') return null;
           const descriptor: TokenDescriptor = { token, role: normalizeRole(roleValue) };
           return descriptor;
         })
-        .filter((entry): entry is TokenDescriptor => entry !== null);
+        .filter((entry): entry is TokenDescriptor => entry !== null),
+      );
     }
 
-    throw new Error('配置必须是对象或数组');
+    if (tokens.length === 0) {
+      throw new Error('配置必须是对象或数组');
+    }
   } catch (error) {
     console.error('[AUTH] 解析 AOS_API_TOKENS 失败:', error);
-    return [];
   }
+
+  const internalToken = process.env.AOS_INTERNAL_TOKEN;
+  if (internalToken) {
+    const exists = tokens.some((descriptor) => descriptor.token === internalToken);
+    if (!exists) {
+      const role = normalizeRole(process.env.AOS_INTERNAL_ROLE ?? 'admin');
+      const label = process.env.AOS_INTERNAL_LABEL ?? 'system/internal';
+      tokens.push({ token: internalToken, role, label });
+    }
+  }
+
+  return tokens;
 };
 
 const ensureTokens = (): TokenDescriptor[] => {

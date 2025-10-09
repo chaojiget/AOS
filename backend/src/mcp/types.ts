@@ -26,6 +26,13 @@ export interface McpCallResult {
   result: unknown;
 }
 
+export interface SandboxEnvironmentDefinition {
+  id: string;
+  name: string;
+  description?: string;
+  variables: Record<string, string>;
+}
+
 export interface SandboxScriptDefinition {
   id: string;
   name: string;
@@ -33,6 +40,7 @@ export interface SandboxScriptDefinition {
   entryFile: string;
   scheduleMs?: number;
   env?: Record<string, string>;
+  environmentId?: string | null;
 }
 
 export type SandboxRunTrigger = 'manual' | 'schedule';

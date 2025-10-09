@@ -1,8 +1,11 @@
 import { Router } from 'express';
+import { promises as fs } from 'fs';
+import path from 'path';
 import { randomUUID } from 'crypto';
 import {
   McpCallRequest,
   McpServerConfig,
+  SandboxEnvironmentDefinition,
   SandboxRunTrigger,
   SandboxScriptDefinition,
 } from '../mcp/types';
@@ -35,6 +38,51 @@ const parseEnv = (input: unknown): Record<string, string> | undefined => {
     env[key] = value;
   }
   return env;
+};
+
+const sandboxBaseDir = path.resolve(process.env.SANDBOX_SCRIPTS_DIR ?? path.join(process.cwd(), 'sandbox-scripts'));
+
+const ensureSandboxBaseDir = async () => {
+  await fs.mkdir(sandboxBaseDir, { recursive: true });
+};
+
+const slugify = (value: string) => {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || `script-${Date.now().toString(36)}`;
+};
+
+const resolveEntryFile = async (name: string, entryFile?: string | null): Promise<string> => {
+  await ensureSandboxBaseDir();
+  if (entryFile && entryFile.trim()) {
+    const trimmed = entryFile.trim();
+    if (path.isAbsolute(trimmed)) {
+      return trimmed;
+    }
+    const resolved = path.resolve(sandboxBaseDir, trimmed);
+    if (!resolved.startsWith(sandboxBaseDir)) {
+      throw new Error('入口文件路径不合法');
+    }
+    return resolved;
+  }
+  const filename = `${slugify(name)}.mjs`;
+  return path.join(sandboxBaseDir, filename);
+};
+
+const ensureScriptFile = async (filePath: string, content?: string) => {
+  if (content != null) {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, content, 'utf-8');
+    return;
+  }
+  try {
+    await fs.access(filePath);
+  } catch (error) {
+    throw new Error('入口文件不存在，请提供脚本内容或填写正确路径');
+  }
 };
 
 const parseAllowedRoles = (input: unknown): Role[] | undefined => {
@@ -75,6 +123,101 @@ const handleTelemetryError = (res: any, error: unknown) => {
   }
   return false;
 };
+
+mcpRoutes.get('/sandbox/environments', requireAuth('mcp.sandbox.read'), async (_req, res) => {
+  await mcpSandbox.ensureDefaultEnvironment();
+  res.json({ environments: mcpSandbox.listEnvironments() });
+});
+
+mcpRoutes.post('/sandbox/environments', requireAuth('mcp.sandbox.write'), async (req, res) => {
+  const auth = getAuthContext(req)!;
+  const { name, description, variables } = req.body as Partial<SandboxEnvironmentDefinition> & {
+    variables?: Record<string, unknown>;
+  };
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: '名称为必填项' });
+  }
+
+  try {
+    const parsedVariables = parseEnv(variables ?? {}) ?? {};
+    const environment = await mcpSandbox.registerEnvironment(
+      {
+        id: randomUUID(),
+        name: name.trim(),
+        description: description?.toString().trim() || undefined,
+        variables: parsedVariables,
+      },
+    );
+
+    await auditFromAuth(auth, 'sandbox.environment.create', `sandbox_environment:${environment.id}`, {
+      name: environment.name,
+      variableCount: Object.keys(environment.variables ?? {}).length,
+    });
+
+    res.status(201).json({ environment });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '创建虚拟环境失败';
+    res.status(400).json({ error: message });
+  }
+});
+
+mcpRoutes.patch('/sandbox/environments/:id', requireAuth('mcp.sandbox.write'), async (req, res) => {
+  const auth = getAuthContext(req)!;
+  const existing = mcpSandbox.getEnvironment(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ error: '未找到虚拟环境' });
+  }
+
+  try {
+    const { name, description, variables } = req.body as Partial<SandboxEnvironmentDefinition> & {
+      variables?: Record<string, unknown>;
+    };
+    const parsedVariables =
+      variables !== undefined ? parseEnv(variables ?? {}) ?? {} : existing.variables ?? {};
+
+    const environment = await mcpSandbox.registerEnvironment(
+      {
+        ...existing,
+        name: typeof name === 'string' && name.trim() ? name.trim() : existing.name,
+        description:
+          description !== undefined
+            ? (description == null || description === '')
+              ? undefined
+              : description.toString().trim()
+            : existing.description,
+        variables: parsedVariables,
+      },
+    );
+
+    await auditFromAuth(auth, 'sandbox.environment.update', `sandbox_environment:${environment.id}`, {
+      name: environment.name,
+      variableCount: Object.keys(environment.variables ?? {}).length,
+    });
+
+    res.json({ environment });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '更新虚拟环境失败';
+    res.status(400).json({ error: message });
+  }
+});
+
+mcpRoutes.delete('/sandbox/environments/:id', requireAuth('mcp.sandbox.write'), async (req, res) => {
+  const auth = getAuthContext(req)!;
+  try {
+    const removed = await mcpSandbox.removeEnvironment(req.params.id);
+    if (!removed) {
+      return res.status(404).json({ error: '未找到虚拟环境' });
+    }
+
+    await auditFromAuth(auth, 'sandbox.environment.delete', `sandbox_environment:${req.params.id}`);
+
+    res.status(204).end();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '删除虚拟环境失败';
+    res.status(400).json({ error: message });
+  }
+});
 
 mcpRoutes.get('/registry', requireAuth('mcp.registry.read'), (req, res) => {
   const auth = getAuthContext(req)!;
@@ -211,29 +354,51 @@ mcpRoutes.get('/sandbox/scripts', requireAuth('mcp.sandbox.read'), (_req, res) =
 
 mcpRoutes.post('/sandbox/scripts', requireAuth('mcp.sandbox.write'), async (req, res) => {
   const auth = getAuthContext(req)!;
-  const { name, entryFile, description, scheduleMs, env } = req.body as Partial<SandboxScriptDefinition> & { env?: Record<string, string> };
-  if (!name || !entryFile) {
-    return res.status(400).json({ error: 'name 与 entryFile 为必填项' });
-  }
-  const id = randomUUID();
-  const envConfig = parseEnv(env);
-  const definition: SandboxScriptDefinition = {
-    id,
+  const {
     name,
     entryFile,
     description,
     scheduleMs,
-    env: envConfig,
+    env,
+    environmentId,
+    content,
+  } = req.body as Partial<SandboxScriptDefinition> & {
+    env?: Record<string, unknown>;
+    content?: string;
   };
+  if (!name) {
+    return res.status(400).json({ error: 'name 为必填项' });
+  }
+
   try {
+    const entryPath = await resolveEntryFile(name, entryFile ?? null);
+    await ensureScriptFile(entryPath, content);
+
+    const id = randomUUID();
+    const envConfig = parseEnv(env);
+    const normalizedEnvironmentId =
+      typeof environmentId === 'string' && environmentId.trim() ? environmentId.trim() : null;
+    const definition: SandboxScriptDefinition = {
+      id,
+      name,
+      entryFile: entryPath,
+      description,
+      scheduleMs,
+      env: envConfig,
+      environmentId: normalizedEnvironmentId,
+    };
+
     const registered = await mcpSandbox.register(definition);
+    const scriptResponse =
+      mcpSandbox.list().find((item) => item.id === registered.id) ?? registered;
 
     await auditFromAuth(auth, 'sandbox.script.create', `sandbox_script:${registered.id}`, {
       name: registered.name,
       scheduleMs: registered.scheduleMs ?? null,
+      environmentId: registered.environmentId ?? null,
     });
 
-    res.status(201).json({ script: registered });
+    res.status(201).json({ script: scriptResponse });
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : '注册脚本失败' });
   }
@@ -247,23 +412,38 @@ mcpRoutes.patch('/sandbox/scripts/:id', requireAuth('mcp.sandbox.write'), async 
   }
 
   try {
-    const updates = req.body as Partial<SandboxScriptDefinition>;
+    const updates = req.body as Partial<SandboxScriptDefinition> & {
+      env?: Record<string, unknown>;
+      content?: string;
+    };
     const envConfig = updates.env !== undefined ? parseEnv(updates.env) : existing.env;
+    const targetEntryFile = await resolveEntryFile(existing.name, updates.entryFile ?? existing.entryFile);
+    await ensureScriptFile(targetEntryFile, updates.content);
+    const normalizedEnvironmentId =
+      updates.environmentId !== undefined
+        ? typeof updates.environmentId === 'string' && updates.environmentId.trim()
+          ? updates.environmentId.trim()
+          : null
+        : existing.environmentId ?? null;
     const definition: SandboxScriptDefinition = {
       ...existing,
       ...updates,
       scheduleMs: typeof updates.scheduleMs === 'number' ? updates.scheduleMs : existing.scheduleMs,
-      entryFile: updates.entryFile ?? existing.entryFile,
+      entryFile: targetEntryFile,
       env: envConfig,
+      environmentId: normalizedEnvironmentId,
     };
     const registered = await mcpSandbox.register(definition);
+    const scriptResponse =
+      mcpSandbox.list().find((item) => item.id === registered.id) ?? registered;
 
     await auditFromAuth(auth, 'sandbox.script.update', `sandbox_script:${registered.id}`, {
       name: registered.name,
       scheduleMs: registered.scheduleMs ?? null,
+      environmentId: registered.environmentId ?? null,
     });
 
-    res.json({ script: registered });
+    res.json({ script: scriptResponse });
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : '更新脚本失败' });
   }

@@ -9,6 +9,11 @@ export interface AuthContext {
   subject: string;
 }
 
+const devBypassEnabled =
+  process.env.NODE_ENV !== 'production' && process.env.AOS_AUTH_DEV_BYPASS !== 'false';
+
+let devBypassLogged = false;
+
 const extractToken = (req: Request): string | null => {
   const authHeader = req.get('Authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -37,6 +42,29 @@ const extractToken = (req: Request): string | null => {
 
 export const requireAuth = (permission: Permission, options?: { resource?: string }) => {
   return (req: Request, res: Response, next: NextFunction) => {
+    if (devBypassEnabled) {
+      if (!devBypassLogged) {
+        console.warn('[AUTH] 开发环境启用自动认证（AOS_AUTH_DEV_BYPASS）。');
+        devBypassLogged = true;
+      }
+
+      const bypassRole: Role = 'owner';
+      const context: AuthContext = {
+        token: 'dev-bypass-token',
+        role: bypassRole,
+        subject: 'dev-bypass',
+      };
+
+      (req as any).auth = context;
+      res.setHeader('x-auth-role', context.role);
+      if (options?.resource) {
+        res.setHeader('x-auth-resource', options.resource);
+      }
+
+      next();
+      return;
+    }
+
     const token = extractToken(req);
     if (!token) {
       return res.status(401).json({ error: '未提供认证信息' });

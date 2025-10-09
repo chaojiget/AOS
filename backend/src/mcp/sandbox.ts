@@ -2,29 +2,97 @@ import { promises as fs } from 'fs';
 import { randomUUID } from 'crypto';
 import path from 'path';
 import vm from 'vm';
-import { SandboxRunResult, SandboxScriptDefinition, SandboxRunTrigger } from './types';
-import { deleteScriptFromStorage, loadScriptsFromStorage, saveScriptToStorage } from './storage';
+import {
+  SandboxEnvironmentDefinition,
+  SandboxRunResult,
+  SandboxScriptDefinition,
+  SandboxRunTrigger,
+} from './types';
+import {
+  deleteEnvironmentFromStorage,
+  deleteScriptFromStorage,
+  loadSandboxEnvironments,
+  loadScriptsFromStorage,
+  saveEnvironmentToStorage,
+  saveScriptToStorage,
+} from './storage';
 import { logSandboxRun } from './run-logger';
 import { logClient } from '../services/log-client';
 
+const DEFAULT_ENVIRONMENT_NAME = '默认虚拟环境';
+
 export class McpSandbox {
+  private readonly environments = new Map<string, SandboxEnvironmentDefinition>();
   private readonly scripts = new Map<string, SandboxScriptDefinition>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
 
   async hydrate(): Promise<void> {
+    const environments = await loadSandboxEnvironments();
+    this.environments.clear();
+    for (const env of environments) {
+      await this.registerEnvironment(env, { persist: false });
+    }
     const scripts = await loadScriptsFromStorage();
     this.scripts.clear();
     for (const script of scripts) {
       await this.register(script, { persist: false });
     }
+    await this.ensureDefaultEnvironment();
   }
 
-  list(): SandboxScriptDefinition[] {
-    return Array.from(this.scripts.values());
+  list(): Array<SandboxScriptDefinition & { environment?: { id: string; name: string; description?: string } | null }> {
+    return Array.from(this.scripts.values()).map((script) => {
+      const environment = script.environmentId ? this.environments.get(script.environmentId) ?? null : null;
+      return {
+        ...script,
+        environment: environment
+          ? { id: environment.id, name: environment.name, description: environment.description }
+          : null,
+      };
+    });
+  }
+
+  listEnvironments(): SandboxEnvironmentDefinition[] {
+    return Array.from(this.environments.values());
   }
 
   get(id: string): SandboxScriptDefinition | undefined {
     return this.scripts.get(id);
+  }
+
+  getEnvironment(id: string): SandboxEnvironmentDefinition | undefined {
+    return this.environments.get(id);
+  }
+
+  async ensureDefaultEnvironment(): Promise<SandboxEnvironmentDefinition | null> {
+    if (this.environments.size > 0) {
+      const existingDefault = Array.from(this.environments.values()).find(
+        (env) => env.name === DEFAULT_ENVIRONMENT_NAME,
+      );
+      return existingDefault ?? null;
+    }
+    const environment: SandboxEnvironmentDefinition = {
+      id: randomUUID(),
+      name: DEFAULT_ENVIRONMENT_NAME,
+      description: '系统自动创建的空白虚拟环境，可直接使用或后续编辑。',
+      variables: {},
+    };
+    return await this.registerEnvironment(environment);
+  }
+
+  async registerEnvironment(
+    def: SandboxEnvironmentDefinition,
+    options: { persist?: boolean } = {},
+  ): Promise<SandboxEnvironmentDefinition> {
+    const definition: SandboxEnvironmentDefinition = {
+      ...def,
+      variables: def.variables ?? {},
+    };
+    this.environments.set(definition.id, definition);
+    if (options.persist !== false) {
+      await saveEnvironmentToStorage(definition);
+    }
+    return definition;
   }
 
   async register(def: SandboxScriptDefinition, options: { persist?: boolean } = {}): Promise<SandboxScriptDefinition> {
@@ -32,7 +100,19 @@ export class McpSandbox {
       throw new Error('沙箱脚本入口必须为绝对路径');
     }
 
-    const definition = { ...def, env: def.env ?? undefined, scheduleMs: def.scheduleMs ?? undefined };
+    if (def.environmentId) {
+      const environment = this.environments.get(def.environmentId);
+      if (!environment) {
+        throw new Error('绑定的虚拟环境不存在或已删除');
+      }
+    }
+
+    const definition = {
+      ...def,
+      env: def.env ?? undefined,
+      scheduleMs: def.scheduleMs ?? undefined,
+      environmentId: def.environmentId ?? null,
+    };
 
     this.unregister(definition.id);
     this.scripts.set(definition.id, definition);
@@ -43,6 +123,17 @@ export class McpSandbox {
     }
 
     return definition;
+  }
+
+  async removeEnvironment(id: string): Promise<boolean> {
+    if (Array.from(this.scripts.values()).some((script) => script.environmentId === id)) {
+      throw new Error('仍有脚本绑定该虚拟环境，请先在脚本中解除引用');
+    }
+    const existed = this.environments.delete(id);
+    if (existed) {
+      await deleteEnvironmentFromStorage(id);
+    }
+    return existed;
   }
 
   unregister(id: string): boolean {
@@ -79,6 +170,7 @@ export class McpSandbox {
     if (!script) {
       throw new Error(`未找到脚本 ${id}`);
     }
+    const environment = script.environmentId ? this.environments.get(script.environmentId) ?? null : null;
 
     const startedAt = new Date();
     const trigger: SandboxRunTrigger = options.trigger ?? 'manual';
@@ -93,6 +185,8 @@ export class McpSandbox {
         scriptName: script.name,
         trigger,
         actor: options.actor,
+        environmentId: environment?.id ?? null,
+        environmentName: environment?.name ?? null,
       },
     });
     const code = await fs.readFile(script.entryFile, 'utf-8');
@@ -107,12 +201,14 @@ export class McpSandbox {
     };
 
     const moduleRef: { exports: Record<string, unknown> } = { exports: {} };
+    const environmentVars = environment?.variables ?? {};
+    const mergedEnv = { ...process.env, ...environmentVars, ...(script.env ?? {}) };
 
     const context: Record<string, unknown> = {
       console: sandboxConsole,
       module: moduleRef,
       exports: moduleRef.exports,
-      process: { env: { ...process.env, ...(script.env ?? {}) } },
+      process: { env: mergedEnv },
       Buffer,
       setTimeout,
       setInterval,
@@ -171,6 +267,8 @@ export class McpSandbox {
         trigger,
         actor: options.actor,
         durationMs,
+        environmentId: environment?.id ?? null,
+        environmentName: environment?.name ?? null,
       },
     });
 

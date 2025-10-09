@@ -11,6 +11,7 @@ import {
   ListChecks,
   BookOpen,
   Settings,
+  Boxes,
 } from "lucide-react";
 
 export function Navigation() {
@@ -54,6 +55,16 @@ export function Navigation() {
                 >
                   <Plug className="h-4 w-4" />
                   <span>集成</span>
+                </Button>
+              </Link>
+
+              <Link href="/sandbox">
+                <Button
+                  variant={pathname === "/sandbox" ? "default" : "ghost"}
+                  className="flex items-center space-x-2"
+                >
+                  <Boxes className="h-4 w-4" />
+                  <span>沙箱</span>
                 </Button>
               </Link>
 

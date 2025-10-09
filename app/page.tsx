@@ -100,6 +100,8 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string>("default");
   const [sessions, setSessionsState] = useState<SessionMeta[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
   const [valueEvents, setValueEvents] = useState<ValueEvent[]>([]);
   const [apiToken, setApiToken] = useState<string | null>(null);
 
@@ -726,23 +728,54 @@ export default function ChatPage() {
         </DialogContent>
       </Dialog>
 
-      <div className="flex min-h-screen flex-col bg-background lg:flex-row">
-        <aside className="hidden h-screen w-80 flex-shrink-0 border-r bg-muted/30 lg:flex">
-          <ScrollArea className="h-full w-full px-4 py-6">
-            {sidebarContent}
-          </ScrollArea>
-        </aside>
+      <div className="flex h-full min-h-0 flex-col lg:flex-row">
+        {!leftCollapsed && (
+          <aside className="hidden h-full w-80 flex-shrink-0 border-r bg-muted/30 lg:flex">
+            <ScrollArea className="h-full w-full px-4 py-6">
+              {sidebarContent}
+            </ScrollArea>
+          </aside>
+        )}
 
-        <div className="flex flex-1 flex-col">
-          <div className="flex items-center justify-between border-b px-4 py-4 lg:px-8 lg:py-6">
-            <div>
-              <h1 className="flex items-center gap-2 text-xl font-semibold lg:text-2xl">
-                <Bot className="h-6 w-6" />
-                AOS AI 助手
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                基于 LangGraph 构建，支持 OpenTelemetry 监控
-              </p>
+        <div className="flex flex-1 min-h-0 flex-col">
+          <div className="flex items-center justify-between border-b px-4 py-3 lg:px-6">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden lg:inline-flex"
+                onClick={() => setLeftCollapsed(value => !value)}
+              >
+                {leftCollapsed ? (
+                  <>
+                    <PanelLeft className="h-4 w-4" />
+                    <span className="ml-2 text-xs">展开左栏</span>
+                  </>
+                ) : (
+                  <>
+                    <PanelLeft className="h-4 w-4" />
+                    <span className="ml-2 text-xs">收起左栏</span>
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden lg:inline-flex"
+                onClick={() => setRightCollapsed(value => !value)}
+              >
+                {rightCollapsed ? (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    <span className="ml-2 text-xs">展开右栏</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    <span className="ml-2 text-xs">收起右栏</span>
+                  </>
+                )}
+              </Button>
             </div>
             <Button
               variant="outline"
@@ -751,15 +784,16 @@ export default function ChatPage() {
               onClick={() => setSidebarOpen(true)}
             >
               <PanelLeft className="h-4 w-4" />
-              <span className="ml-2 text-xs">侧栏</span>
+              <span className="ml-2 text-xs">左栏</span>
             </Button>
           </div>
 
-          <div className="flex flex-1 flex-col lg:flex-row">
-            <div className="flex flex-1 flex-col">
+          <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
+            <div className="flex flex-1 min-h-0 flex-col">
               <div
                 ref={messageContainerRef}
-                className="flex-1 overflow-y-auto px-4 py-6 lg:px-8 lg:py-8"
+                className="grow overflow-y-auto px-4 py-6 lg:px-8 lg:py-8"
+                style={{ maxHeight: isClient ? `calc(100vh - 220px)` : undefined }}
               >
                 <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
                   {messages.map(message => (
@@ -857,28 +891,32 @@ export default function ChatPage() {
               </div>
             </div>
 
-            <aside className="hidden w-full max-w-sm flex-col gap-4 border-l px-6 py-6 lg:flex">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                    <Sparkles className="h-4 w-4" /> 价值事件流
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    白名单主题：progress / approval / anomaly / receipt
-                  </p>
+            {!rightCollapsed && (
+              <aside className="hidden min-h-0 w-full max-w-sm flex-col gap-4 overflow-y-auto border-l px-6 py-6 lg:flex">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                      <Sparkles className="h-4 w-4" /> 价值事件流
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      白名单主题：progress / approval / anomaly / receipt
+                    </p>
+                  </div>
+                  <Badge variant="secondary">{valueEvents.length}</Badge>
                 </div>
-                <Badge variant="secondary">{valueEvents.length}</Badge>
-              </div>
-              <ValueEventFeed />
-            </aside>
+                <ValueEventFeed />
+              </aside>
+            )}
           </div>
 
-          <div className="border-t px-4 py-4 lg:hidden">
-            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              <Sparkles className="h-4 w-4" /> 价值事件
-            </h2>
-            <ValueEventFeed compact />
-          </div>
+          {!rightCollapsed && (
+            <div className="border-t px-4 py-4 lg:hidden">
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                <Sparkles className="h-4 w-4" /> 价值事件
+              </h2>
+              <ValueEventFeed compact />
+            </div>
+          )}
         </div>
       </div>
     </>

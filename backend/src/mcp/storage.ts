@@ -1,6 +1,11 @@
 import { Pool } from 'pg';
 import { getPool } from '../db/postgres';
-import { McpCapability, McpServerConfig, SandboxScriptDefinition } from './types';
+import {
+  McpCapability,
+  McpServerConfig,
+  SandboxEnvironmentDefinition,
+  SandboxScriptDefinition,
+} from './types';
 import { Role, normalizeRole } from '../auth/roles';
 
 let initialized = false;
@@ -22,6 +27,17 @@ const ensureTables = async (pool: Pool) => {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS sandbox_environments (
+      id UUID PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      variables JSONB,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      updated_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS sandbox_scripts (
       id UUID PRIMARY KEY,
       name TEXT NOT NULL,
@@ -29,6 +45,7 @@ const ensureTables = async (pool: Pool) => {
       description TEXT,
       schedule_ms BIGINT,
       env JSONB,
+      environment_id UUID REFERENCES sandbox_environments(id),
       created_at TIMESTAMPTZ DEFAULT now(),
       updated_at TIMESTAMPTZ DEFAULT now()
     );
@@ -76,9 +93,15 @@ const ensureTables = async (pool: Pool) => {
     );
   `);
 
+  await pool.query(`
+    ALTER TABLE sandbox_scripts
+      ADD COLUMN IF NOT EXISTS environment_id UUID REFERENCES sandbox_environments(id);
+  `);
+
   await pool.query('CREATE INDEX IF NOT EXISTS idx_agent_runs_script ON agent_runs(script_id, started_at DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_events_topic ON events(topic, created_at DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_sandbox_scripts_env ON sandbox_scripts(environment_id)');
 
   initialized = true;
 };
@@ -128,6 +151,13 @@ const mapServerRow = (row: any): McpServerConfig => ({
   allowedRoles: parseRolesList(row.allowed_roles),
 });
 
+const mapEnvironmentRow = (row: any): SandboxEnvironmentDefinition => ({
+  id: row.id,
+  name: row.name,
+  description: row.description ?? undefined,
+  variables: parseJson<Record<string, string>>(row.variables, {}),
+});
+
 const mapScriptRow = (row: any): SandboxScriptDefinition => ({
   id: row.id,
   name: row.name,
@@ -135,6 +165,7 @@ const mapScriptRow = (row: any): SandboxScriptDefinition => ({
   description: row.description ?? undefined,
   scheduleMs: row.schedule_ms ?? undefined,
   env: parseJson<Record<string, string> | undefined>(row.env, undefined),
+  environmentId: row.environment_id ?? null,
 });
 
 export const loadRegistryFromStorage = async (): Promise<McpServerConfig[]> => {
@@ -177,6 +208,40 @@ export const deleteRegistryFromStorage = async (name: string): Promise<void> => 
   await pool.query('DELETE FROM mcp_registry WHERE name = $1', [name]);
 };
 
+export const loadSandboxEnvironments = async (): Promise<SandboxEnvironmentDefinition[]> => {
+  const pool = getPool();
+  await ensureTables(pool);
+  const result = await pool.query('SELECT * FROM sandbox_environments ORDER BY name ASC');
+  return result.rows.map(mapEnvironmentRow);
+};
+
+export const saveEnvironmentToStorage = async (environment: SandboxEnvironmentDefinition): Promise<void> => {
+  const pool = getPool();
+  await ensureTables(pool);
+  await pool.query(
+    `INSERT INTO sandbox_environments (id, name, description, variables, updated_at)
+     VALUES ($1, $2, $3, $4, now())
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name,
+       description = EXCLUDED.description,
+       variables = EXCLUDED.variables,
+       updated_at = now()
+    `,
+    [
+      environment.id,
+      environment.name,
+      environment.description ?? null,
+      environment.variables ?? {},
+    ],
+  );
+};
+
+export const deleteEnvironmentFromStorage = async (id: string): Promise<void> => {
+  const pool = getPool();
+  await ensureTables(pool);
+  await pool.query('DELETE FROM sandbox_environments WHERE id = $1', [id]);
+};
+
 export const loadScriptsFromStorage = async (): Promise<SandboxScriptDefinition[]> => {
   const pool = getPool();
   await ensureTables(pool);
@@ -188,14 +253,15 @@ export const saveScriptToStorage = async (definition: SandboxScriptDefinition): 
   const pool = getPool();
   await ensureTables(pool);
   await pool.query(
-    `INSERT INTO sandbox_scripts (id, name, entry_file, description, schedule_ms, env, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, now())
+    `INSERT INTO sandbox_scripts (id, name, entry_file, description, schedule_ms, env, environment_id, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, now())
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name,
        entry_file = EXCLUDED.entry_file,
        description = EXCLUDED.description,
        schedule_ms = EXCLUDED.schedule_ms,
        env = EXCLUDED.env,
+       environment_id = EXCLUDED.environment_id,
        updated_at = now()
     `,
     [
@@ -205,6 +271,7 @@ export const saveScriptToStorage = async (definition: SandboxScriptDefinition): 
       definition.description ?? null,
       definition.scheduleMs ?? null,
       definition.env ?? null,
+      definition.environmentId ?? null,
     ],
   );
 };
