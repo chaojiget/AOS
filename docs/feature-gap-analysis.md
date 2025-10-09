@@ -22,11 +22,11 @@
 
 ## 3. Integrations（`/integrations`）
 - **现状**：
-  - 已可 CRUD MCP 服务注册、配置角色白名单与限流参数。`app/integrations/page.tsx` 第 1-200 行。 
-  - 后端 MCP registry API/网关基本可用，含 RBAC 与审计打点。`backend/src/routes/mcp.ts` 第 1-260 行。 
+  - 已可 CRUD MCP 服务注册、配置角色白名单与限流参数。`app/integrations/page.tsx` 第 1-200 行。
+  - 后端 MCP registry API/网关基本可用，含 RBAC 与审计打点。`backend/src/routes/mcp.ts` 第 1-260 行。
+  - 集成健康检查、熔断与配额监控，页面展示调用成功率/延迟并可一键巡检、在线调整策略。`backend/src/mcp/monitor.ts`、`app/integrations/page.tsx`。
 - **待落地**：
-  - 接入服务健康检查、配额统计、熔断策略管理。`docs/aos-v0.1-blueprint.md` 第 117-145 行。 
-  - 需要 UI 告警提示失败状态，并与 Telemetry 事件联动。`docs/aos-v0.1-blueprint.md` 第 117-145 行。 
+  - 需要 UI 告警提示失败状态，并与 Telemetry 事件联动。`docs/aos-v0.1-blueprint.md` 第 117-145 行。
 
 ## 4. Sandbox & Agents（`/sandbox`, `/agents`）
 - **现状**：

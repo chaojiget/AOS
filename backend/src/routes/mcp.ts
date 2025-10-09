@@ -21,6 +21,7 @@ import {
   TelemetryInitializationError,
   TelemetryStorageError,
 } from '../telemetry/nats-exporter';
+import { mcpMonitor, ServicePolicy } from '../mcp/monitor';
 
 export const mcpRoutes = Router();
 const telemetryExporter = getTelemetryExporter();
@@ -224,7 +225,12 @@ mcpRoutes.get('/registry', requireAuth('mcp.registry.read'), (req, res) => {
   const services = mcpRegistry
     .list()
     .filter((service) => serviceReadableByRole(auth.role, service));
-  res.json({ services });
+  const statusMap = new Map(mcpMonitor.listStatuses().map((status) => [status.name, status]));
+  const enriched = services.map((service) => ({
+    ...service,
+    status: statusMap.get(service.name) ?? mcpMonitor.getStatus(service.name),
+  }));
+  res.json({ services: enriched });
 });
 
 mcpRoutes.post('/registry', requireAuth('mcp.registry.write'), async (req, res) => {
@@ -253,6 +259,8 @@ mcpRoutes.post('/registry', requireAuth('mcp.registry.write'), async (req, res) 
       baseUrl: registered.baseUrl,
       allowedRoles: registered.allowedRoles ?? null,
     });
+
+    mcpMonitor.register(registered);
 
     res.status(201).json({ service: registered });
   } catch (error) {
@@ -286,6 +294,8 @@ mcpRoutes.patch('/registry/:name', requireAuth('mcp.registry.write'), async (req
       allowedRoles: registered.allowedRoles ?? null,
     });
 
+    mcpMonitor.register(registered);
+
     res.json({ service: registered });
   } catch (error) {
     const message = error instanceof Error ? error.message : '更新服务失败';
@@ -309,6 +319,8 @@ mcpRoutes.delete('/registry/:name', requireAuth('mcp.registry.write'), async (re
     }
 
     await auditFromAuth(auth, 'mcp.registry.delete', `mcp_registry:${req.params.name}`);
+
+    mcpMonitor.unregister(req.params.name);
 
     res.status(204).end();
   } catch (error) {
@@ -342,9 +354,93 @@ mcpRoutes.post('/call', requireAuth('mcp.registry.call'), async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    res.status(500).json({
+    const code = (error as any)?.code;
+    const statusCode = code === 'quota_exceeded' ? 429 : code === 'circuit_open' ? 503 : 500;
+    res.status(statusCode).json({
       error: error instanceof Error ? error.message : 'MCP 调用失败',
+      code: typeof code === 'string' ? code : undefined,
     });
+  }
+});
+
+const parsePolicyNumber = (value: unknown, minimum?: number): number | undefined => {
+  if (value == null || value === '') return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error('策略配置必须为有效数字');
+  }
+  if (minimum != null && parsed < minimum) {
+    throw new Error(`策略配置需大于等于 ${minimum}`);
+  }
+  return parsed;
+};
+
+mcpRoutes.patch('/registry/:name/policies', requireAuth('mcp.registry.write'), async (req, res) => {
+  const auth = getAuthContext(req)!;
+  const service = mcpRegistry.get(req.params.name);
+  if (!service) {
+    return res.status(404).json({ error: '未找到对应服务' });
+  }
+
+  try {
+    ensureServiceWritable(auth.role, service);
+    const body = req.body as {
+      quota?: { limitPerMinute?: unknown; burstMultiplier?: unknown };
+      circuitBreaker?: { failureThreshold?: unknown; cooldownSeconds?: unknown; minimumSamples?: unknown };
+    };
+
+    const quota = body.quota
+      ? {
+          limitPerMinute: parsePolicyNumber(body.quota.limitPerMinute, 1),
+          burstMultiplier: parsePolicyNumber(body.quota.burstMultiplier, 1) ?? 1.2,
+        }
+      : undefined;
+
+    const circuit = body.circuitBreaker
+      ? {
+          failureThreshold: parsePolicyNumber(body.circuitBreaker.failureThreshold, 1) ?? 3,
+          cooldownSeconds: parsePolicyNumber(body.circuitBreaker.cooldownSeconds, 1) ?? 60,
+          minimumSamples: parsePolicyNumber(body.circuitBreaker.minimumSamples, 1) ?? 5,
+        }
+      : undefined;
+
+    const policy: ServicePolicy = {
+      quota,
+      circuitBreaker: circuit,
+    };
+
+    mcpMonitor.setPolicy(service.name, policy);
+    await mcpMonitor.persistPolicy(service.name);
+
+    await auditFromAuth(auth, 'mcp.registry.policy.update', `mcp_registry:${service.name}`, {
+      quota,
+      circuit,
+    });
+
+    res.json({ status: mcpMonitor.getStatus(service.name) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '更新策略失败';
+    const status = (error as any)?.statusCode === 403 ? 403 : 400;
+    res.status(status).json({ error: message });
+  }
+});
+
+mcpRoutes.post('/registry/:name/health-check', requireAuth('mcp.registry.read'), async (req, res) => {
+  const auth = getAuthContext(req)!;
+  const service = mcpRegistry.get(req.params.name);
+  if (!service) {
+    return res.status(404).json({ error: '未找到对应服务' });
+  }
+  if (!serviceReadableByRole(auth.role, service)) {
+    return res.status(403).json({ error: '权限不足' });
+  }
+
+  try {
+    const probe = await mcpMonitor.runHealthCheck(service);
+    await auditFromAuth(auth, 'mcp.registry.health_check', `mcp_registry:${service.name}`, probe);
+    res.json({ status: mcpMonitor.getStatus(service.name) });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : '健康检查失败' });
   }
 });
 

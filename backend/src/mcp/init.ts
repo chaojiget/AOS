@@ -1,11 +1,13 @@
 import { ensureMcpStorage } from './storage';
 import { mcpRegistry } from './registry';
 import { mcpSandbox } from './sandbox';
+import { mcpMonitor } from './monitor';
 
 export const initMcpSubsystem = async () => {
   await ensureMcpStorage();
   await mcpRegistry.hydrate();
   await mcpSandbox.hydrate();
+  await mcpMonitor.hydrate(mcpRegistry.list());
 
   const serviceCount = mcpRegistry.list().length;
   const environmentCount = mcpSandbox.listEnvironments().length;

@@ -10,6 +10,7 @@
 - ✅ 事件总线：落地 Postgres Outbox `value_events` 表，提供 `/api/events` 查询与 SSE 订阅，前端 Chat Hub 实时展示任务收据、审批与异常。
 - 🚧 Projects：新增 `/api/projects` 路由与回放视图，支持查看时间线、产物并重跑任务写入价值事件。
 - 🚧 Agents：沙箱脚本支持虚拟环境管理，自动提供默认环境，并在独立「沙箱」页面维护变量，运行时可复用共享配置。
+- ✅ Integrations：提供 MCP 服务健康巡检、熔断与配额策略管理，页面可视化成功率/延迟并一键调整策略。
 - ✅ 后端：Express + LangGraph 聊天代理已完成，支持会话上下文、SSE 流式输出与 OpenAI 模型配置。
 - ✅ 后端：LangGraph 检查点存储迁移至 PostgreSQL，复用连接池并自动同步 schema 注释。
 - ✅ 后端：OpenTelemetry 埋点生效，遥测数据现已切换至 NATS JetStream，按类型划分 `telemetry.*` 主题流，并通过 `/api/telemetry/*` API 读取追踪、日志、指标以及统计信息。
