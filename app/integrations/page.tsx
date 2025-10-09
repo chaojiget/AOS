@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { getMcpEndpoint } from "@/lib/apiConfig";
-import { getStoredApiToken, setStoredApiToken } from "@/lib/authToken";
+import { getStoredApiToken, onApiTokenChange, setStoredApiToken } from "@/lib/authToken";
 import { Plug, RefreshCw } from "lucide-react";
 
 interface ServiceRecord {
@@ -73,9 +73,15 @@ export default function IntegrationsPage() {
 
   useEffect(() => {
     const stored = getStoredApiToken();
-    if (stored) {
-      setApiToken(stored);
-    }
+    setApiToken(stored ?? "");
+
+    const unsubscribe = onApiTokenChange((token) => {
+      setApiToken(token ?? "");
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
