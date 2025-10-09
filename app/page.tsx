@@ -23,7 +23,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { getApiBaseUrl, getChatStreamEndpoint } from "@/lib/apiConfig";
-import { getStoredApiToken } from "@/lib/authToken";
+import { getStoredApiToken, onApiTokenChange } from "@/lib/authToken";
 import Link from "next/link";
 
 interface Message {
@@ -300,18 +300,23 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!isClient) return;
-    const token = getStoredApiToken();
-    if (token) {
-      setApiToken(token);
-    }
 
-    const handler = () => {
-      const refreshed = getStoredApiToken();
-      setApiToken(refreshed ?? null);
-      setLogStreamSeed(prev => prev + 1);
+    setApiToken(getStoredApiToken());
+
+    const unsubscribe = onApiTokenChange((nextToken) => {
+      const normalized = nextToken ?? null;
+      setApiToken((prev) => {
+        if (prev === normalized) {
+          return prev;
+        }
+        setLogStreamSeed((seed) => seed + 1);
+        return normalized;
+      });
+    });
+
+    return () => {
+      unsubscribe();
     };
-    window.addEventListener('storage', handler);
-    return () => window.removeEventListener('storage', handler);
   }, [isClient]);
 
   useEffect(() => {
