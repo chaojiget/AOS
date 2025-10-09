@@ -20,7 +20,7 @@ import {
   Zap
 } from "lucide-react";
 import { telemetryEndpoint, getApiBaseUrl } from "@/lib/apiConfig";
-import { getStoredApiToken } from "@/lib/authToken";
+import { getStoredApiToken, onApiTokenChange } from "@/lib/authToken";
 import type { VariantProps } from "class-variance-authority";
 
 type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
@@ -188,19 +188,23 @@ export default function TelemetryPage() {
 
   useEffect(() => {
     if (!isClient) return;
-    const token = getStoredApiToken();
-    if (token) {
-      setApiToken(token);
-    }
 
-    const handler = () => {
-      const refreshed = getStoredApiToken();
-      setApiToken(refreshed ?? null);
-      setLogStreamSeed(prev => prev + 1);
+    setApiToken(getStoredApiToken());
+
+    const unsubscribe = onApiTokenChange((nextToken) => {
+      const normalized = nextToken ?? null;
+      setApiToken((prev) => {
+        if (prev === normalized) {
+          return prev;
+        }
+        setLogStreamSeed((seed) => seed + 1);
+        return normalized;
+      });
+    });
+
+    return () => {
+      unsubscribe();
     };
-
-    window.addEventListener('storage', handler);
-    return () => window.removeEventListener('storage', handler);
   }, [isClient]);
 
   useEffect(() => {

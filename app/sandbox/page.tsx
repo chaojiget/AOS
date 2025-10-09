@@ -4,12 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getMcpEndpoint } from "@/lib/apiConfig";
-import { getStoredApiToken, setStoredApiToken } from "@/lib/authToken";
+import { getStoredApiToken, onApiTokenChange, setStoredApiToken } from "@/lib/authToken";
 import { PlusCircle, RefreshCw, Settings2, Trash2 } from "lucide-react";
 
 interface SandboxEnvironment {
@@ -79,9 +78,15 @@ export default function SandboxPage() {
 
   useEffect(() => {
     const stored = getStoredApiToken();
-    if (stored) {
-      setApiToken(stored);
-    }
+    setApiToken(stored ?? "");
+
+    const unsubscribe = onApiTokenChange((token) => {
+      setApiToken(token ?? "");
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
