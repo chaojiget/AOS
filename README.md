@@ -7,6 +7,8 @@
 - 🚧 安全：MCP 接口接入 RBAC + 审计日志，沙箱运行写入 events/agent_runs，并提供前端 Integrations/Agents 管理页面。
 - 🚧 架构：整理 AOS v0.1 MCP 优先蓝图，明确 IA/接口/数据模型与 M0-M2 里程碑（详见 `docs/aos-v0.1-blueprint.md`）。
 - 🚧 后端：引入 MCP 网关/注册表、沙箱脚本调度骨架，现持久化到 Postgres，支持 `/mcp/*` 接口与 Agent 脚本定时执行。
+- ✅ 事件总线：落地 Postgres Outbox `value_events` 表，提供 `/api/events` 查询与 SSE 订阅，前端 Chat Hub 实时展示任务收据、审批与异常。
+- 🚧 Projects：新增 `/api/projects` 路由与回放视图，支持查看时间线、产物并重跑任务写入价值事件。
 - 🚧 Agents：沙箱脚本支持虚拟环境管理，自动提供默认环境，并在独立「沙箱」页面维护变量，运行时可复用共享配置。
 - ✅ 后端：Express + LangGraph 聊天代理已完成，支持会话上下文、SSE 流式输出与 OpenAI 模型配置。
 - ✅ 后端：LangGraph 检查点存储迁移至 PostgreSQL，复用连接池并自动同步 schema 注释。
@@ -135,6 +137,13 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
 - `GET /api/telemetry/logs` - 获取日志数据
 - `GET /api/telemetry/metrics` - 获取指标数据
 - `GET /api/telemetry/stats` - 获取统计信息
+
+### 项目与回放 API
+
+- `GET /api/projects` - 获取项目列表与运行摘要
+- `GET /api/projects/:projectId` - 查看项目详情（运行记录、SOP 版本）
+- `GET /api/projects/:projectId/runs/:runId` - 查看运行详情（时间线、产物、Trace ID）
+- `POST /api/projects/:projectId/runs` - 触发新运行或重跑指定任务
 
 ## 📊 监控功能
 

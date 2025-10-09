@@ -66,14 +66,20 @@ interface ValueEvent {
   actionHref?: string;
 }
 
-interface LogEntry {
-  id?: string;
-  timestamp: number;
-  level: string;
-  message: string;
-  trace_id?: string;
-  span_id?: string;
-  attributes?: Record<string, unknown>;
+interface RawValueEvent {
+  id: string;
+  eventType: string;
+  status: string;
+  occurredAt: string;
+  title?: string | null;
+  summary?: string | null;
+  traceId?: string | null;
+  payload?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+  action?: {
+    label?: string | null;
+    href?: string | null;
+  } | null;
 }
 
 const isStoredMessageRecord = (value: unknown): value is StoredMessageRecord => {
@@ -131,7 +137,7 @@ export default function ChatPage() {
     responseTime: 0,
     activeTraces: 1
   });
-  const [logStreamSeed, setLogStreamSeed] = useState(0);
+  const [eventStreamSeed, setEventStreamSeed] = useState(0);
 
   const eventTypeMeta: Record<ValueEventType, { label: string; icon: JSX.Element; badgeClass: string }> = {
     progress: {
@@ -163,62 +169,70 @@ export default function ChatPage() {
     error: "border-red-500",
   };
 
-  const mapLogToEvent = useCallback((log: LogEntry): ValueEvent => {
-    const topic = typeof log.attributes?.topic === 'string' ? log.attributes.topic : undefined;
-    const titleAttr = typeof log.attributes?.title === 'string' ? log.attributes.title : undefined;
-    const lowerLevel = (log.level || '').toLowerCase();
+  const mapRawEvent = useCallback((raw: RawValueEvent): ValueEvent => {
+    const normalizedType = (() => {
+      const base = raw.eventType?.toLowerCase?.() ?? '';
+      if (base.includes('anomaly') || base.includes('error') || base.includes('incident')) {
+        return 'anomaly';
+      }
+      if (base.includes('approval') || base.includes('review') || base.includes('acceptance')) {
+        return 'approval';
+      }
+      if (base.includes('receipt') || base.includes('result') || base.includes('complete')) {
+        return 'receipt';
+      }
+      return 'progress';
+    })();
 
-    let type: ValueEventType = 'progress';
-    let status: ValueEventStatus = 'active';
-    let actionLabel: string | undefined;
-    let actionHref: string | undefined;
+    const normalizedStatus = (() => {
+      const base = raw.status?.toLowerCase?.() ?? '';
+      if (['success', 'succeeded', 'done', 'completed'].some(keyword => base.includes(keyword))) {
+        return 'success';
+      }
+      if (['warning', 'pending', 'waiting', 'approval'].some(keyword => base.includes(keyword))) {
+        return 'warning';
+      }
+      if (['error', 'failed', 'anomaly', 'incident'].some(keyword => base.includes(keyword))) {
+        return 'error';
+      }
+      return 'active';
+    })();
 
-    if (topic?.includes('receipt') || lowerLevel === 'success') {
-      type = 'receipt';
-      status = 'success';
-      actionLabel = '查看结果';
-      actionHref = log.trace_id ? `/telemetry?traceId=${encodeURIComponent(log.trace_id)}` : undefined;
-    } else if (topic?.includes('approval') || lowerLevel === 'warn' || lowerLevel === 'warning') {
-      type = 'approval';
-      status = 'warning';
-      actionLabel = '前往审批';
-      actionHref = log.trace_id ? `/projects?traceId=${encodeURIComponent(log.trace_id)}` : '/projects';
-    } else if (topic?.includes('anomaly') || lowerLevel === 'error') {
-      type = 'anomaly';
-      status = 'error';
-      actionLabel = '查看追踪';
-      actionHref = log.trace_id ? `/telemetry?traceId=${encodeURIComponent(log.trace_id)}` : undefined;
-    } else {
-      actionLabel = '查看详情';
-      actionHref = log.trace_id ? `/telemetry?traceId=${encodeURIComponent(log.trace_id)}` : undefined;
-    }
+    const payload = raw.payload && typeof raw.payload === 'object' ? raw.payload : {};
+    const summaryCandidate =
+      raw.summary
+      ?? (typeof (payload as Record<string, unknown>).message === 'string' ? (payload as Record<string, unknown>).message : undefined)
+      ?? (typeof raw.title === 'string' ? raw.title : undefined)
+      ?? '收到价值事件通知';
 
-    const iso = new Date(log.timestamp).toISOString();
-    const timeLabel = new Date(log.timestamp).toLocaleTimeString('zh-CN', {
-      hour12: false,
-    });
+    const timestamp = (() => {
+      const parsed = new Date(raw.occurredAt);
+      return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+    })();
 
     return {
-      id: log.id ?? `${log.timestamp}-${Math.random().toString(36).slice(2, 8)}`,
-      title: titleAttr ?? topic ?? log.message.slice(0, 60) || '日志事件',
-      type,
-      status,
-      timestamp: iso,
-      timeLabel,
-      summary: log.message,
-      traceId: log.trace_id,
-      actionLabel: typeof log.attributes?.action === 'string' ? log.attributes?.action : actionLabel,
-      actionHref,
-    };
+      id: raw.id,
+      title: raw.title ?? raw.eventType ?? '价值事件',
+      type: normalizedType,
+      status: normalizedStatus,
+      timestamp: timestamp.toISOString(),
+      timeLabel: timestamp.toLocaleTimeString('zh-CN', {
+        hour12: false,
+      }),
+      summary: summaryCandidate,
+      traceId: raw.traceId ?? undefined,
+      actionLabel: raw.action?.label ?? undefined,
+      actionHref: raw.action?.href ?? undefined,
+    } satisfies ValueEvent;
   }, []);
 
-  const upsertLogEvent = useCallback((log: LogEntry) => {
-    const event = mapLogToEvent(log);
+  const upsertValueEvent = useCallback((raw: RawValueEvent) => {
+    const event = mapRawEvent(raw);
     setValueEvents(prev => {
       const filtered = prev.filter(item => item.id !== event.id);
       return [event, ...filtered].slice(0, 50);
     });
-  }, [mapLogToEvent]);
+  }, [mapRawEvent]);
 
   const ValueEventFeed = ({ compact = false }: { compact?: boolean }) => (
     <div className="flex flex-col gap-3">
@@ -309,7 +323,7 @@ export default function ChatPage() {
         if (prev === normalized) {
           return prev;
         }
-        setLogStreamSeed((seed) => seed + 1);
+        setEventStreamSeed((seed) => seed + 1);
         return normalized;
       });
     });
@@ -329,37 +343,37 @@ export default function ChatPage() {
 
     const fetchInitial = async () => {
       try {
-        const res = await fetch(`${base}/api/logs?limit=30`, {
+        const res = await fetch(`${base}/api/events?limit=30`, {
           headers: {
             Authorization: `Bearer ${apiToken}`,
           },
         });
         if (!res.ok) return;
         const json = await res.json();
-        const logs = Array.isArray(json.logs) ? (json.logs as LogEntry[]) : [];
-        setValueEvents(logs.map(mapLogToEvent));
+        const events = Array.isArray(json.events) ? (json.events as RawValueEvent[]) : [];
+        setValueEvents(events.map(mapRawEvent));
       } catch (error) {
-        console.error('加载初始日志失败', error);
+        console.error('加载价值事件失败', error);
       }
     };
 
     fetchInitial();
 
-    const source = new EventSource(`${base}/api/logs/stream?token=${encodeURIComponent(apiToken)}`);
+    const source = new EventSource(`${base}/api/events/stream?token=${encodeURIComponent(apiToken)}`);
 
     source.onmessage = (event) => {
       try {
-        const log = JSON.parse(event.data) as LogEntry;
-        upsertLogEvent(log);
+        const valueEvent = JSON.parse(event.data) as RawValueEvent;
+        upsertValueEvent(valueEvent);
       } catch (error) {
-        console.error('解析日志流失败', error);
+        console.error('解析价值事件流失败', error);
       }
     };
 
     source.onerror = () => {
       source.close();
       if (!cancelled) {
-        setTimeout(() => setLogStreamSeed(prev => prev + 1), 5000);
+        setTimeout(() => setEventStreamSeed(prev => prev + 1), 5000);
       }
     };
 
@@ -367,7 +381,7 @@ export default function ChatPage() {
       cancelled = true;
       source.close();
     };
-  }, [apiToken, isClient, mapLogToEvent, upsertLogEvent, logStreamSeed]);
+  }, [apiToken, isClient, mapRawEvent, upsertValueEvent, eventStreamSeed]);
 
   const getConversationId = () => {
     if (typeof window === "undefined") return "default";
