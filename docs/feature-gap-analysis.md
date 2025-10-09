@@ -13,11 +13,12 @@
 
 ## 2. Telemetry（`/telemetry`）
 - **现状**：
-  - 页面已提供追踪、日志、指标的拉取与可视化骨架，依赖后端 `/api/telemetry/*`。`app/telemetry/page.tsx` 第 312-470 行。 
-  - 后端 Telemetry 路由打通 NATS JetStream 读取。`backend/src/routes/telemetry.ts` 第 15-198 行。 
+  - 页面已提供追踪、日志、指标的拉取与可视化骨架，依赖后端 `/api/telemetry/*`。`app/telemetry/page.tsx` 第 312-470 行。
+  - 后端 Telemetry 路由打通 NATS JetStream 读取。`backend/src/routes/telemetry.ts` 第 15-198 行。
+  - Trace 瀑布视图落地，展示 Span 层级、时间轴与属性摘要，并允许通过查询参数定位指定 Trace。`app/telemetry/page.tsx` 第 150-260 行，第 500-560 行。
+  - Chat Hub 价值事件自动补充 Trace 快捷入口，可一键跳转遥测页查看详情。`app/page.tsx` 第 260-360 行。
 - **待落地**：
-  - 引入 Trace 瀑布图/拓扑视图与多维筛选。`docs/aos-v0.1-blueprint.md` 第 33-55 行。 
-  - 支持与 Chat Hub 价值事件关联跳转，定位指定 trace。`docs/aos-v0.1-blueprint.md` 第 69-82 行。 
+  - 拓扑视角、服务依赖图与多维筛选（按 Agent/环境/状态）。`docs/aos-v0.1-blueprint.md` 第 33-55 行。
 
 ## 3. Integrations（`/integrations`）
 - **现状**：

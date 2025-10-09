@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge, badgeVariants } from "@/components/ui/badge";
@@ -38,6 +38,15 @@ interface TraceEntry {
   attributes?: Record<string, unknown>;
   events?: unknown;
   created_at?: number;
+}
+
+interface TraceNode {
+  span: TraceEntry;
+  depth: number;
+  start: number;
+  end: number;
+  duration: number;
+  children: TraceNode[];
 }
 
 interface LogEntry {
@@ -180,11 +189,28 @@ export default function TelemetryPage() {
   const [logTopicFilter, setLogTopicFilter] = useState<string>("");
   const [logBeforeCursor, setLogBeforeCursor] = useState<number | null>(null);
   const [logLoading, setLogLoading] = useState(false);
+  const [initializedFromQuery, setInitializedFromQuery] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
     setLastUpdated(new Date());
   }, []);
+
+  useEffect(() => {
+    if (!isClient || initializedFromQuery) return;
+
+    try {
+      const url = new URL(window.location.href);
+      const traceIdFromQuery = url.searchParams.get('traceId');
+      if (traceIdFromQuery) {
+        setSelectedTrace(traceIdFromQuery);
+      }
+    } catch (error) {
+      console.warn('解析 traceId 查询参数失败', error);
+    } finally {
+      setInitializedFromQuery(true);
+    }
+  }, [initializedFromQuery, isClient]);
 
   useEffect(() => {
     if (!isClient) return;
@@ -226,6 +252,23 @@ export default function TelemetryPage() {
       setSessionList([]);
     }
   }, [isClient]);
+
+  useEffect(() => {
+    if (!isClient) return;
+
+    try {
+      const url = new URL(window.location.href);
+      if (selectedTrace) {
+        url.searchParams.set('traceId', selectedTrace);
+      } else {
+        url.searchParams.delete('traceId');
+      }
+      const next = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState(window.history.state, '', next);
+    } catch (error) {
+      console.warn('更新 traceId 查询参数失败', error);
+    }
+  }, [selectedTrace, isClient]);
 
   useEffect(() => {
     if (!isClient) return;
@@ -513,6 +556,122 @@ export default function TelemetryPage() {
       }
     : null;
 
+  const traceStructure = useMemo(() => {
+    if (!traceDetail.length) {
+      return null;
+    }
+
+    const nodes = traceDetail.map<TraceNode>((span) => {
+      const start = typeof span.start_time === 'number' ? span.start_time : Number(span.start_time) || 0;
+      const explicitDuration = typeof span.duration === 'number' ? span.duration : 0;
+      const derivedEnd = typeof span.end_time === 'number'
+        ? span.end_time
+        : start + explicitDuration;
+      const end = derivedEnd > start ? derivedEnd : start + explicitDuration;
+
+      return {
+        span,
+        depth: 0,
+        start,
+        end,
+        duration: Math.max(explicitDuration || (end - start), 0),
+        children: [],
+      };
+    });
+
+    const nodeMap = new Map<string, TraceNode>();
+    nodes.forEach(node => {
+      nodeMap.set(node.span.span_id, node);
+    });
+
+    const roots: TraceNode[] = [];
+    nodes.forEach(node => {
+      const parentId = node.span.parent_span_id;
+      if (parentId && nodeMap.has(parentId)) {
+        const parent = nodeMap.get(parentId)!;
+        node.depth = parent.depth + 1;
+        parent.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+
+    const sortNodes = (list: TraceNode[]) => {
+      list.sort((a, b) => a.start - b.start);
+      list.forEach(child => sortNodes(child.children));
+    };
+
+    sortNodes(roots);
+
+    const timelineStart = nodes.reduce((min, item) => Math.min(min, item.start), nodes[0].start);
+    const timelineEnd = nodes.reduce((max, item) => Math.max(max, item.end), nodes[0].end);
+    const timelineDuration = Math.max(timelineEnd - timelineStart, 1);
+
+    return { roots, start: timelineStart, end: timelineEnd, duration: timelineDuration };
+  }, [traceDetail]);
+
+  const renderTraceNode = useCallback((node: TraceNode) => {
+    if (!traceStructure) return null;
+
+    const offsetRatio = (node.start - traceStructure.start) / traceStructure.duration;
+    const widthRatio = node.duration / traceStructure.duration;
+    const offsetPercent = Math.max(0, Math.min(100, offsetRatio * 100));
+    const widthPercent = Math.max(0.5, Math.min(100, widthRatio * 100));
+
+    const attributesEntries = node.span.attributes && typeof node.span.attributes === 'object'
+      ? Object.entries(node.span.attributes).slice(0, 4)
+      : [];
+
+    return (
+      <div
+        key={node.span.span_id}
+        className="rounded-md border p-3"
+        style={{ marginLeft: node.depth * 16 }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm">
+            <Badge variant="outline" className="text-xs">{node.span.operation_name}</Badge>
+            <Badge variant={node.span.status === '0' ? 'default' : 'destructive'} className="text-[11px] uppercase tracking-wide">
+              {node.span.status === '0' ? 'OK' : 'ERROR'}
+            </Badge>
+          </div>
+          <span className="text-xs text-muted-foreground font-mono">{formatDuration(node.duration)}</span>
+        </div>
+        <div className="mt-2">
+          <div className="relative h-3 rounded bg-muted">
+            <div
+              className="absolute top-0 h-3 rounded bg-primary/80"
+              style={{ left: `${offsetPercent}%`, width: `${widthPercent}%` }}
+            />
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground font-mono">
+            <span>span: {node.span.span_id}</span>
+            <span>trace: {node.span.trace_id}</span>
+            <span>开始: {formatTimestamp(node.start)}</span>
+            <span>结束: {formatTimestamp(node.end)}</span>
+          </div>
+          {attributesEntries.length > 0 && (
+            <div className="mt-2 text-[11px] text-muted-foreground">
+              <span className="font-medium">属性：</span>
+              <div className="mt-1 grid gap-1">
+                {attributesEntries.map(([key, value]) => (
+                  <div key={key} className="font-mono truncate">
+                    {key}: {typeof value === 'string' ? value : JSON.stringify(value)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        {node.children.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {node.children.map(child => renderTraceNode(child))}
+          </div>
+        )}
+      </div>
+    );
+  }, [formatDuration, formatTimestamp, traceStructure]);
+
   return (
     <div className="p-6 space-y-6 bg-background min-h-screen">
       <Dialog open={!!selectedTrace} onOpenChange={(o) => { if (!o) setSelectedTrace(null); }}>
@@ -525,25 +684,19 @@ export default function TelemetryPage() {
             {!traceLoading && traceDetail.length === 0 && (
               <div className="text-sm text-muted-foreground">无数据</div>
             )}
-            {!traceLoading && traceDetail.length > 0 && (
-              <ScrollArea className="h-96">
-                <div className="space-y-2">
-                  {traceDetail.map(span => (
-                    <div key={span.span_id} className="p-3 border rounded">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">{span.operation_name}</Badge>
-                        <Badge variant={span.status === '0' ? 'default' : 'destructive'} className="text-xs">{span.status === '0' ? 'OK' : 'ERROR'}</Badge>
-                      </div>
-                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground font-mono">
-                        <div>span: {span.span_id}</div>
-                        <div>trace: {span.trace_id}</div>
-                        <div>开始: {formatTimestamp(span.start_time)}</div>
-                        <div>耗时: {formatDuration(span.duration)}</div>
-                      </div>
-                    </div>
-                  ))}
+            {!traceLoading && traceStructure && (
+              <div className="space-y-4">
+                <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground font-mono">
+                  <div>Span 数量：{traceDetail.length}</div>
+                  <div>起止时间：{formatTimestamp(traceStructure.start)} → {formatTimestamp(traceStructure.end)}</div>
+                  <div>总耗时：{formatDuration(traceStructure.duration)}</div>
                 </div>
-              </ScrollArea>
+                <ScrollArea className="h-96">
+                  <div className="space-y-2">
+                    {traceStructure.roots.map(node => renderTraceNode(node))}
+                  </div>
+                </ScrollArea>
+              </div>
             )}
           </div>
         </DialogContent>

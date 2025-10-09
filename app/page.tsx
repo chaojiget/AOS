@@ -210,6 +210,9 @@ export default function ChatPage() {
       return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
     })();
 
+    const actionLabel = raw.action?.label ?? (raw.traceId ? '查看 Trace' : undefined);
+    const actionHref = raw.action?.href ?? (raw.traceId ? `/telemetry?traceId=${encodeURIComponent(raw.traceId)}` : undefined);
+
     return {
       id: raw.id,
       title: raw.title ?? raw.eventType ?? '价值事件',
@@ -221,8 +224,8 @@ export default function ChatPage() {
       }),
       summary: summaryCandidate,
       traceId: raw.traceId ?? undefined,
-      actionLabel: raw.action?.label ?? undefined,
-      actionHref: raw.action?.href ?? undefined,
+      actionLabel: actionLabel,
+      actionHref: actionHref,
     } satisfies ValueEvent;
   }, []);
 

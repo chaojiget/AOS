@@ -15,6 +15,7 @@
 - ✅ 后端：OpenTelemetry 埋点生效，遥测数据现已切换至 NATS JetStream，按类型划分 `telemetry.*` 主题流，并通过 `/api/telemetry/*` API 读取追踪、日志、指标以及统计信息。
 - ✅ 前端：Next.js 聊天工作台上线，具备本地多会话存储、追踪 ID 展示以及实时输入提示，默认连通流式聊天接口。
 - ✅ 前端：遥测仪表板页面可视化最近追踪、日志、指标，并可回放本地历史会话、关联 Trace 详情。
+- ✅ Telemetry：新增 Trace 瀑布视图与层级时间轴，支持从 Chat 价值事件一键跳转并通过 URL `traceId` 参数定位指定追踪。
 
 ## 🚀 特性
 
