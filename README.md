@@ -2,8 +2,9 @@
 
 一个使用 Next.js、LangGraph 和 OpenTelemetry 构建的AI聊天应用，具有实时监控和追踪功能。
 
-## 📈 项目进度（更新于 2025-09-26）
+## 📈 项目进度（更新于 2025-10-09）
 
+- ✅ DevOps：合并最新远程改动，调整 ESLint 配置并修复 TS 构建错误，当前 lint + backend build 均已通过。
 - 🚧 安全：MCP 接口接入 RBAC + 审计日志，沙箱运行写入 events/agent_runs，并提供前端 Integrations/Agents 管理页面。
 - 🚧 架构：整理 AOS v0.1 MCP 优先蓝图，明确 IA/接口/数据模型与 M0-M2 里程碑（详见 `docs/aos-v0.1-blueprint.md`）。
 - 🚧 后端：引入 MCP 网关/注册表、沙箱脚本调度骨架，现持久化到 Postgres，支持 `/mcp/*` 接口与 Agent 脚本定时执行。
@@ -16,7 +17,9 @@
 - ✅ 后端：OpenTelemetry 埋点生效，遥测数据现已切换至 NATS JetStream，按类型划分 `telemetry.*` 主题流，并通过 `/api/telemetry/*` API 读取追踪、日志、指标以及统计信息。
 - ✅ 前端：Next.js 聊天工作台上线，具备本地多会话存储、追踪 ID 展示以及实时输入提示，默认连通流式聊天接口。
 - ✅ 前端：遥测仪表板页面可视化最近追踪、日志、指标，并可回放本地历史会话、关联 Trace 详情。
+- ✅ 前端：统一运行弹窗等窗口的高度策略，内容溢出时自动出现滚动条，保证长内容可浏览。
 - ✅ Telemetry：新增 Trace 瀑布视图与层级时间轴，支持从 Chat 价值事件一键跳转并通过 URL `traceId` 参数定位指定追踪。
+- ✅ Projects：修复运行详情弹窗无法关闭的问题，回放流程交互已恢复可用。
 
 ## 🚀 特性
 

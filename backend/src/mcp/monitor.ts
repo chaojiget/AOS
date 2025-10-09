@@ -23,7 +23,7 @@ export interface ServicePolicy {
   circuitBreaker?: CircuitBreakerPolicy;
 }
 
-interface ManualCheck {
+interface ManualCheck extends Record<string, unknown> {
   status: HealthState;
   checkedAt: number;
   latencyMs?: number;

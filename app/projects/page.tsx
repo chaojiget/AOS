@@ -178,29 +178,6 @@ export default function ProjectsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (apiToken) {
-      fetchProjects();
-    } else {
-      setProjects([]);
-      setSelectedProjectId(null);
-    }
-  }, [apiToken, fetchProjects]);
-
-  useEffect(() => {
-    const runId = searchParams.get("run");
-    if (runId && projects.length && !selectedRun) {
-      const project = projects.find((proj) =>
-        [proj.latestRun, ...proj.activeRuns, ...proj.queuedRuns, ...proj.completedRuns].some(
-          (run) => run?.id === runId,
-        ),
-      );
-      if (project) {
-        openRunDetail(project.id, runId);
-      }
-    }
-  }, [projects, searchParams, selectedRun, openRunDetail]);
-
   const selectedProject = useMemo(() => {
     if (!selectedProjectId) {
       return projects[0];
@@ -279,7 +256,6 @@ export default function ProjectsPage() {
 
   const closeRunDetail = useCallback(() => {
     setRunModalOpen(false);
-    setSelectedRun(null);
     const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
     params.delete("run");
     router.replace(params.size ? `${pathname}?${params.toString()}` : pathname);
@@ -307,6 +283,35 @@ export default function ProjectsPage() {
       setError(err instanceof Error ? err.message : "触发运行失败");
     }
   }, [apiToken, authorizedHeaders, fetchProjects, openRunDetail]);
+
+  useEffect(() => {
+    if (apiToken) {
+      fetchProjects();
+    } else {
+      setProjects([]);
+      setSelectedProjectId(null);
+    }
+  }, [apiToken, fetchProjects]);
+
+  useEffect(() => {
+    const runId = searchParams.get("run");
+    if (runId && projects.length && !selectedRun) {
+      const project = projects.find((proj) =>
+        [proj.latestRun, ...proj.activeRuns, ...proj.queuedRuns, ...proj.completedRuns].some(
+          (run) => run?.id === runId,
+        ),
+      );
+      if (project) {
+        openRunDetail(project.id, runId);
+      }
+    }
+  }, [projects, searchParams, selectedRun, openRunDetail]);
+
+  useEffect(() => {
+    if (!searchParams.get("run")) {
+      setSelectedRun(null);
+    }
+  }, [searchParams]);
 
   const visibleRuns = useMemo(() => {
     if (!selectedProject) return { current: [], completed: [] as ProjectRunRecord[] };

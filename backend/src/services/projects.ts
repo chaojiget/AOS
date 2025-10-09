@@ -372,7 +372,7 @@ export const createProjectRun = (
       ...(sourceRun
         ? sourceRun.timeline
             .filter((entry) => entry.id !== 'step-queue')
-            .map((entry) => ({
+            .map((entry): RunTimelineEntry => ({
               ...entry,
               status: 'pending',
               occurredAt: undefined,
@@ -419,4 +419,3 @@ export const updateRunStatus = (
 
   return cloneRun(run);
 };
-

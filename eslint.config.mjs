@@ -18,7 +18,21 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "next-env.d.ts",
+      "backend/dist/**",
     ],
+  },
+  {
+    files: [
+      "backend/**/*.{ts,tsx,js,jsx}",
+      "backend/**/*.d.ts",
+      "hand-runtime/**/*.{ts,tsx,js,jsx}",
+    ],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-require-imports": "off",
+      "@typescript-eslint/no-var-requires": "off",
+      "no-console": "off",
+    },
   },
 ];
 

@@ -404,12 +404,12 @@ export class NatsTelemetryExporter implements SpanExporter {
   }
 
   private buildLogIterator(subscription: Subscription): AsyncIterable<LogEntry> {
-    const self = this;
+    const { jsonCodec } = this;
 
     const asyncGenerator = async function* (): AsyncIterable<LogEntry> {
       for await (const message of subscription) {
         try {
-          const decoded = self.jsonCodec.decode(message.data) as LogEntry;
+          const decoded = jsonCodec.decode(message.data) as LogEntry;
           yield decoded;
         } catch (error) {
           console.error('[Telemetry] 解码日志消息失败', error);
