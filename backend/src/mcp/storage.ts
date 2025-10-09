@@ -6,6 +6,15 @@ import {
   SandboxEnvironmentDefinition,
   SandboxScriptDefinition,
 } from './types';
+
+export interface McpPolicyRecord {
+  name: string;
+  quotaLimitPerMinute?: number | null;
+  quotaBurstMultiplier?: number | null;
+  circuitFailureThreshold?: number | null;
+  circuitCooldownSeconds?: number | null;
+  circuitMinimumSamples?: number | null;
+}
 import { Role, normalizeRole } from '../auth/roles';
 
 let initialized = false;
@@ -22,6 +31,18 @@ const ensureTables = async (pool: Pool) => {
       timeout_ms INTEGER,
       allowed_roles JSONB,
       created_at TIMESTAMPTZ DEFAULT now(),
+      updated_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mcp_service_policies (
+      name TEXT PRIMARY KEY REFERENCES mcp_registry(name) ON DELETE CASCADE,
+      quota_limit_per_minute INTEGER,
+      quota_burst_multiplier NUMERIC,
+      circuit_failure_threshold INTEGER,
+      circuit_cooldown_seconds INTEGER,
+      circuit_minimum_samples INTEGER,
       updated_at TIMESTAMPTZ DEFAULT now()
     );
   `);
@@ -206,6 +227,54 @@ export const deleteRegistryFromStorage = async (name: string): Promise<void> => 
   const pool = getPool();
   await ensureTables(pool);
   await pool.query('DELETE FROM mcp_registry WHERE name = $1', [name]);
+};
+
+const mapPolicyRow = (row: any): McpPolicyRecord => ({
+  name: row.name,
+  quotaLimitPerMinute: row.quota_limit_per_minute ?? null,
+  quotaBurstMultiplier: row.quota_burst_multiplier != null ? Number(row.quota_burst_multiplier) : null,
+  circuitFailureThreshold: row.circuit_failure_threshold ?? null,
+  circuitCooldownSeconds: row.circuit_cooldown_seconds ?? null,
+  circuitMinimumSamples: row.circuit_minimum_samples ?? null,
+});
+
+export const loadPoliciesFromStorage = async (): Promise<McpPolicyRecord[]> => {
+  const pool = getPool();
+  await ensureTables(pool);
+  const result = await pool.query('SELECT * FROM mcp_service_policies ORDER BY name ASC');
+  return result.rows.map(mapPolicyRow);
+};
+
+export const savePolicyToStorage = async (policy: McpPolicyRecord): Promise<void> => {
+  const pool = getPool();
+  await ensureTables(pool);
+  await pool.query(
+    `INSERT INTO mcp_service_policies (
+        name,
+        quota_limit_per_minute,
+        quota_burst_multiplier,
+        circuit_failure_threshold,
+        circuit_cooldown_seconds,
+        circuit_minimum_samples,
+        updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, now())
+      ON CONFLICT (name) DO UPDATE SET
+        quota_limit_per_minute = EXCLUDED.quota_limit_per_minute,
+        quota_burst_multiplier = EXCLUDED.quota_burst_multiplier,
+        circuit_failure_threshold = EXCLUDED.circuit_failure_threshold,
+        circuit_cooldown_seconds = EXCLUDED.circuit_cooldown_seconds,
+        circuit_minimum_samples = EXCLUDED.circuit_minimum_samples,
+        updated_at = now()
+    `,
+    [
+      policy.name,
+      policy.quotaLimitPerMinute ?? null,
+      policy.quotaBurstMultiplier ?? null,
+      policy.circuitFailureThreshold ?? null,
+      policy.circuitCooldownSeconds ?? null,
+      policy.circuitMinimumSamples ?? null,
+    ],
+  );
 };
 
 export const loadSandboxEnvironments = async (): Promise<SandboxEnvironmentDefinition[]> => {

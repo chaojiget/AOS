@@ -8,6 +8,7 @@ import {
 import { McpCallRequest, McpCallResult } from './types';
 import { mcpRegistry } from './registry';
 import { logClient } from '../services/log-client';
+import { mcpMonitor } from './monitor';
 
 export class McpGateway {
   async call(request: McpCallRequest): Promise<McpCallResult> {
@@ -15,6 +16,8 @@ export class McpGateway {
     if (!config) {
       throw new Error(`未找到名称为 ${request.server} 的 MCP 服务`);
     }
+
+    mcpMonitor.beforeCall(request.server);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.timeoutMs ?? 30_000);
@@ -75,10 +78,15 @@ export class McpGateway {
           resultPreview: result ? JSON.stringify(result).slice(0, 500) : undefined,
         },
       });
+      const duration = Date.now() - started;
+      mcpMonitor.observeCall(request.server, {
+        durationMs: duration,
+        success: true,
+      });
       return {
         server: request.server,
         tool: request.tool,
-        durationMs: Date.now() - started,
+        durationMs: duration,
         result,
       };
     } catch (error) {
@@ -96,6 +104,12 @@ export class McpGateway {
           error: message,
           argsPreview: request.args ? JSON.stringify(request.args).slice(0, 500) : undefined,
         },
+      });
+      const duration = Date.now() - started;
+      mcpMonitor.observeCall(request.server, {
+        durationMs: duration,
+        success: false,
+        errorMessage: message,
       });
       throw error instanceof Error ? error : new Error(message);
     } finally {

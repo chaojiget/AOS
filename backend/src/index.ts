@@ -15,6 +15,8 @@ import { mcpRoutes } from './routes/mcp';
 import { initMcpSubsystem } from './mcp/init';
 import { trace } from '@opentelemetry/api';
 import { closePool } from './db/postgres';
+import { valueEventRoutes } from './routes/events';
+import projectsRoutes from './routes/projects';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -76,6 +78,8 @@ app.get('/health', (req, res) => {
 app.use('/api/chat', chatRoutes);
 app.use('/api/telemetry', telemetryRoutes);
 app.use('/api/logs', logRoutes);
+app.use('/api/events', valueEventRoutes);
+app.use('/api/projects', projectsRoutes);
 app.use('/mcp', mcpRoutes);
 
 // 404 handler

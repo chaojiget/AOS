@@ -26,3 +26,7 @@ export const getChatStreamEndpoint = () => `${getApiBaseUrl()}/api/chat/stream`;
 export const telemetryEndpoint = (path: string) => `${getApiBaseUrl()}/api/telemetry/${path}`;
 
 export const getMcpEndpoint = (path: string) => `${getApiBaseUrl()}/mcp${path}`;
+export const getProjectsEndpoint = (path = '') => {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${getApiBaseUrl()}/api/projects${normalized === '/' ? '' : normalized}`;
+};

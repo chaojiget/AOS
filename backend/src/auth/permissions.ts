@@ -9,7 +9,13 @@ export type Permission =
   | 'mcp.sandbox.execute'
   | 'mcp.logs.read'
   | 'mcp.logs.write'
-  | 'mcp.logs.subscribe';
+  | 'mcp.logs.subscribe'
+  | 'events.read'
+  | 'events.write'
+  | 'events.subscribe'
+  | 'projects.read'
+  | 'projects.write'
+  | 'projects.execute';
 
 const rolePermissions: Record<Role, Permission[]> = {
   owner: [
@@ -22,6 +28,12 @@ const rolePermissions: Record<Role, Permission[]> = {
     'mcp.logs.read',
     'mcp.logs.write',
     'mcp.logs.subscribe',
+    'events.read',
+    'events.write',
+    'events.subscribe',
+    'projects.read',
+    'projects.write',
+    'projects.execute',
   ],
   admin: [
     'mcp.registry.read',
@@ -33,6 +45,12 @@ const rolePermissions: Record<Role, Permission[]> = {
     'mcp.logs.read',
     'mcp.logs.write',
     'mcp.logs.subscribe',
+    'events.read',
+    'events.write',
+    'events.subscribe',
+    'projects.read',
+    'projects.write',
+    'projects.execute',
   ],
   operator: [
     'mcp.registry.read',
@@ -41,11 +59,17 @@ const rolePermissions: Record<Role, Permission[]> = {
     'mcp.sandbox.execute',
     'mcp.logs.read',
     'mcp.logs.subscribe',
+    'events.read',
+    'events.subscribe',
+    'projects.read',
+    'projects.execute',
   ],
   viewer: [
     'mcp.registry.read',
     'mcp.sandbox.read',
     'mcp.logs.read',
+    'events.read',
+    'projects.read',
   ],
 };
 
