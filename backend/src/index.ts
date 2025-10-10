@@ -88,7 +88,8 @@ app.use('*', (req, res) => {
 });
 
 // Error handler
-app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((error: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  void _next;
   console.error('Server error:', error);
 
   if (res.locals.span) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,12 +89,6 @@ export default function SandboxPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (apiToken) {
-      loadEnvironments();
-    }
-  }, [apiToken]);
-
   const authorizedHeaders = useMemo(() => {
     if (!apiToken) return undefined;
     return {
@@ -103,7 +97,7 @@ export default function SandboxPage() {
     } as Record<string, string>;
   }, [apiToken]);
 
-  const loadEnvironments = async () => {
+  const loadEnvironments = useCallback(async () => {
     if (!apiToken) {
       setError("请先配置 API Token");
       return;
@@ -130,7 +124,13 @@ export default function SandboxPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiToken, authorizedHeaders]);
+
+  useEffect(() => {
+    if (apiToken) {
+      loadEnvironments();
+    }
+  }, [apiToken, loadEnvironments]);
 
   const saveTokenLocally = () => {
     setStoredApiToken(apiToken);

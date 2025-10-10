@@ -517,15 +517,15 @@ export default function TelemetryPage() {
     setSelectedSession(id);
   };
 
-  const formatTimestamp = (timestamp: number) => {
+  const formatTimestamp = useCallback((timestamp: number) => {
     if (!isClient) return '';
     return new Date(timestamp).toLocaleString();
-  };
+  }, [isClient]);
 
-  const formatDuration = (duration: number) => {
+  const formatDuration = useCallback((duration: number) => {
     if (duration < 1000) return `${duration}ms`;
     return `${(duration / 1000).toFixed(2)}s`;
-  };
+  }, []);
 
   const getLevelColor = (level: string): BadgeVariant => {
     switch (level.toLowerCase()) {

@@ -2,8 +2,9 @@
 
 一个使用 Next.js、LangGraph 和 OpenTelemetry 构建的AI聊天应用，具有实时监控和追踪功能。
 
-## 📈 项目进度（更新于 2025-10-09）
+## 📈 项目进度（更新于 2025-10-10）
 
+- ✅ 前端：Chat 工作台重构为“契约式 Agent 驾驶舱”，支持意图/约束收敛、主方案 + 备选对比、TVO 钩子与价值事件流联动。
 - ✅ DevOps：合并最新远程改动，调整 ESLint 配置并修复 TS 构建错误，当前 lint + backend build 均已通过。
 - 🚧 安全：MCP 接口接入 RBAC + 审计日志，沙箱运行写入 events/agent_runs，并提供前端 Integrations/Agents 管理页面。
 - 🚧 架构：整理 AOS v0.1 MCP 优先蓝图，明确 IA/接口/数据模型与 M0-M2 里程碑（详见 `docs/aos-v0.1-blueprint.md`）。

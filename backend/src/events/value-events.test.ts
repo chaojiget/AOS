@@ -41,4 +41,22 @@ describe('mapNotificationPayload', () => {
     assert.equal(resultFromUnknown.title, '未知事件');
     assert.equal(resultFromUnknown.summary, '无法解析价值事件通知。');
   });
+
+  it('优先读取顶层动作字段作为兜底', () => {
+    const result = mapNotificationPayload({
+      id: 'abc',
+      eventType: 'task.completed',
+      status: 'done',
+      title: '运行完成',
+      actionLabel: '查看回放',
+      actionHref: '/projects/foo?run=bar',
+      action: {
+        label: 123,
+        href: null,
+      },
+    });
+
+    assert.equal(result.action.label, '查看回放');
+    assert.equal(result.action.href, '/projects/foo?run=bar');
+  });
 });
