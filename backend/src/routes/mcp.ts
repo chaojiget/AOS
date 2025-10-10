@@ -81,7 +81,8 @@ const ensureScriptFile = async (filePath: string, content?: string) => {
   }
   try {
     await fs.access(filePath);
-  } catch (error) {
+  } catch (_error) {
+    void _error;
     throw new Error('入口文件不存在，请提供脚本内容或填写正确路径');
   }
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -160,12 +160,6 @@ export default function AgentsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (apiToken && selectedScriptId) {
-      loadRuns(selectedScriptId);
-    }
-  }, [apiToken, selectedScriptId]);
-
   const authorizedHeaders = useMemo(() => {
     if (!apiToken) return undefined;
     return {
@@ -174,7 +168,7 @@ export default function AgentsPage() {
     } as Record<string, string>;
   }, [apiToken]);
 
-  const loadEnvironments = async () => {
+  const loadEnvironments = useCallback(async () => {
     if (!apiToken) {
       setError("请先配置 API Token");
       return;
@@ -201,9 +195,9 @@ export default function AgentsPage() {
     } finally {
       setEnvLoading(false);
     }
-  };
+  }, [apiToken, authorizedHeaders]);
 
-  const loadScripts = async () => {
+  const loadScripts = useCallback(async () => {
     if (!apiToken) {
       setError("请先配置 API Token");
       return;
@@ -231,14 +225,18 @@ export default function AgentsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiToken, authorizedHeaders]);
 
-  const reloadSandboxData = async () => {
+  const reloadSandboxData = useCallback(async () => {
     await loadEnvironments();
     await loadScripts();
-  };
+  }, [loadEnvironments, loadScripts]);
 
-  const loadRuns = async (scriptId: string) => {
+  const loadRuns = useCallback(async (scriptId: string) => {
+    if (!apiToken) {
+      setError("请先配置 API Token");
+      return;
+    }
     try {
       const response = await fetch(
         getMcpEndpoint(`/sandbox/scripts/${encodeURIComponent(scriptId)}/runs?limit=10`),
@@ -253,12 +251,18 @@ export default function AgentsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "读取运行记录失败");
     }
-  };
+  }, [apiToken, authorizedHeaders]);
+
+  useEffect(() => {
+    if (apiToken && selectedScriptId) {
+      loadRuns(selectedScriptId);
+    }
+  }, [apiToken, selectedScriptId, loadRuns]);
 
   useEffect(() => {
     if (!apiToken) return;
     reloadSandboxData();
-  }, [apiToken]);
+  }, [apiToken, reloadSandboxData]);
 
   const openCreateForm = () => {
     setForm(createDefaultScriptForm());

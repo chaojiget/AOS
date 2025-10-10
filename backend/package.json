@@ -7,7 +7,7 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "test": "jest"
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@langchain/community": "^0.3.17",

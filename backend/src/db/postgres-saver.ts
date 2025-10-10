@@ -256,9 +256,10 @@ export class PostgresSaver extends BaseCheckpointSaver {
     config: RunnableConfig,
     checkpoint: Checkpoint,
     metadata: CheckpointMetadata,
-    newVersions?: Record<string, unknown>
+    _newVersions?: Record<string, unknown>
   ): Promise<RunnableConfig> {
     await this.setup();
+    void _newVersions;
     if (!config.configurable?.thread_id) {
       throw new Error('Missing "thread_id" field in config.configurable.');
     }

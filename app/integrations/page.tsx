@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,7 +78,7 @@ const roleOptions = [
 const capabilityOptions = [
   { value: "tools", label: "工具" },
   { value: "files", label: "文件" },
-  { value: "secrets", label: "秘钥" },
+  { value: "secrets", label: "密钥" },
   { value: "events", label: "事件" },
 ];
 
@@ -193,12 +193,6 @@ export default function IntegrationsPage() {
   }, []);
 
   useEffect(() => {
-    if (apiToken) {
-      fetchServices();
-    }
-  }, [apiToken]);
-
-  useEffect(() => {
     setPolicyForms((prev) => {
       const next = { ...prev } as Record<string, PolicyFormState>;
       let changed = false;
@@ -233,7 +227,7 @@ export default function IntegrationsPage() {
     } as Record<string, string>;
   }, [apiToken]);
 
-  const fetchServices = async () => {
+  const fetchServices = useCallback(async () => {
     if (!apiToken) {
       setError("请先配置 API Token");
       return;
@@ -260,7 +254,13 @@ export default function IntegrationsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiToken, authorizedHeaders]);
+
+  useEffect(() => {
+    if (apiToken) {
+      fetchServices();
+    }
+  }, [apiToken, fetchServices]);
 
   const openCreateForm = () => {
     setForm(createEmptyForm());

@@ -28,7 +28,7 @@ app.use(cors({
     process.env.FRONTEND_URL || 'http://localhost:3001',
     'http://localhost:3000',
     'http://localhost:3001',
-    /^http:\/\/.*\..*$/  // Allow any localhost variations
+    /^http:\/\/.*\..*$/  // 允许任意带点的 http:// 来源，例如内网调试域名
   ],
   credentials: true,
 }));
@@ -88,7 +88,8 @@ app.use('*', (req, res) => {
 });
 
 // Error handler
-app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((error: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  void _next;
   console.error('Server error:', error);
 
   if (res.locals.span) {
