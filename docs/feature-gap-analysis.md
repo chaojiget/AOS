@@ -9,6 +9,7 @@
   - 价值事件卡片挂载跳转入口，可打开 Projects 回放页查看运行详情。`app/page.tsx` 第 260-340 行。
 - **待落地**：
   - 打通价值事件总线，按蓝图引入 `task.acceptance/task.receipt/anomaly.*` 等 Outbox 事件并去抖显示。`docs/aos-v0.1-blueprint.md` 第 64-82 行。
+  - 价值事件卡片需补齐审批入口，与 Projects/审批流程深度联动。`docs/aos-v0.1-blueprint.md` 第 69-82 行。
   - 会话上下文需要绑定 Trace/Agent 运行，联动 Projects/Telemetry 页面。`docs/aos-v0.1-blueprint.md` 第 173-202 行。
 
 ## 2. Telemetry（`/telemetry`）
@@ -27,6 +28,7 @@
   - 集成健康检查、熔断与配额监控，页面展示调用成功率/延迟并可一键巡检、在线调整策略。`backend/src/mcp/monitor.ts`、`app/integrations/page.tsx`。
 - **待落地**：
   - 需要 UI 告警提示失败状态，并与 Telemetry 事件联动。`docs/aos-v0.1-blueprint.md` 第 117-145 行。
+  - 串联多 MCP 服务的编排入口：提供基于 SOP/Workflow 的节点配置、前置条件与变量映射，使注册能力可以组合为端到端流程。`docs/aos-v0.1-blueprint.md` 第 83-171 行。
 
 ## 4. Sandbox & Agents（`/sandbox`, `/agents`）
 - **现状**：
@@ -88,6 +90,15 @@
 - **待落地**：
   - 落实 RBAC 资源粒度、审批流与审计查询界面。`docs/aos-v0.1-blueprint.md` 第 247-288 行。 
   - 打通“激活”流程：首次登录配置 Token、校验能力、引导完成 Integrations/Agents 初始化。`docs/aos-v0.1-blueprint.md` 第 117-171 行。 
+
+## 10. MCP Workflow 编排
+- **现状**：
+  - Blueprint 中规划了基于 LangGraph/SOP 的流程编排框架，尚未在现有代码中实现。`docs/aos-v0.1-blueprint.md` 第 83-171 行。
+- **待落地**：
+  - 设计统一的 Workflow 定义模型（节点、边、上下文变量、权限），并与 Projects/Sandbox/Integrations 共用。
+  - 提供 Workflow Builder 前端：可拖拽节点、配置 MCP 服务调用、设置条件分支与并行步骤。
+  - 打通执行引擎：支持计划/手动触发，串联 MCP Agent 调用并将中间结果写入 Telemetry 与审计。
+  - 结合激活流程，提供 Workflow 模板示例，帮助团队快速落地标准作业流。
 
 ---
 
