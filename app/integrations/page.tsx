@@ -78,7 +78,7 @@ const roleOptions = [
 const capabilityOptions = [
   { value: "tools", label: "工具" },
   { value: "files", label: "文件" },
-  { value: "secrets", label: "秘钥" },
+  { value: "secrets", label: "密钥" },
   { value: "events", label: "事件" },
 ];
 
