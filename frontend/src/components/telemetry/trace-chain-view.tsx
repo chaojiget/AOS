@@ -2,18 +2,38 @@
 
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { RefreshCw, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Search } from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import { apiGet } from "@/lib/api";
-import { TraceSummary, TelemetryLog, shortId } from "@/lib/telemetry";
+import { TraceSummary, TelemetryLog, humanTime, shortId } from "@/lib/telemetry";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DeepTraceObserver } from "@/components/telemetry/deep-trace-observer";
 
+const WINDOW_OPTIONS = [
+  { key: "traceChain.window5m", seconds: 5 * 60 },
+  { key: "traceChain.window30m", seconds: 30 * 60 },
+  { key: "traceChain.window2h", seconds: 2 * 60 * 60 },
+  { key: "traceChain.window24h", seconds: 24 * 60 * 60 },
+] as const;
+
+function parseMs(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function toIsoNoZ(ms: number): string {
+  const date = new Date(ms);
+  const pad2 = (v: number) => String(v).padStart(2, "0");
+  const pad3 = (v: number) => String(v).padStart(3, "0");
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}.${pad3(date.getMilliseconds())}`;
+}
+
 export function TraceChainView() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -22,6 +42,8 @@ export function TraceChainView() {
   const [traceFilter, setTraceFilter] = React.useState("");
   const [selectedTraceId, setSelectedTraceId] = React.useState<string | null>(null);
   const [logs, setLogs] = React.useState<TelemetryLog[]>([]);
+  const [windowSeconds, setWindowSeconds] = React.useState<number>(WINDOW_OPTIONS[1].seconds);
+  const [windowEndMs, setWindowEndMs] = React.useState<number | null>(null);
   const [isLoadingTraces, setIsLoadingTraces] = React.useState(false);
   const [isLoadingLogs, setIsLoadingLogs] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -39,13 +61,18 @@ export function TraceChainView() {
     }
   }, []);
 
-  const loadLogs = React.useCallback(async (traceId: string) => {
+  const loadLogs = React.useCallback(async (traceId: string, options?: { startMs?: number; endMs?: number; limit?: number }) => {
     setIsLoadingLogs(true);
     setError(null);
     try {
-      const data = await apiGet<TelemetryLog[]>(
-        `/api/v1/telemetry/traces/${encodeURIComponent(traceId)}/logs`,
-      );
+      const params = new URLSearchParams();
+      if (options?.limit != null) params.set("limit", String(options.limit));
+      if (options?.startMs != null) params.set("start", toIsoNoZ(options.startMs));
+      if (options?.endMs != null) params.set("end", toIsoNoZ(options.endMs));
+
+      const qs = params.toString();
+      const url = `/api/v1/telemetry/traces/${encodeURIComponent(traceId)}/logs${qs ? `?${qs}` : ""}`;
+      const data = await apiGet<TelemetryLog[]>(url);
       setLogs(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -63,10 +90,14 @@ export function TraceChainView() {
     const traceId = searchParams.get("traceId");
     if (traceId && traceId !== selectedTraceId) {
       setSelectedTraceId(traceId);
-      void loadLogs(traceId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, loadLogs]);
+
+  const selectedTrace = React.useMemo(
+    () => traces.find((trace) => trace.trace_id === selectedTraceId) ?? null,
+    [selectedTraceId, traces],
+  );
 
   const filteredTraces = React.useMemo(() => {
     if (!traceFilter.trim()) return traces;
@@ -74,13 +105,26 @@ export function TraceChainView() {
     return traces.filter((trace) => trace.trace_id.toLowerCase().includes(needle));
   }, [traceFilter, traces]);
 
-  const selectTrace = (traceId: string) => {
-    setSelectedTraceId(traceId);
-    void loadLogs(traceId);
+  const selectTrace = (trace: TraceSummary) => {
+    setSelectedTraceId(trace.trace_id);
+    setWindowEndMs(parseMs(trace.last_time));
     const params = new URLSearchParams(searchParams.toString());
-    params.set("traceId", traceId);
+    params.set("traceId", trace.trace_id);
     router.replace(`${pathname}?${params.toString()}`);
   };
+
+  React.useEffect(() => {
+    if (!selectedTraceId) return;
+    const last = parseMs(selectedTrace?.last_time) ?? Date.now();
+    const endMs = windowEndMs ?? last;
+    const startMs = endMs - windowSeconds * 1000;
+    void loadLogs(selectedTraceId, { startMs, endMs, limit: 4000 });
+  }, [loadLogs, selectedTrace?.last_time, selectedTraceId, windowEndMs, windowSeconds]);
+
+  const loadedStartTs = logs.length ? logs[0].timestamp : null;
+  const loadedEndTs = logs.length ? logs[logs.length - 1].timestamp : null;
+  const loadedStartMs = loadedStartTs ? parseMs(loadedStartTs) : null;
+  const loadedEndMs = loadedEndTs ? parseMs(loadedEndTs) : null;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
@@ -138,7 +182,7 @@ export function TraceChainView() {
                     <button
                       key={trace.trace_id}
                       type="button"
-                      onClick={() => selectTrace(trace.trace_id)}
+                      onClick={() => selectTrace(trace)}
                       className={[
                         "rounded-lg border px-3 py-2 text-left",
                         selected
@@ -181,7 +225,7 @@ export function TraceChainView() {
                     type="button"
                     variant="ghost"
                     className="h-9 px-2"
-                    onClick={() => void loadLogs(selectedTraceId)}
+                    onClick={() => setWindowEndMs(parseMs(selectedTrace?.last_time) ?? Date.now())}
                     disabled={isLoadingLogs}
                   >
                     <RefreshCw className="mr-2 h-4 w-4" />
@@ -199,7 +243,80 @@ export function TraceChainView() {
               ) : logs.length === 0 && !isLoadingLogs ? (
                 <div className="text-sm text-zinc-400">{t("traceChain.noLogs")}</div>
               ) : (
-                <DeepTraceObserver logs={logs} />
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-xs text-zinc-400">
+                      {t("traceChain.range")}{" "}
+                      {loadedStartTs && loadedEndTs
+                        ? `${humanTime(loadedStartTs, lang)} → ${humanTime(loadedEndTs, lang)}`
+                        : "-"}
+                      <span className="ml-2 text-zinc-500">·</span>
+                      <span className="ml-2 text-zinc-300">{logs.length}</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs text-zinc-400">{t("traceChain.window")}</div>
+                        <select
+                          className="h-9 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-white/20"
+                          value={windowSeconds}
+                          onChange={(e) => {
+                            const next = Number(e.target.value);
+                            setWindowSeconds(next);
+                            setWindowEndMs(parseMs(selectedTrace?.last_time) ?? Date.now());
+                          }}
+                        >
+                          {WINDOW_OPTIONS.map((opt) => (
+                            <option key={opt.seconds} value={opt.seconds}>
+                              {t(opt.key)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="h-9 px-2"
+                        onClick={() => {
+                          if (loadedStartMs == null) return;
+                          setWindowEndMs(loadedStartMs);
+                        }}
+                        disabled={loadedStartMs == null || isLoadingLogs}
+                      >
+                        <ChevronLeft className="mr-1 h-4 w-4" />
+                        {t("traceChain.earlier")}
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="h-9 px-2"
+                        onClick={() => {
+                          const last = parseMs(selectedTrace?.last_time);
+                          if (last == null || windowEndMs == null) return;
+                          setWindowEndMs(Math.min(last, windowEndMs + windowSeconds * 1000));
+                        }}
+                        disabled={windowEndMs == null || isLoadingLogs}
+                      >
+                        {t("traceChain.later")}
+                        <ChevronRight className="ml-1 h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-9 px-2"
+                        onClick={() => setWindowEndMs(parseMs(selectedTrace?.last_time) ?? Date.now())}
+                        disabled={isLoadingLogs}
+                      >
+                        {t("traceChain.latest")}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <DeepTraceObserver logs={logs} />
+                </div>
               )}
             </CardContent>
           </Card>

@@ -17,6 +17,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+function IndentGuides({ depth }: { depth: number }) {
+  if (depth <= 0) return null;
+  return (
+    <div className="flex items-center">
+      {Array.from({ length: depth }).map((_, i) => (
+        <span key={i} className="h-6 w-4 border-l border-white/10" />
+      ))}
+    </div>
+  );
+}
+
 function SpanNodeView({
   node,
   depth,
@@ -39,34 +50,48 @@ function SpanNodeView({
         className={cn(
           "flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left hover:bg-white/10",
         )}
-        style={{ paddingLeft: 12 + depth * 14 }}
         aria-expanded={isOpen}
       >
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
-            <div className="truncate text-sm font-medium">
-              {node.name ?? shortId(node.spanId, 14)}
+        <div className="flex min-w-0 items-start gap-2">
+          <IndentGuides depth={depth} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              {isOpen ? (
+                <ChevronDown className="h-4 w-4 shrink-0" />
+              ) : (
+                <ChevronRight className="h-4 w-4 shrink-0" />
+              )}
+              <div className="truncate text-sm font-medium">
+                {node.name ?? shortId(node.spanId, 14)}
+              </div>
+              <div className="text-xs text-zinc-400">{shortId(node.spanId, 10)}</div>
             </div>
-            <div className="text-xs text-zinc-400">{shortId(node.spanId, 10)}</div>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-            <span>{node.logs.length} logs</span>
-            {node.parentSpanId ? <span>parent: {shortId(node.parentSpanId, 10)}</span> : <span>root</span>}
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+              <span>{node.logs.length} logs</span>
+              {node.parentSpanId ? (
+                <span>parent: {shortId(node.parentSpanId, 10)}</span>
+              ) : (
+                <span>root</span>
+              )}
+            </div>
           </div>
         </div>
       </button>
 
       {isOpen ? (
         <div className="flex flex-col gap-2">
-          <div
-            className="grid grid-cols-1 gap-2"
-            style={{ paddingLeft: 12 + (depth + 1) * 14 }}
-          >
-            {node.logs.map((log) => (
-              <LogRow key={log.id} log={log} lang={lang} />
-            ))}
-          </div>
+          {node.logs.length ? (
+            <div className="flex flex-col gap-2">
+              {node.logs.map((log) => (
+                <div key={log.id} className="flex gap-2">
+                  <IndentGuides depth={depth + 1} />
+                  <div className="min-w-0 flex-1">
+                    <LogRow log={log} lang={lang} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {node.children.length ? (
             <div className="flex flex-col gap-2">

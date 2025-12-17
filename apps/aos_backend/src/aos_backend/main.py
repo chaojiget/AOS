@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -218,17 +218,35 @@ def list_traces(limit: int = 80):
 
 
 @app.get("/api/v1/telemetry/traces/{trace_id}/logs")
-def get_trace_logs(trace_id: str):
+def get_trace_logs(
+    trace_id: str,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    limit: int | None = None,
+    order: Literal["asc", "desc"] = "asc",
+):
     """
-    Return the full ordered log chain for a trace.
+    Return ordered logs for a trace (supports time window + limit).
     """
     with Session(engine) as session:
-        statement = (
-            select(LogEntry)
-            .where(LogEntry.trace_id == trace_id)
-            .order_by(LogEntry.timestamp)
-        )
+        statement = select(LogEntry).where(LogEntry.trace_id == trace_id)
+        if start is not None:
+            statement = statement.where(LogEntry.timestamp >= start)
+        if end is not None:
+            statement = statement.where(LogEntry.timestamp < end)
+
+        if order == "desc":
+            statement = statement.order_by(LogEntry.timestamp.desc(), LogEntry.id.desc())
+        else:
+            statement = statement.order_by(LogEntry.timestamp, LogEntry.id)
+
+        if limit is not None:
+            statement = statement.limit(limit)
         results = session.exec(statement).all()
+
+    if order == "desc":
+        results = list(reversed(results))
+
     return [_serialize_log(log) for log in results]
 
 

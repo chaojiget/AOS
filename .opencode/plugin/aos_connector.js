@@ -56,6 +56,9 @@ const getSessionState = (sessionID) => {
     toolSpans: new Map(),
     callToMessage: new Map(),
     lastAssistantMessageID: null,
+    lastSessionStatus: null,
+    seenMessageUpdated: new Set(),
+    seenToolEvents: new Set(),
   };
 
   sessionStates.set(sessionID, state);
@@ -75,16 +78,36 @@ const getOrCreateSpan = (spanMap, key) => {
   return spanId;
 };
 
-const tagsFor = (type) => {
+const tagsFor = (type, payload) => {
   const tags = ["opencode"];
-  if (!type) return tags;
 
-  const value = String(type);
-  tags.push(value);
+  if (type) {
+    const value = String(type);
+    tags.push(value);
 
-  const parts = value.split(".");
-  if (parts[0]) tags.push(parts[0]);
-  if (parts[1]) tags.push(parts[1]);
+    const parts = value.split(".");
+    if (parts[0]) tags.push(parts[0]);
+    if (parts[1]) tags.push(parts[1]);
+  }
+
+  // Common dimensions
+  const sessionID = payload?.sessionID ?? payload?.info?.sessionID ?? payload?.part?.sessionID;
+  if (typeof sessionID === "string" && sessionID.trim()) tags.push(`session:${sessionID.trim()}`);
+
+  const projectID = payload?.info?.projectID;
+  if (typeof projectID === "string" && projectID.trim()) tags.push(`project:${projectID.trim()}`);
+
+  const messageID = payload?.info?.id ?? payload?.messageID ?? payload?.part?.messageID;
+  if (typeof messageID === "string" && messageID.trim()) tags.push(`message:${messageID.trim()}`);
+
+  const role = payload?.info?.role;
+  if (typeof role === "string" && role.trim()) tags.push(`role:${role.trim()}`);
+
+  const toolName = payload?.tool ?? payload?.part?.tool;
+  if (typeof toolName === "string" && toolName.trim()) tags.push(`tool:${toolName.trim()}`);
+
+  const callID = payload?.callID ?? payload?.part?.callID;
+  if (typeof callID === "string" && callID.trim()) tags.push(`call:${callID.trim()}`);
 
   return Array.from(new Set(tags));
 };
@@ -215,8 +238,21 @@ const shouldCapture = (type) =>
   type === "tui.command.execute" ||
   type === "tui.toast.show";
 
-const levelFor = (type) => {
-  if (type === "session.error") return "ERROR";
+const levelFor = (type, payload) => {
+  if (type === "session.error" || type === "tui.toast.show") return "ERROR";
+
+  if (type === "session.status") {
+    const statusType = payload?.status?.type;
+    if (statusType === "retry") return "WARNING";
+  }
+
+  if (type === "tool.execute.after") {
+    const status = payload?.state?.status;
+    if (status === "error") return "ERROR";
+  }
+
+  if (type === "permission.updated" || type === "permission.replied") return "WARNING";
+
   return "INFO";
 };
 
@@ -369,7 +405,6 @@ export const AOSConnector = async ({ project, directory, worktree }) => {
     currentTraceId = extractTraceId(evt, currentTraceId);
 
     const traceId = currentTraceId || localTraceId;
-    const tags = tagsFor(type);
 
     const properties = evt?.properties ?? evt?.data;
     const payload = sanitizeJson(properties);
@@ -382,6 +417,38 @@ export const AOSConnector = async ({ project, directory, worktree }) => {
 
     if (typeof sessionID === "string" && sessionID.trim()) {
       const state = getSessionState(sessionID);
+
+      // De-dupe noisy session.status events.
+      if (type === "session.status") {
+        const statusType = payload?.status?.type;
+        const fingerprint = statusType ? String(statusType) : "unknown";
+        if (state.lastSessionStatus === fingerprint) return;
+        state.lastSessionStatus = fingerprint;
+      }
+
+      // De-dupe repeated message.updated for the same message id.
+      if (type === "message.updated") {
+        const msgId = payload?.info?.id;
+        if (typeof msgId === "string" && msgId.trim()) {
+          const key = msgId.trim();
+          if (state.seenMessageUpdated.has(key)) return;
+          state.seenMessageUpdated.add(key);
+
+          if (state.seenMessageUpdated.size > 200) state.seenMessageUpdated.clear();
+        }
+      }
+
+      // De-dupe tool.execute events by (callID,type)
+      if (type === "tool.execute.before" || type === "tool.execute.after") {
+        const callID = payload?.callID;
+        if (typeof callID === "string" && callID.trim()) {
+          const key = `${type}:${callID.trim()}`;
+          if (state.seenToolEvents.has(key)) return;
+          state.seenToolEvents.add(key);
+
+          if (state.seenToolEvents.size > 500) state.seenToolEvents.clear();
+        }
+      }
 
       // Use a stable session span id as the root parent for the whole chain.
       parentSpanId = state.sessionSpanId;
@@ -414,14 +481,34 @@ export const AOSConnector = async ({ project, directory, worktree }) => {
       }
     }
 
+    const tags = tagsFor(type, payload);
+    const level = levelFor(type, payload);
+
+    // Project/worktree dimensions for aggregation.
+    const projectId = project?.id;
+    const projectName = project?.name;
+
     const attributes = {
       type,
       tags,
       trace_id: traceId,
-      project: project ? { id: project.id } : undefined,
+      project: project ? { id: projectId, name: projectName } : undefined,
       directory,
       worktree,
       properties: payload,
+      dimensions: {
+        project_id: projectId,
+        project_name: projectName,
+        opencode_project_id: payload?.info?.projectID ?? null,
+        worktree,
+        directory,
+        session_id: typeof sessionID === "string" ? sessionID : null,
+        message_id: payload?.info?.id ?? payload?.part?.messageID ?? payload?.messageID ?? null,
+        role: payload?.info?.role ?? null,
+        tool: payload?.tool ?? payload?.part?.tool ?? null,
+        call_id: payload?.callID ?? payload?.part?.callID ?? null,
+        tool_status: payload?.state?.status ?? payload?.part?.state?.status ?? null,
+      },
       otel: {
         trace_id: traceId,
         span_id: spanId,
@@ -431,7 +518,7 @@ export const AOSConnector = async ({ project, directory, worktree }) => {
     };
 
     enqueue({
-      level: levelFor(type),
+      level,
       logger_name: "opencode",
       message: messageFor(type, evt),
       trace_id: traceId,
