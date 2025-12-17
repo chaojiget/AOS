@@ -1,25 +1,32 @@
 import logging
-from typing import List
+from types import ModuleType
+from typing import Any, List
+
 from aos_storage.models import LogEntry
 
 # Optional Import for tiktoken
 try:
-    import tiktoken
+    import tiktoken as _tiktoken
 except ImportError:
-    tiktoken = None
+    tiktoken: ModuleType | None = None
+else:
+    tiktoken = _tiktoken
+
 
 class EntropyService:
     def __init__(self, model_name: str = "gpt-4-turbo"):
-        self.encoder = None
+        self.encoder: Any | None = None
         if tiktoken:
             try:
                 self.encoder = tiktoken.encoding_for_model(model_name)
             except Exception as e:
-                logging.getLogger("aos.memory").warning(f"Could not load tiktoken model: {e}")
-        
+                logging.getLogger("aos.memory").warning(
+                    f"Could not load tiktoken model: {e}"
+                )
+
         # Constants for "Death" thresholds
-        self.MAX_TOKENS = 128000 
-        self.CRITICAL_ANXIETY = 0.8 
+        self.MAX_TOKENS = 128000
+        self.CRITICAL_ANXIETY = 0.8
 
     def count_tokens(self, text: str) -> int:
         """Calculates the entropy (token count) of a given text."""
@@ -38,15 +45,15 @@ class EntropyService:
         """
         if not logs:
             return 0.0
-            
-        recent_logs = logs[:window_size] # Assuming sorted desc
-        score = 0
+
+        recent_logs = logs[:window_size]  # Assuming sorted desc
+        score = 0.0
         for log in recent_logs:
             if log.level == "ERROR":
                 score += 1.0
             elif log.level == "WARNING":
                 score += 0.5
-        
+
         anxiety = score / len(recent_logs)
         return min(anxiety, 1.0)
 
@@ -57,10 +64,10 @@ class EntropyService:
         # 1. Token Overflow
         if current_tokens > (self.MAX_TOKENS * 0.9):
             return True
-            
+
         # 2. Panic Attack (Too many errors)
         anxiety = self.calculate_anxiety(recent_logs)
         if anxiety >= self.CRITICAL_ANXIETY:
             return True
-            
+
         return False

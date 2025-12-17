@@ -1,6 +1,5 @@
 import requests
 import datetime
-import json
 
 URL = "http://localhost:8080/api/v1/telemetry/logs"
 
@@ -11,15 +10,15 @@ payload = [
         "message": "This is a verification log sent via HTTP API.",
         "trace_id": "test-trace-http-001",
         "timestamp": datetime.datetime.utcnow().isoformat(),
-        "attributes": {"source": "python-script", "foo": "bar"}
+        "attributes": {"source": "python-script", "foo": "bar"},
     },
     {
         "level": "WARNING",
         "logger_name": "manual.test_script",
         "message": "Testing warning color in dashboard.",
         "trace_id": "test-trace-http-001",
-        "timestamp": datetime.datetime.utcnow().isoformat()
-    }
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+    },
 ]
 
 try:

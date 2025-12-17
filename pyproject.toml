@@ -20,3 +20,20 @@ aos_backend = { workspace = true }
 
 [tool.uv.workspace]
 members = ["packages/*", "apps/*"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "ruff>=0.14.9",
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = "(^scripts/|^apps/aos_dashboard/app\\.py$)"
+
+[[tool.mypy.overrides]]
+module = ["aos_backend.main", "aos_memory.odysseus"]
+disable_error_code = ["arg-type", "attr-defined", "union-attr"]

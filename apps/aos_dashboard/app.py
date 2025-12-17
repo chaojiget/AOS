@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 # This is a fallback for some IDEs or direct execution context
 try:
     from aos_storage.db import engine
-    from aos_storage.models import LogEntry, WisdomItem
+    from aos_storage.models import LogEntry
     from aos_memory.entropy import EntropyService
     from aos_memory.odysseus import OdysseusService
 except ImportError as e:
@@ -38,7 +38,10 @@ TRANSLATIONS: Mapping[str, Mapping[Language, str]] = {
     "manual_trace_id": {"zh": "手动 Trace ID", "en": "Manual Trace ID"},
     "last_seen": {"zh": "最近时间", "en": "Last Seen"},
     "last_message": {"zh": "最后消息", "en": "Last Message"},
-    "select_trace_hint": {"zh": "点击左侧列表选择 Trace", "en": "Pick a trace from the list"},
+    "select_trace_hint": {
+        "zh": "点击左侧列表选择 Trace",
+        "en": "Pick a trace from the list",
+    },
     "neural_stream_subtitle": {
         "zh": "实时日志：快速筛选、下钻详情、跳转 Trace 日志链。",
         "en": "Real-time logs with quick filters, drill-down details, and trace chain jump.",
@@ -71,7 +74,10 @@ TRANSLATIONS: Mapping[str, Mapping[Language, str]] = {
     "auto_expand_errors": {"zh": "自动展开错误", "en": "Auto-expand errors"},
     "unknown_span": {"zh": "未知 Span", "en": "Unknown Span"},
     "search": {"zh": "搜索", "en": "Search"},
-    "search_placeholder": {"zh": "消息/Trace/Logger/属性…", "en": "Message / Trace / Logger / Attributes…"},
+    "search_placeholder": {
+        "zh": "消息/Trace/Logger/属性…",
+        "en": "Message / Trace / Logger / Attributes…",
+    },
     "level": {"zh": "级别", "en": "Level"},
     "refresh": {"zh": "刷新", "en": "Refresh"},
     "no_logs": {"zh": "日志流暂无数据。", "en": "No logs found in the memory stream."},
@@ -87,10 +93,19 @@ TRANSLATIONS: Mapping[str, Mapping[Language, str]] = {
     "message": {"zh": "消息", "en": "Message"},
     "attributes_traceback": {"zh": "属性 / 堆栈", "en": "Attributes / Traceback"},
     "open_trace_chain": {"zh": "打开日志链", "en": "Open Trace Chain"},
-    "trace_id_unavailable": {"zh": "该日志没有 Trace ID，无法跳转。", "en": "This log has no Trace ID; cannot jump."},
-    "trace_chain_input_placeholder": {"zh": "输入 Trace ID…", "en": "Paste a Trace ID…"},
+    "trace_id_unavailable": {
+        "zh": "该日志没有 Trace ID，无法跳转。",
+        "en": "This log has no Trace ID; cannot jump.",
+    },
+    "trace_chain_input_placeholder": {
+        "zh": "输入 Trace ID…",
+        "en": "Paste a Trace ID…",
+    },
     "load": {"zh": "加载", "en": "Load"},
-    "trace_chain_empty": {"zh": "该 Trace 暂无日志或已被清理。", "en": "No logs for this trace (or they were purged)."},
+    "trace_chain_empty": {
+        "zh": "该 Trace 暂无日志或已被清理。",
+        "en": "No logs for this trace (or they were purged).",
+    },
     "back_to_stream": {"zh": "返回神经流", "en": "Back to Neural Stream"},
     "state_of_sisyphus": {"zh": "西西弗状态", "en": "The State of Sisyphus"},
     "refresh_physics": {"zh": "刷新指标", "en": "Refresh Physics"},
@@ -104,15 +119,27 @@ TRANSLATIONS: Mapping[str, Mapping[Language, str]] = {
     "context_pressure": {"zh": "上下文压力（熵）", "en": "Context Pressure (Entropy)"},
     "anxiety_error_rate": {"zh": "焦虑（错误率）", "en": "Anxiety (Error Rate)"},
     "laboratory": {"zh": "实验室", "en": "Laboratory"},
-    "simulate_panic": {"zh": "模拟恐慌（注入错误）", "en": "Simulate Panic (Inject Errors)"},
+    "simulate_panic": {
+        "zh": "模拟恐慌（注入错误）",
+        "en": "Simulate Panic (Inject Errors)",
+    },
     "simulate_bloat": {"zh": "模拟上下文膨胀", "en": "Simulate Context Bloat"},
     "search_wisdom_placeholder": {"zh": "关键词或 #标签…", "en": "Keywords or #tags…"},
-    "manual_distillation": {"zh": "手动蒸馏（测试）", "en": "Manual Distillation (Test)"},
+    "manual_distillation": {
+        "zh": "手动蒸馏（测试）",
+        "en": "Manual Distillation (Test)",
+    },
     "trace_id_to_distill": {"zh": "要蒸馏的 Trace ID", "en": "Trace ID to Distill"},
     "distill_trace": {"zh": "蒸馏 Trace", "en": "Distill Trace"},
-    "odysseus_analyzing": {"zh": "Odysseus 正在分析…", "en": "Odysseus is analyzing..."},
+    "odysseus_analyzing": {
+        "zh": "Odysseus 正在分析…",
+        "en": "Odysseus is analyzing...",
+    },
     "wisdom_extracted": {"zh": "已提取智慧", "en": "Wisdom Extracted"},
-    "trace_not_found": {"zh": "Trace 不存在或为空。", "en": "Trace not found or empty."},
+    "trace_not_found": {
+        "zh": "Trace 不存在或为空。",
+        "en": "Trace not found or empty.",
+    },
     "enter_trace_id": {"zh": "请输入 Trace ID。", "en": "Please enter a Trace ID."},
     "vault_empty": {
         "zh": "金库还是空的：西西弗还没学会什么……或还没死够。",
@@ -176,7 +203,9 @@ def parse_attributes(attributes_value: object) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def extract_otel_meta(attributes: dict[str, Any] | None) -> tuple[str | None, str | None, str | None]:
+def extract_otel_meta(
+    attributes: dict[str, Any] | None,
+) -> tuple[str | None, str | None, str | None]:
     if not attributes:
         return None, None, None
     otel = attributes.get("otel")
@@ -245,7 +274,11 @@ def build_trace_span_tree(
 
     for node in list(nodes.values()):
         parent_span_id = node.parent_span_id
-        if parent_span_id and parent_span_id not in nodes and parent_span_id != node.span_id:
+        if (
+            parent_span_id
+            and parent_span_id not in nodes
+            and parent_span_id != node.span_id
+        ):
             nodes[parent_span_id] = TraceSpanNode(
                 span_id=parent_span_id,
                 name=f"{t('unknown_span')} · {parent_span_id[:8]}",
@@ -254,10 +287,16 @@ def build_trace_span_tree(
     roots: list[TraceSpanNode] = []
     for node in nodes.values():
         parent_span_id = node.parent_span_id
-        if parent_span_id and parent_span_id in nodes and parent_span_id != node.span_id:
+        if (
+            parent_span_id
+            and parent_span_id in nodes
+            and parent_span_id != node.span_id
+        ):
             parent = nodes[parent_span_id]
             parent.children.append(node)
-            if node.start_time and (parent.start_time is None or node.start_time < parent.start_time):
+            if node.start_time and (
+                parent.start_time is None or node.start_time < parent.start_time
+            ):
                 parent.start_time = node.start_time
         else:
             roots.append(node)
@@ -311,7 +350,11 @@ def render_log_expander(
         icon = "🔥"
 
     time_value = log.get("Time")
-    time_label = time_value.strftime("%H:%M:%S") if hasattr(time_value, "strftime") else str(time_value)
+    time_label = (
+        time_value.strftime("%H:%M:%S")
+        if hasattr(time_value, "strftime")
+        else str(time_value)
+    )
     logger_value = log.get("Logger", "")
     message_value = str(log.get("Message", ""))
     summary = f"{icon} [{time_label}] {format_level(level)} · {logger_value} — {message_value[:90]}"
@@ -377,7 +420,9 @@ def render_span_node(
 
     with st.expander(label, expanded=expanded):
         parent_label = node.parent_span_id or "N/A"
-        st.caption(f"{t('span_id')}: `{node.span_id}` · {t('parent_span_id')}: `{parent_label}`")
+        st.caption(
+            f"{t('span_id')}: `{node.span_id}` · {t('parent_span_id')}: `{parent_label}`"
+        )
 
         logs = node.logs
         if errors_only:
@@ -421,6 +466,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
 
 def apply_glassmorphism_theme() -> None:
     st.markdown(
@@ -592,7 +638,12 @@ st.session_state.setdefault("trace_chain_focus_log_id", None)
 st.session_state.setdefault("neural_stream_view_mode", "list")
 st.session_state.setdefault("neural_stream_auto_expand_errors", True)
 
-MODULES: tuple[str, ...] = ("neural_stream", "trace_chain", "entropy_monitor", "memory_vault")
+MODULES: tuple[str, ...] = (
+    "neural_stream",
+    "trace_chain",
+    "entropy_monitor",
+    "memory_vault",
+)
 MODULE_ICONS: Mapping[str, str] = {
     "neural_stream": "🧠",
     "trace_chain": "🧵",
@@ -606,7 +657,9 @@ def module_label(module: str) -> str:
     return f"{icon} {t(module)}"
 
 
-def jump_to_trace_chain(trace_id: str | None, *, focus_log_id: int | None = None) -> None:
+def jump_to_trace_chain(
+    trace_id: str | None, *, focus_log_id: int | None = None
+) -> None:
     if not trace_id or trace_id == "N/A":
         st.warning(t("trace_id_unavailable"))
         return
@@ -636,6 +689,7 @@ with st.sidebar:
         format_func=module_label,
     )
 
+
 # --- Database Helper ---
 @st.cache_data(ttl=2)  # Auto-refresh every 2 seconds
 def fetch_logs():
@@ -645,17 +699,18 @@ def fetch_logs():
         data = [
             {
                 "id": r.id,
-                "Time": r.timestamp, 
-                "Level": r.level, 
-                "Logger": r.logger_name, 
+                "Time": r.timestamp,
+                "Level": r.level,
+                "Logger": r.logger_name,
                 "Message": r.message,
                 "Trace ID": r.trace_id if r.trace_id else "N/A",
                 "Span ID": r.span_id if r.span_id else "N/A",
-                "Attributes": r.attributes
+                "Attributes": r.attributes,
             }
             for r in results
         ]
         return pd.DataFrame(data)
+
 
 @st.cache_data(ttl=2)
 def fetch_recent_traces(limit: int = 80) -> pd.DataFrame:
@@ -714,6 +769,7 @@ def fetch_recent_traces(limit: int = 80) -> pd.DataFrame:
 
         return pd.DataFrame(traces)
 
+
 @st.cache_data(ttl=2)
 def fetch_trace_chain(trace_id: str) -> pd.DataFrame:
     with Session(engine) as session:
@@ -738,10 +794,11 @@ def fetch_trace_chain(trace_id: str) -> pd.DataFrame:
         ]
         return pd.DataFrame(data)
 
+
 # --- Neural Stream Page ---
 if page == "neural_stream":
     render_hero("🧠", t("neural_stream"), t("neural_stream_subtitle"))
-    
+
     with st.container(border=True):
         filter_col1, filter_col2, filter_col3 = st.columns([3, 1.2, 1])
         search_term = filter_col1.text_input(
@@ -764,7 +821,7 @@ if page == "neural_stream":
             fetch_logs.clear()
 
     df = fetch_logs()
-    
+
     if df.empty:
         st.info(t("no_logs"))
     else:
@@ -789,7 +846,7 @@ if page == "neural_stream":
         total_logs = df.shape[0]
         error_count = df[df["Level"] == "ERROR"].shape[0]
         active_traces = df["Trace ID"].nunique()
-        
+
         col1.metric(t("recent_entries"), total_logs)
         col2.metric(t("errors_last_100"), error_count, delta_color="inverse")
         col3.metric(t("active_traces"), active_traces)
@@ -801,7 +858,9 @@ if page == "neural_stream":
             t("view_mode"),
             options=["list", "table"],
             key="neural_stream_view_mode",
-            format_func=lambda mode: t("view_list") if mode == "list" else t("view_table"),
+            format_func=lambda mode: t("view_list")
+            if mode == "list"
+            else t("view_table"),
             label_visibility="collapsed",
         )
         auto_expand_errors = view_col2.checkbox(
@@ -846,7 +905,9 @@ if page == "neural_stream":
                     "Level": st.column_config.TextColumn(t("level"), width="small"),
                     "Logger": st.column_config.TextColumn(t("logger"), width="medium"),
                     "Message": st.column_config.TextColumn(t("message"), width="large"),
-                    "Trace ID": st.column_config.TextColumn(t("trace_id"), width="medium"),
+                    "Trace ID": st.column_config.TextColumn(
+                        t("trace_id"), width="medium"
+                    ),
                 },
             )
 
@@ -859,10 +920,14 @@ if page == "neural_stream":
                     st.subheader(t("log_details"))
                     meta1, meta2, meta3, meta4 = st.columns([1.1, 1, 1.4, 2])
                     meta1.caption(f"{t('time')}: `{selected_row['Time']}`")
-                    meta2.caption(f"{t('level')}: `{format_level(selected_row['Level'])}`")
+                    meta2.caption(
+                        f"{t('level')}: `{format_level(selected_row['Level'])}`"
+                    )
                     meta3.caption(f"{t('trace_id')}: `{selected_row['Trace ID']}`")
                     meta4.caption(f"{t('logger')}: `{selected_row['Logger']}`")
-                    st.caption(f"{t('span_id')}: `{selected_row.get('Span ID', 'N/A')}`")
+                    st.caption(
+                        f"{t('span_id')}: `{selected_row.get('Span ID', 'N/A')}`"
+                    )
 
                     st.code(selected_row["Message"], language="text")
                     trace_id = selected_row.get("Trace ID")
@@ -874,7 +939,9 @@ if page == "neural_stream":
                     ):
                         jump_to_trace_chain(
                             trace_id,
-                            focus_log_id=focus_log_id if isinstance(focus_log_id, int) else None,
+                            focus_log_id=focus_log_id
+                            if isinstance(focus_log_id, int)
+                            else None,
                         )
 
                     if selected_row.get("Attributes"):
@@ -895,7 +962,9 @@ elif page == "trace_chain":
     with st.container(border=True):
         header_col1, header_col2 = st.columns([3, 1])
         header_col1.subheader(t("trace_list"))
-        if header_col2.button(t("refresh"), use_container_width=True, key="trace_chain_refresh_traces"):
+        if header_col2.button(
+            t("refresh"), use_container_width=True, key="trace_chain_refresh_traces"
+        ):
             fetch_recent_traces.clear()
 
         traces_df = fetch_recent_traces()
@@ -904,7 +973,9 @@ elif page == "trace_chain":
             trace_view = pd.DataFrame(
                 {
                     "Last": traces_df["Last Time"].apply(
-                        lambda dt: dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(dt, "strftime") else str(dt)
+                        lambda dt: dt.strftime("%Y-%m-%d %H:%M:%S")
+                        if hasattr(dt, "strftime")
+                        else str(dt)
                     ),
                     "Errors": traces_df["Errors"],
                     "Entries": traces_df["Entries"],
@@ -930,8 +1001,12 @@ elif page == "trace_chain":
                     "Errors": st.column_config.TextColumn(t("errors"), width="small"),
                     "Entries": st.column_config.TextColumn(t("entries"), width="small"),
                     "Span": st.column_config.TextColumn(t("span_name"), width="medium"),
-                    "Message": st.column_config.TextColumn(t("last_message"), width="large"),
-                    "Trace ID": st.column_config.TextColumn(t("trace_id"), width="medium", max_chars=36),
+                    "Message": st.column_config.TextColumn(
+                        t("last_message"), width="large"
+                    ),
+                    "Trace ID": st.column_config.TextColumn(
+                        t("trace_id"), width="medium", max_chars=36
+                    ),
                 },
             )
 
@@ -947,9 +1022,16 @@ elif page == "trace_chain":
         c1, c2, c3 = st.columns([3, 1, 1.2])
         current_trace_id = str(st.session_state.get("trace_chain_trace_id", "")).strip()
         c1.caption(f"{t('trace_id')}: `{current_trace_id or '—'}`")
-        if c2.button(t("load"), use_container_width=True, disabled=not current_trace_id, key="trace_chain_load"):
+        if c2.button(
+            t("load"),
+            use_container_width=True,
+            disabled=not current_trace_id,
+            key="trace_chain_load",
+        ):
             fetch_trace_chain.clear()
-        if c3.button(t("back_to_stream"), use_container_width=True, key="trace_chain_back"):
+        if c3.button(
+            t("back_to_stream"), use_container_width=True, key="trace_chain_back"
+        ):
             st.session_state["module"] = "neural_stream"
             st.rerun()
 
@@ -977,10 +1059,14 @@ elif page == "trace_chain":
             t("view_mode"),
             options=["tree", "flat"],
             key="trace_chain_view_mode",
-            format_func=lambda mode: t("view_tree") if mode == "tree" else t("view_flat"),
+            format_func=lambda mode: t("view_tree")
+            if mode == "tree"
+            else t("view_flat"),
             label_visibility="collapsed",
         )
-        errors_only = view_col2.checkbox(t("errors_only"), key="trace_chain_errors_only")
+        errors_only = view_col2.checkbox(
+            t("errors_only"), key="trace_chain_errors_only"
+        )
         auto_expand_errors = view_col3.checkbox(
             t("auto_expand_errors"),
             key="trace_chain_auto_expand_errors",
@@ -1018,7 +1104,9 @@ elif page == "trace_chain":
             focus_log_id_int = focus_id if isinstance(focus_id, int) else None
 
             if view_mode == "tree":
-                roots, unscoped_logs = build_trace_span_tree(df_chain, focus_log_id=focus_log_id_int)
+                roots, unscoped_logs = build_trace_span_tree(
+                    df_chain, focus_log_id=focus_log_id_int
+                )
                 for root in roots:
                     render_span_node(
                         root,
@@ -1034,16 +1122,35 @@ elif page == "trace_chain":
                 )
                 if visible_unscoped:
                     should_expand_unscoped = bool(
-                        (focus_log_id_int is not None and any(log.get("id") == focus_log_id_int for log in visible_unscoped))
-                        or (auto_expand_errors and any(log.get("Level") == "ERROR" for log in visible_unscoped))
+                        (
+                            focus_log_id_int is not None
+                            and any(
+                                log.get("id") == focus_log_id_int
+                                for log in visible_unscoped
+                            )
+                        )
+                        or (
+                            auto_expand_errors
+                            and any(
+                                log.get("Level") == "ERROR" for log in visible_unscoped
+                            )
+                        )
                     )
-                    with st.expander(t("unscoped_logs"), expanded=should_expand_unscoped):
+                    with st.expander(
+                        t("unscoped_logs"), expanded=should_expand_unscoped
+                    ):
                         for log in visible_unscoped:
                             render_log_expander(
                                 log,
                                 expanded=bool(
-                                    (focus_log_id_int is not None and log.get("id") == focus_log_id_int)
-                                    or (auto_expand_errors and log.get("Level") == "ERROR")
+                                    (
+                                        focus_log_id_int is not None
+                                        and log.get("id") == focus_log_id_int
+                                    )
+                                    or (
+                                        auto_expand_errors
+                                        and log.get("Level") == "ERROR"
+                                    )
                                 ),
                             )
             else:
@@ -1053,7 +1160,10 @@ elif page == "trace_chain":
                     render_log_expander(
                         log,
                         expanded=bool(
-                            (focus_log_id_int is not None and log.get("id") == focus_log_id_int)
+                            (
+                                focus_log_id_int is not None
+                                and log.get("id") == focus_log_id_int
+                            )
                             or (auto_expand_errors and log.get("Level") == "ERROR")
                         ),
                     )
@@ -1061,15 +1171,15 @@ elif page == "trace_chain":
 # --- Entropy Monitor ---
 elif page == "entropy_monitor":
     render_hero("📉", t("entropy_monitor"), t("entropy_monitor_subtitle"))
-    
+
     st.markdown(f"### {t('state_of_sisyphus')}")
-    
+
     # Refresh logic similar to logs
     if st.button(t("refresh_physics")):
         fetch_logs.clear()
-        
+
     df = fetch_logs()
-    
+
     if df.empty:
         st.warning(t("no_data"))
     else:
@@ -1079,25 +1189,29 @@ elif page == "entropy_monitor":
         combined_text = " ".join(df["Message"].tolist())
         current_tokens = entropy_service.count_tokens(combined_text)
         max_tokens = entropy_service.MAX_TOKENS
-        
+
         # 2. Calculate Anxiety
         # Convert df back to LogEntry objects for the service (simplified)
         recent_log_entries = [
-            LogEntry(level=row["Level"], message=row["Message"]) 
+            LogEntry(level=row["Level"], message=row["Message"])
             for _, row in df.head(20).iterrows()
         ]
         anxiety_score = entropy_service.calculate_anxiety(recent_log_entries)
-        
+
         # 3. Decision
         should_reset = entropy_service.should_reset(current_tokens, recent_log_entries)
-        
+
         # --- Visualization ---
-        
+
         # Top Metrics
         c1, c2, c3 = st.columns(3)
-        c1.metric(t("token_entropy"), f"{current_tokens} / {max_tokens}", f"{current_tokens/max_tokens:.1%}")
+        c1.metric(
+            t("token_entropy"),
+            f"{current_tokens} / {max_tokens}",
+            f"{current_tokens / max_tokens:.1%}",
+        )
         c2.metric(t("anxiety_level"), f"{anxiety_score:.2f}", delta_color="inverse")
-        
+
         status_color = "green"
         status_text = t("healthy")
         if should_reset:
@@ -1106,23 +1220,24 @@ elif page == "entropy_monitor":
         elif anxiety_score > 0.5:
             status_color = "orange"
             status_text = t("anxious")
-            
+
         c3.markdown(f"**{t('status')}**: :{status_color}[{status_text}]")
-        
+
         # Visual Bars
         st.caption(t("context_pressure"))
         st.progress(min(current_tokens / max_tokens, 1.0))
-        
+
         st.caption(t("anxiety_error_rate"))
         st.progress(anxiety_score)
-        
+
         # Mock Tools
         st.divider()
         st.subheader(f"🧪 {t('laboratory')}")
         c_mock1, c_mock2 = st.columns(2)
-        
+
         if c_mock1.button(t("simulate_panic")):
             import logging
+
             # We need to use the logger that writes to DB
             logger = logging.getLogger("aos.simulator")
             logger.error("Simulated PANIC attack!")
@@ -1130,17 +1245,18 @@ elif page == "entropy_monitor":
             logger.error("Core meltdown imminent.")
             fetch_logs.clear()
             st.rerun()
-            
+
         if c_mock2.button(t("simulate_bloat")):
             import logging
+
             logger = logging.getLogger("aos.simulator")
-            logger.info("A" * 5000) # Inject huge log
+            logger.info("A" * 5000)  # Inject huge log
             fetch_logs.clear()
             st.rerun()
 
 elif page == "memory_vault":
     render_hero("🏛️", t("memory_vault"), t("memory_vault_subtitle"))
-    
+
     # --- Top Control Bar ---
     with st.container(border=True):
         c1, c2 = st.columns([3, 1])
@@ -1151,7 +1267,7 @@ elif page == "memory_vault":
         )
         if c2.button(t("refresh"), use_container_width=True):
             st.rerun()
-    
+
     # Mock / Test: Manual Distillation
     with st.expander(f"🛠️ {t('manual_distillation')}"):
         target_trace = st.text_input(t("trace_id_to_distill"))
@@ -1177,22 +1293,22 @@ elif page == "memory_vault":
         items = odysseus_service.search_wisdom(query)
     else:
         items = odysseus_service.get_all_wisdom()
-        
+
     if not items:
         st.info(t("vault_empty"))
-    
+
     for item in items:
         with st.container(border=True):
             col_a, col_b = st.columns([4, 1])
             col_a.subheader(f"📜 {item.title}")
             col_b.caption(item.created_at.strftime("%Y-%m-%d %H:%M"))
-            
+
             st.markdown(item.content)
-            
+
             # Tags
             tags = item.tags.split(",")
             st.markdown(" ".join([f"`#{t.strip()}`" for t in tags]))
-            
+
             # Drill Down
             if st.button(f"🔍 {t('view_source_trace')}", key=f"btn_{item.id}"):
                 jump_to_trace_chain(item.source_trace_id)

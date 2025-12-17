@@ -14,6 +14,8 @@ node_modules/
 
 # Environment variables
 .env
+.env.local
+.env.*.local
 /backend/.env
 
 # Logs
@@ -66,4 +68,3 @@ verify_output.txt
 .opencode/*
 !.opencode/plugin/
 !.opencode/plugin/**
-

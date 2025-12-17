@@ -1,5 +1,6 @@
 import logging
 import sys
+
 # Ensure packages are found
 sys.path.append("packages/aos_telemetry/src")
 sys.path.append("packages/aos_storage/src")
@@ -8,6 +9,7 @@ from aos_telemetry.config import setup_telemetry
 from aos_storage.db import get_session
 from aos_storage.models import LogEntry
 from sqlmodel import select
+
 
 def main():
     # 1. Setup
@@ -35,10 +37,11 @@ def main():
     if not results:
         print("❌ No logs found in DB!")
         exit(1)
-    
+
     print(f"✅ Found {len(results)} logs in DB.")
     for log in results[:3]:
         print(f"[{log.id}] {log.level} | Trace: {log.trace_id} | Msg: {log.message}")
+
 
 if __name__ == "__main__":
     main()

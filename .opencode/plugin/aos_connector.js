@@ -18,6 +18,63 @@ const generateLocalTraceId = () => {
   return `oc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 };
 
+const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
+const randomHex = (bytesLength) => {
+  try {
+    if (typeof globalThis?.crypto?.getRandomValues === "function") {
+      const bytes = new Uint8Array(bytesLength);
+      globalThis.crypto.getRandomValues(bytes);
+      return toHex(bytes);
+    }
+
+    if (typeof globalThis?.crypto?.randomUUID === "function") {
+      const uuidHex = globalThis.crypto.randomUUID().replace(/-/g, "");
+      return uuidHex.slice(0, bytesLength * 2).padEnd(bytesLength * 2, "0");
+    }
+  } catch {}
+
+  let out = "";
+  for (let i = 0; i < bytesLength * 2; i++) {
+    out += Math.floor(Math.random() * 16).toString(16);
+  }
+  return out;
+};
+
+const generateSpanId = () => randomHex(8);
+
+const sessionStates = new Map();
+
+const getSessionState = (sessionID) => {
+  let state = sessionStates.get(sessionID);
+  if (state) return state;
+
+  state = {
+    sessionID,
+    sessionSpanId: generateSpanId(),
+    messageSpans: new Map(),
+    toolSpans: new Map(),
+    callToMessage: new Map(),
+    lastAssistantMessageID: null,
+  };
+
+  sessionStates.set(sessionID, state);
+  return state;
+};
+
+const getOrCreateSpan = (spanMap, key) => {
+  if (typeof key !== "string" || !key.trim()) return null;
+
+  const normalized = key.trim();
+  let spanId = spanMap.get(normalized);
+  if (!spanId) {
+    spanId = generateSpanId();
+    spanMap.set(normalized, spanId);
+  }
+
+  return spanId;
+};
+
 const tagsFor = (type) => {
   const tags = ["opencode"];
   if (!type) return tags;
@@ -80,17 +137,34 @@ const sanitizeJson = (value) => {
 const extractTraceId = (event, fallback) => {
   if (!event || typeof event !== "object") return fallback ?? null;
 
+  const type = event.type;
   const properties = event.properties ?? event.data ?? {};
 
-  // Prefer explicit session identifiers (SDK shape)
-  const sessionID =
-    properties.sessionID ??
-    properties.sessionId ??
-    properties.info?.id ?? // session.*
-    properties.info?.sessionID ?? // message.updated
-    properties.part?.sessionID ?? // message.part.updated
-    properties.part?.sessionId ??
-    null;
+  let sessionID = null;
+
+  if (type === "session.created" || type === "session.updated" || type === "session.deleted") {
+    sessionID = properties.info?.id;
+  } else if (type === "message.updated") {
+    sessionID = properties.info?.sessionID;
+  } else if (type === "message.part.updated") {
+    sessionID = properties.part?.sessionID;
+  } else if (type === "message.part.removed" || type === "message.removed") {
+    sessionID = properties.sessionID;
+  } else if (type === "session.error" || type === "session.idle" || type === "session.status" || type === "session.compacted" || type === "session.diff") {
+    sessionID = properties.sessionID;
+  } else if (
+    type === "command.executed" ||
+    type === "todo.updated" ||
+    type === "permission.updated" ||
+    type === "permission.replied" ||
+    type === "tool.execute.before" ||
+    type === "tool.execute.after" ||
+    type === "chat.message"
+  ) {
+    sessionID = properties.sessionID;
+  } else {
+    sessionID = properties.sessionID ?? properties.sessionId ?? null;
+  }
 
   if (typeof sessionID === "string" && sessionID.trim()) return sessionID.trim();
 
@@ -150,42 +224,66 @@ const messageFor = (type, event) => {
   const data = event?.properties ?? event?.data ?? {};
 
   if (type === "command.executed") {
-    const cmd = data.command ?? data.cmd ?? data.name ?? data.input;
-    return `command.executed${cmd ? `: ${truncateString(String(cmd), 200)}` : ""}`;
+    const name = data.name;
+    const args = data.arguments;
+    return `command.executed${name ? `: ${name}` : ""}${args ? ` ${truncateString(String(args), 120)}` : ""}`;
   }
 
   if (type === "file.edited") {
-    const filePath = data.filePath ?? data.path ?? data.file;
+    const filePath = data.file;
     return `file.edited${filePath ? `: ${truncateString(String(filePath), 200)}` : ""}`;
   }
 
+  if (type === "file.watcher.updated") {
+    const filePath = data.file;
+    const fileEvent = data.event;
+    return `file.watcher.updated${fileEvent ? `(${fileEvent})` : ""}${filePath ? `: ${truncateString(String(filePath), 200)}` : ""}`;
+  }
+
   if (type === "tool.execute.before" || type === "tool.execute.after") {
-    const tool = data.tool ?? data.name;
+    const tool = data.tool;
     return `${type}${tool ? `: ${truncateString(String(tool), 200)}` : ""}`;
   }
 
   if (type === "tui.prompt.append") {
-    const text = data.text ?? data.value ?? data.prompt;
+    const text = data.text;
     return `tui.prompt.append${text ? `: ${truncateString(String(text), 200)}` : ""}`;
+  }
+
+  if (type === "tui.command.execute") {
+    const command = data.command;
+    return `tui.command.execute${command ? `: ${truncateString(String(command), 200)}` : ""}`;
+  }
+
+  if (type === "tui.toast.show") {
+    const variant = data.variant;
+    const toastMessage = data.message;
+    return `tui.toast.show${variant ? `(${variant})` : ""}${toastMessage ? `: ${truncateString(String(toastMessage), 200)}` : ""}`;
   }
 
   if (type === "message.part.updated" || type === "message.part.removed") {
     const part = data.part;
     const sessionID = part?.sessionID;
     const messageID = part?.messageID;
-    const delta = data.delta;
 
-    let text = part?.type === "text" ? part.text : undefined;
+    const delta = data.delta;
+    const partType = part?.type;
+
+    let text = partType === "text" ? part.text : undefined;
     if (!text && typeof delta === "string") text = delta;
 
-    return `${type}${sessionID ? ` [${sessionID}]` : ""}${messageID ? ` ${messageID}` : ""}${text ? `: ${truncateString(String(text), 200)}` : ""}`;
+    const toolName = partType === "tool" ? part.tool : undefined;
+    const status = partType === "tool" ? part.state?.status : undefined;
+
+    return `${type}${sessionID ? ` [${sessionID}]` : ""}${messageID ? ` ${messageID}` : ""}${partType ? ` <${partType}>` : ""}${toolName ? ` ${toolName}` : ""}${status ? `(${status})` : ""}${text ? `: ${truncateString(String(text), 200)}` : ""}`;
   }
 
   if (type === "message.updated") {
     const info = data.info;
     const sessionID = info?.sessionID;
     const role = info?.role;
-    return `message.updated${sessionID ? ` [${sessionID}]` : ""}${role ? `(${role})` : ""}`;
+    const messageID = info?.id;
+    return `message.updated${sessionID ? ` [${sessionID}]` : ""}${role ? `(${role})` : ""}${messageID ? ` ${messageID}` : ""}`;
   }
 
   return type || "unknown.event";
@@ -275,24 +373,69 @@ export const AOSConnector = async ({ project, directory, worktree }) => {
 
     const properties = evt?.properties ?? evt?.data;
     const payload = sanitizeJson(properties);
+    if (payload == null) return;
+
+    const sessionID = currentTraceId;
+
+    let spanId = null;
+    let parentSpanId = null;
+
+    if (typeof sessionID === "string" && sessionID.trim()) {
+      const state = getSessionState(sessionID);
+
+      // Use a stable session span id as the root parent for the whole chain.
+      parentSpanId = state.sessionSpanId;
+      if (type === "session.created" || type === "session.updated" || type === "session.status" || type === "session.idle") {
+        spanId = state.sessionSpanId;
+        parentSpanId = null;
+      } else if (type === "message.updated") {
+        const messageID = payload?.info?.id;
+        spanId = getOrCreateSpan(state.messageSpans, messageID);
+
+        if (payload?.info?.role === "assistant" && typeof messageID === "string" && messageID.trim()) {
+          state.lastAssistantMessageID = messageID.trim();
+        }
+      } else if (type === "message.part.updated") {
+        const messageID = payload?.part?.messageID;
+        spanId = getOrCreateSpan(state.messageSpans, messageID);
+
+        const callID = payload?.part?.callID;
+        if (typeof callID === "string" && callID.trim() && typeof messageID === "string" && messageID.trim()) {
+          state.callToMessage.set(callID.trim(), messageID.trim());
+        }
+      } else if (type === "tool.execute.before" || type === "tool.execute.after") {
+        const callID = payload?.callID;
+        spanId = getOrCreateSpan(state.toolSpans, callID);
+
+        const mappedMessageID = typeof callID === "string" ? state.callToMessage.get(callID) : null;
+        const parentMessageID = mappedMessageID || state.lastAssistantMessageID;
+        const parentMessageSpan = getOrCreateSpan(state.messageSpans, parentMessageID);
+        if (parentMessageSpan) parentSpanId = parentMessageSpan;
+      }
+    }
 
     const attributes = {
       type,
       tags,
       trace_id: traceId,
-      project: project ? { id: project.id, name: project.name } : undefined,
+      project: project ? { id: project.id } : undefined,
       directory,
       worktree,
       properties: payload,
+      otel: {
+        trace_id: traceId,
+        span_id: spanId,
+        parent_span_id: parentSpanId,
+        span_name: type,
+      },
     };
-
-    if (payload == null) return;
 
     enqueue({
       level: levelFor(type),
       logger_name: "opencode",
       message: messageFor(type, evt),
       trace_id: traceId,
+      span_id: spanId,
       timestamp: new Date().toISOString(),
       attributes,
     });

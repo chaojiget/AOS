@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from sqlmodel import Field, SQLModel
 
+
 class LogEntry(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -11,17 +12,20 @@ class LogEntry(SQLModel, table=True):
     logger_name: str
     message: str
     # Storing attributes as a simple string/JSON for now to keep it compatible with SQLite
-    attributes: Optional[str] = None 
+    attributes: Optional[str] = None
+
 
 class WisdomItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     source_trace_id: Optional[str] = None
-    
+
     # The distilled knowledge
     title: str = Field(description="Short summary of the lesson learned")
     content: str = Field(description="Detailed explanation or context")
-    tags: str = Field(description="Comma-separated tags, e.g., 'error-fix, python, optimization'")
-    
+    tags: str = Field(
+        description="Comma-separated tags, e.g., 'error-fix, python, optimization'"
+    )
+
     # Metadata for vector search (future)
     embedding_id: Optional[str] = None
