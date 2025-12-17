@@ -1,24 +1,27 @@
-from typing import Optional
 from datetime import datetime
-from sqlmodel import Field, SQLModel, JSON
-from sqlalchemy import Column
+from typing import Optional
+from sqlmodel import Field, SQLModel
 
 class LogEntry(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    trace_id: str = Field(index=True)
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    trace_id: Optional[str] = None
     span_id: Optional[str] = None
     level: str
+    logger_name: str
     message: str
-    attributes: str = Field(default="{}") # Stored as JSON string
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    # Storing attributes as a simple string/JSON for now to keep it compatible with SQLite
+    attributes: Optional[str] = None 
 
 class WisdomItem(SQLModel, table=True):
-    """
-    Long-term memory (Odysseus).
-    """
     id: Optional[int] = Field(default=None, primary_key=True)
-    content: str
-    tags: str = Field(default="[]") # JSON list of tags
-    embedding: Optional[str] = None # Placeholder for when we add vectors
-    entropy_score: float = Field(default=0.0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    source_trace_id: Optional[str] = None
+    
+    # The distilled knowledge
+    title: str = Field(description="Short summary of the lesson learned")
+    content: str = Field(description="Detailed explanation or context")
+    tags: str = Field(description="Comma-separated tags, e.g., 'error-fix, python, optimization'")
+    
+    # Metadata for vector search (future)
+    embedding_id: Optional[str] = None

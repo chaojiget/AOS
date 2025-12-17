@@ -9,8 +9,21 @@ dependencies = [
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp",
     "opentelemetry-instrumentation",
+    "aos_storage",
 ]
+
+[project.entry-points]
+# If needed later
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aos_telemetry"]
+
+[tool.uv.sources]
+aos_storage = { workspace = true }

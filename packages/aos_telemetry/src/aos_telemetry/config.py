@@ -24,7 +24,22 @@ def setup_telemetry(service_name: str, log_level=logging.INFO):
     # 4. Set Global
     trace.set_tracer_provider(provider)
 
-    # 5. Basic Logging Config
-    logging.basicConfig(level=log_level, format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')
+    # 5. DB Init (Ensure tables exist)
+    from aos_storage.db import init_db
+    init_db()
+
+    # 6. Basic Logging Config
+    # Add DBLogHandler to the root logger
+    from .db_handler import DBLogHandler
+    
+    # Create handlers list
+    handlers = [logging.StreamHandler(), DBLogHandler()]
+    
+    logging.basicConfig(
+        level=log_level, 
+        format='%(asctime)s [%(name)s] %(levelname)s: %(message)s',
+        handlers=handlers,
+        force=True # Ensure we override previous configs
+    )
     
     return trace.get_tracer(service_name)

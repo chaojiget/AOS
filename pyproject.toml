@@ -3,7 +3,20 @@ name = "aos-monorepo"
 version = "0.2.0"
 description = "AOS: Agent Operating System (Inverse Entropy Edition)"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "aos_telemetry",
+    "aos_storage",
+    "aos_dashboard",
+    "aos_memory",
+    "aos_backend",
+]
+
+[tool.uv.sources]
+aos_telemetry = { workspace = true }
+aos_storage = { workspace = true }
+aos_dashboard = { workspace = true }
+aos_memory = { workspace = true }
+aos_backend = { workspace = true }
 
 [tool.uv.workspace]
 members = ["packages/*", "apps/*"]

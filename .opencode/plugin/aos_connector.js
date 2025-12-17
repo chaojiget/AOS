@@ -80,7 +80,22 @@ const sanitizeJson = (value) => {
 const extractTraceId = (event, fallback) => {
   if (!event || typeof event !== "object") return fallback ?? null;
 
-  const session = event.session ?? event.data?.session;
+  const properties = event.properties ?? event.data ?? {};
+
+  // Prefer explicit session identifiers (SDK shape)
+  const sessionID =
+    properties.sessionID ??
+    properties.sessionId ??
+    properties.info?.id ?? // session.*
+    properties.info?.sessionID ?? // message.updated
+    properties.part?.sessionID ?? // message.part.updated
+    properties.part?.sessionId ??
+    null;
+
+  if (typeof sessionID === "string" && sessionID.trim()) return sessionID.trim();
+
+  // Backwards-compat / ad-hoc shapes
+  const session = event.session ?? properties.session;
   if (typeof session === "string" && session.trim()) return session.trim();
 
   const traceId =
@@ -88,11 +103,11 @@ const extractTraceId = (event, fallback) => {
     event.traceId ??
     event.session_id ??
     event.sessionId ??
-    event.data?.trace_id ??
-    event.data?.traceId ??
-    event.data?.session_id ??
-    event.data?.sessionId ??
-    event.data?.session?.id ??
+    properties.trace_id ??
+    properties.traceId ??
+    properties.session_id ??
+    properties.sessionId ??
+    properties.session?.id ??
     event.session?.id ??
     fallback ??
     null;
@@ -132,7 +147,7 @@ const levelFor = (type) => {
 };
 
 const messageFor = (type, event) => {
-  const data = event?.data ?? {};
+  const data = event?.properties ?? event?.data ?? {};
 
   if (type === "command.executed") {
     const cmd = data.command ?? data.cmd ?? data.name ?? data.input;
@@ -155,15 +170,22 @@ const messageFor = (type, event) => {
   }
 
   if (type === "message.part.updated" || type === "message.part.removed") {
-    const role = data.role;
-    const text = data.text ?? data.value ?? data.content;
-    return `${type}${role ? `(${role})` : ""}${text ? `: ${truncateString(String(text), 200)}` : ""}`;
+    const part = data.part;
+    const sessionID = part?.sessionID;
+    const messageID = part?.messageID;
+    const delta = data.delta;
+
+    let text = part?.type === "text" ? part.text : undefined;
+    if (!text && typeof delta === "string") text = delta;
+
+    return `${type}${sessionID ? ` [${sessionID}]` : ""}${messageID ? ` ${messageID}` : ""}${text ? `: ${truncateString(String(text), 200)}` : ""}`;
   }
 
   if (type === "message.updated") {
-    const role = data.role;
-    const text = data.text ?? data.value ?? data.content;
-    return `message.updated${role ? `(${role})` : ""}${text ? `: ${truncateString(String(text), 200)}` : ""}`;
+    const info = data.info;
+    const sessionID = info?.sessionID;
+    const role = info?.role;
+    return `message.updated${sessionID ? ` [${sessionID}]` : ""}${role ? `(${role})` : ""}`;
   }
 
   return type || "unknown.event";
@@ -251,6 +273,9 @@ export const AOSConnector = async ({ project, directory, worktree }) => {
     const traceId = currentTraceId || localTraceId;
     const tags = tagsFor(type);
 
+    const properties = evt?.properties ?? evt?.data;
+    const payload = sanitizeJson(properties);
+
     const attributes = {
       type,
       tags,
@@ -258,8 +283,10 @@ export const AOSConnector = async ({ project, directory, worktree }) => {
       project: project ? { id: project.id, name: project.name } : undefined,
       directory,
       worktree,
-      data: sanitizeJson(evt?.data),
+      properties: payload,
     };
+
+    if (payload == null) return;
 
     enqueue({
       level: levelFor(type),
