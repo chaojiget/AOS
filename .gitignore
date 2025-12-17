@@ -44,3 +44,26 @@ next-env.d.ts
 *.pem
 backend/var/checkpoints/*
 backend/db/data/*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local artifacts
+*.log
+*.db
+*.sqlite
+*.sqlite3
+verify_output.txt
+
+# OpenCode local state (keep plugins only)
+.opencode/*
+!.opencode/plugin/
+!.opencode/plugin/**
+
