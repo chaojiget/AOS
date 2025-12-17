@@ -1,0 +1,9 @@
+[project]
+name = "aos-monorepo"
+version = "0.2.0"
+description = "AOS: Agent Operating System (Inverse Entropy Edition)"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["packages/*", "apps/*"]

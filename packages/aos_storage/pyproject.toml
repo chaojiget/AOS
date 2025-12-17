@@ -1,0 +1,13 @@
+[project]
+name = "aos_storage"
+version = "0.1.0"
+description = "AOS Storage: SQLModel schemas and database connection"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "sqlmodel",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
