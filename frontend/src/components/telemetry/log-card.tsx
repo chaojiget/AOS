@@ -75,6 +75,14 @@ export function LogCard({ log }: { log: TelemetryLog }) {
               <span className="text-zinc-400">span_id</span>
               <span className="break-all text-zinc-200">{log.span_id ?? "-"}</span>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-zinc-400">parent_span_id</span>
+              <span className="break-all text-zinc-200">{log.parent_span_id ?? "-"}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-zinc-400">span_name</span>
+              <span className="break-all text-zinc-200">{log.span_name ?? "-"}</span>
+            </div>
             <div className="rounded-lg border border-white/10 bg-black/20 p-3">
               <pre className="whitespace-pre-wrap break-words text-[11px] text-zinc-200">
                 {JSON.stringify(log.attributes ?? null, null, 2)}

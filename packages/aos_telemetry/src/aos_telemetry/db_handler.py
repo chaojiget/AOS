@@ -68,9 +68,9 @@ class DBLogHandler(logging.Handler):
                 message=msg,
                 trace_id=trace_id,
                 span_id=span_id,
-                attributes=json.dumps(
-                    attributes_payload, ensure_ascii=False, default=str
-                ),
+                parent_span_id=parent_span_id,
+                span_name=span_name,
+                attributes=json.dumps(attributes_payload, ensure_ascii=False, default=str),
             )
 
             # Write to DB

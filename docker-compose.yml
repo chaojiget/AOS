@@ -1,0 +1,34 @@
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/aos_backend/Dockerfile
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-aos}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      AOS_MEMORY_LLM: ${AOS_MEMORY_LLM:-0}
+      AOS_MEMORY_MODEL: ${AOS_MEMORY_MODEL:-deepseek:deepseek-chat}
+      AOS_AGENT_MODEL: ${AOS_AGENT_MODEL:-deepseek:deepseek-chat}
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_AOS_BACKEND_URL: http://backend:8080
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:

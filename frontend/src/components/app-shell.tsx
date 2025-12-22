@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, GitBranch, Home } from "lucide-react";
+import { Activity, Bot, GitBranch, Home, Vault } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { LanguageToggle } from "@/components/language-toggle";
@@ -35,6 +35,20 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <GitBranch className="h-4 w-4" />
               <span className="hidden sm:inline">{t("nav.traceChain")}</span>
+            </Link>
+            <Link
+              href="/memory/vault"
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-200 hover:bg-white/10"
+            >
+              <Vault className="h-4 w-4" />
+              <span className="hidden sm:inline">{t("nav.memoryVault")}</span>
+            </Link>
+            <Link
+              href="/agent/chat"
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-200 hover:bg-white/10"
+            >
+              <Bot className="h-4 w-4" />
+              <span className="hidden sm:inline">{t("nav.agentChat")}</span>
             </Link>
           </nav>
 

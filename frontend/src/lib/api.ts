@@ -4,12 +4,24 @@ export function backendBaseUrl(): string {
 }
 
 export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestJson<T>(path, { ...init, method: "GET" });
+}
+
+export async function apiPost<T>(path: string, body: unknown, init?: RequestInit): Promise<T> {
+  return requestJson<T>(path, {
+    ...init,
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${backendBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
   const response = await fetch(url, {
     ...init,
-    method: "GET",
     headers: {
       Accept: "application/json",
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...(init?.headers ?? {}),
     },
     cache: "no-store",

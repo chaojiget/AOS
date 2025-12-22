@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from typing import Any, Literal, Optional
 
@@ -15,19 +16,29 @@ from aos_backend.agent import SisyphusAgent
 from aos_storage.db import engine, init_db
 from aos_storage.models import LogEntry
 from aos_memory.entropy import EntropyService
+from aos_memory.llm_config import configure_openai_from_openrouter_env, resolve_model
 from aos_memory.odysseus import OdysseusService
+from pydantic_ai import Agent
+from pydantic_ai.ag_ui import handle_ag_ui_request
+from starlette.requests import Request
+from starlette.responses import Response
 
 # Initialize
 app = FastAPI(title="AOS Backend", version="0.2.0")
 entropy_service = EntropyService()
 odysseus_service = OdysseusService()
 
+allow_origin_regex = os.getenv("AOS_CORS_ALLOW_ORIGIN_REGEX")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
     ],
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,6 +52,8 @@ class TelemetryEvent(BaseModel):
     message: str
     trace_id: Optional[str] = None
     span_id: Optional[str] = None
+    parent_span_id: Optional[str] = None
+    span_name: Optional[str] = None
     timestamp: Optional[datetime] = None
     attributes: Optional[dict[str, Any]] = None
 
@@ -65,6 +78,8 @@ def _serialize_log(log: LogEntry) -> dict[str, Any]:
         "timestamp": log.timestamp,
         "trace_id": log.trace_id,
         "span_id": log.span_id,
+        "parent_span_id": log.parent_span_id,
+        "span_name": log.span_name,
         "level": log.level,
         "logger_name": log.logger_name,
         "message": log.message,
@@ -100,14 +115,26 @@ def ingest_logs(request: TelemetryIngestRequest):
     count = 0
     with Session(engine) as session:
         for event in events:
+            attributes = dict(event.attributes or {})
+
+            if event.trace_id and "otel" not in attributes:
+                attributes["otel"] = {
+                    "trace_id": event.trace_id,
+                    "span_id": event.span_id,
+                    "parent_span_id": event.parent_span_id,
+                    "span_name": event.span_name,
+                }
+
             log = LogEntry(
                 level=event.level.upper(),
                 logger_name=event.logger_name,
                 message=event.message,
                 trace_id=event.trace_id,
                 span_id=event.span_id,
+                parent_span_id=event.parent_span_id,
+                span_name=event.span_name,
                 timestamp=event.timestamp or datetime.utcnow(),
-                attributes=json.dumps(event.attributes) if event.attributes else None,
+                attributes=json.dumps(attributes) if attributes else None,
             )
             session.add(log)
             count += 1
@@ -151,6 +178,8 @@ def list_logs(
                     (log.message or ""),
                     (log.trace_id or ""),
                     (log.span_id or ""),
+                    (log.parent_span_id or ""),
+                    (log.span_name or ""),
                     (log.logger_name or ""),
                     (log.attributes or ""),
                 ]
@@ -195,8 +224,8 @@ def list_traces(limit: int = 80):
             last_log = session.exec(last_stmt).first()
             last_attributes = _maybe_json(last_log.attributes if last_log else None)
 
-            span_name = None
-            if isinstance(last_attributes, dict):
+            span_name = last_log.span_name if last_log else None
+            if span_name is None and isinstance(last_attributes, dict):
                 otel = last_attributes.get("otel")
                 if isinstance(otel, dict):
                     span_name = otel.get("span_name")
@@ -236,7 +265,9 @@ def get_trace_logs(
             statement = statement.where(LogEntry.timestamp < end)
 
         if order == "desc":
-            statement = statement.order_by(LogEntry.timestamp.desc(), LogEntry.id.desc())
+            statement = statement.order_by(
+                LogEntry.timestamp.desc(), LogEntry.id.desc()
+            )
         else:
             statement = statement.order_by(LogEntry.timestamp, LogEntry.id)
 
@@ -274,43 +305,109 @@ def analyze_entropy(request: EntropyRequest):
 agent = SisyphusAgent()
 
 
+def _build_agui_agent() -> Agent[None, str]:
+    """A lightweight AG-UI wrapper around our internal SisyphusAgent.
+
+    CopilotKit/AG-UI clients will stream events from this endpoint.
+    """
+
+    configure_openai_from_openrouter_env()
+
+    ui_model = resolve_model(
+        explicit=os.getenv("AOS_UI_MODEL"),
+        env_fallbacks=("AOS_AGENT_MODEL", "LLM_MODEL"),
+        default="deepseek:deepseek-chat",
+    )
+
+    agui_agent: Agent[None, str] = Agent(
+        ui_model,
+        output_type=str,
+        system_prompt=(
+            "You are the UI-facing wrapper for Sisyphus. "
+            "You must call the tool `run_task` to execute work. "
+            "Return the tool result as plain text, plus a short next step."
+        ),
+        defer_model_check=True,
+    )
+
+    @agui_agent.tool_plain
+    def run_task(instruction: str) -> str:
+        result = agent.run_task(instruction)
+        if result.get("status") == "error":
+            return f"ERROR: {result.get('error')}"
+        answer = result.get("answer") or result.get("summary") or ""
+        trace_id = result.get("trace_id")
+        return "\n".join(
+            [
+                answer,
+                "",
+                f"trace_id: {trace_id}",
+                "tip: open /telemetry/trace-chain?traceId=<trace_id>",
+            ]
+        ).strip()
+
+    return agui_agent
+
+
+agui_agent = _build_agui_agent()
+
+
 class TaskRequest(BaseModel):
     instruction: str
+    consolidate: bool = True
 
 
 class ConsolidateRequest(BaseModel):
     trace_id: str
+    overwrite: bool = False
 
 
 @app.get("/api/v1/memory/recall")
-def recall_memory(limit: int = 3):
+def recall_memory(limit: int = 3, query: str | None = None):
+    """Query memory cards (wisdom items).
+
+    - If `query` is provided, do keyword search.
+    - Otherwise return most recent items.
     """
-    Returns the most recent wisdom items to prime the agent's context.
-    """
-    items = odysseus_service.get_all_wisdom()
-    # Simple limit for now
-    return items[:limit] if items else []
+    if query:
+        return odysseus_service.search_wisdom(query, limit=limit)
+    return odysseus_service.get_all_wisdom(limit=limit)
 
 
 @app.post("/api/v1/memory/consolidate")
 def consolidate_memory(request: ConsolidateRequest):
     """
     Manually trigger distillation for a given trace.
-    Outcome: A news WisdomItem in the Vault.
+    Outcome: A new WisdomItem in the Vault.
     """
-    wisdom = odysseus_service.distill_trace(request.trace_id)
+    wisdom = odysseus_service.distill_trace(
+        request.trace_id, overwrite=request.overwrite
+    )
     if not wisdom:
         raise HTTPException(status_code=404, detail="Trace not found or empty")
 
     return wisdom
 
 
+@app.post("/api/v1/ag-ui")
+async def ag_ui_endpoint(request: Request) -> Response:
+    return await handle_ag_ui_request(agui_agent, request)
+
+
 @app.post("/api/v1/agent/task")
 def run_agent_task(request: TaskRequest):
     """
     Trigger the Sisyphus Agent to perform a task.
+
+    If `consolidate` is true, auto-distill this trace into the Memory Vault.
     """
     result = agent.run_task(request.instruction)
+
+    if request.consolidate:
+        trace_id = result.get("trace_id")
+        if isinstance(trace_id, str) and trace_id.strip():
+            odysseus_service.distill_trace(trace_id)
+
     return result
 
 

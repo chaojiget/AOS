@@ -40,7 +40,9 @@ def main():
 
     print(f"✅ Found {len(results)} logs in DB.")
     for log in results[:3]:
-        print(f"[{log.id}] {log.level} | Trace: {log.trace_id} | Msg: {log.message}")
+        print(
+            f"[{log.id}] {log.level} | Trace: {log.trace_id} | Span: {log.span_id} | Parent: {log.parent_span_id} | Name: {log.span_name} | Msg: {log.message}"
+        )
 
 
 if __name__ == "__main__":

@@ -6,7 +6,6 @@ requires-python = ">=3.10"
 dependencies = [
     "aos_telemetry",
     "aos_storage",
-    "aos_dashboard",
     "aos_memory",
     "aos_backend",
 ]
@@ -14,12 +13,11 @@ dependencies = [
 [tool.uv.sources]
 aos_telemetry = { workspace = true }
 aos_storage = { workspace = true }
-aos_dashboard = { workspace = true }
 aos_memory = { workspace = true }
 aos_backend = { workspace = true }
 
 [tool.uv.workspace]
-members = ["packages/*", "apps/*"]
+members = ["packages/*", "apps/aos_backend"]
 
 [dependency-groups]
 dev = [

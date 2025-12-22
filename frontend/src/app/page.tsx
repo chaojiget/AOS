@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, GitBranch, ChevronRight } from "lucide-react";
+import { Activity, GitBranch, ChevronRight, Vault } from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ export default function HomePage() {
         <p className="text-sm text-zinc-300">{t("app.subtitle")}</p>
       </div>
 
-      <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center gap-3">
             <Activity className="h-5 w-5 text-emerald-300" />
@@ -43,6 +43,22 @@ export default function HomePage() {
             <div className="text-sm text-zinc-300">{t("home.traceChainDesc")}</div>
             <Button asChild>
               <Link href="/telemetry/trace-chain">
+                {t("common.open")}
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-3">
+            <Vault className="h-5 w-5 text-violet-300" />
+            <CardTitle>{t("nav.memoryVault")}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between gap-3">
+            <div className="text-sm text-zinc-300">{t("home.memoryVaultDesc")}</div>
+            <Button asChild>
+              <Link href="/memory/vault">
                 {t("common.open")}
                 <ChevronRight className="ml-1 h-4 w-4" />
               </Link>

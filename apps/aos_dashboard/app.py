@@ -705,6 +705,8 @@ def fetch_logs():
                 "Message": r.message,
                 "Trace ID": r.trace_id if r.trace_id else "N/A",
                 "Span ID": r.span_id if r.span_id else "N/A",
+                "Parent Span ID": r.parent_span_id if r.parent_span_id else "N/A",
+                "Span Name": r.span_name if r.span_name else "N/A",
                 "Attributes": r.attributes,
             }
             for r in results
@@ -738,6 +740,8 @@ def fetch_recent_traces(limit: int = 80) -> pd.DataFrame:
                     LogEntry.message,
                     LogEntry.attributes,
                     LogEntry.span_id,
+                    LogEntry.parent_span_id,
+                    LogEntry.span_name,
                 )
                 .where(LogEntry.trace_id == trace_id)
                 .order_by(LogEntry.timestamp.desc())
@@ -748,11 +752,16 @@ def fetch_recent_traces(limit: int = 80) -> pd.DataFrame:
             last_message = last_row[2] if last_row else ""
             last_attributes = last_row[3] if last_row else None
             last_span_id = last_row[4] if last_row else None
+            last_parent_span_id = last_row[5] if last_row else None
+            last_span_name = last_row[6] if last_row else None
 
             span_id_from_attr = None
-            span_name = None
+            parent_span_id_from_attr = None
+            span_name_from_attr = None
             attributes = parse_attributes(last_attributes)
-            span_id_from_attr, _, span_name = extract_otel_meta(attributes)
+            span_id_from_attr, parent_span_id_from_attr, span_name_from_attr = extract_otel_meta(
+                attributes
+            )
 
             traces.append(
                 {
@@ -763,7 +772,8 @@ def fetch_recent_traces(limit: int = 80) -> pd.DataFrame:
                     "Last Logger": last_logger,
                     "Last Message": last_message,
                     "Span ID": last_span_id or span_id_from_attr or None,
-                    "Span Name": span_name or None,
+                    "Parent Span ID": last_parent_span_id or parent_span_id_from_attr or None,
+                    "Span Name": last_span_name or span_name_from_attr or None,
                 }
             )
 
@@ -788,6 +798,8 @@ def fetch_trace_chain(trace_id: str) -> pd.DataFrame:
                 "Message": r.message,
                 "Trace ID": r.trace_id if r.trace_id else "N/A",
                 "Span ID": r.span_id if r.span_id else "N/A",
+                "Parent Span ID": r.parent_span_id if r.parent_span_id else "N/A",
+                "Span Name": r.span_name if r.span_name else "N/A",
                 "Attributes": r.attributes,
             }
             for r in results

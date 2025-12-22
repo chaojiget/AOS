@@ -13,7 +13,7 @@ The foundational concept of AOS v0.2 is "Inverse Entropy". Unlike traditional ag
 *   **Package Management**: `uv` (Rust-based, extremely fast)
 *   **Repo Structure**: Monorepo with Workspace support
 *   **Observability**: OpenTelemetry (OTEL) First. Telemetry is the bloodstream of the system.
-*   **Storage**: SQLModel (SQLite default, PostgreSQL production ready).
+*   **Storage**: SQLModel (SQLite dev fallback, PostgreSQL default for deployment).
 
 ## 3. Directory Structure
 

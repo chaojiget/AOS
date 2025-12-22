@@ -3,6 +3,8 @@ export type TelemetryLog = {
   timestamp: string;
   trace_id: string | null;
   span_id: string | null;
+  parent_span_id: string | null;
+  span_name: string | null;
   level: string;
   logger_name: string | null;
   message: string;

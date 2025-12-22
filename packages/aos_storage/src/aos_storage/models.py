@@ -6,12 +6,17 @@ from sqlmodel import Field, SQLModel
 class LogEntry(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
     trace_id: Optional[str] = None
     span_id: Optional[str] = None
+    parent_span_id: Optional[str] = None
+    span_name: Optional[str] = None
+
     level: str
     logger_name: str
     message: str
-    # Storing attributes as a simple string/JSON for now to keep it compatible with SQLite
+
+    # Storing attributes as a JSON string for now (portable across SQLite/Postgres)
     attributes: Optional[str] = None
 
 
