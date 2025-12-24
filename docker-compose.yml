@@ -1,34 +1,22 @@
+version: '3.8'
+
 services:
-
-  backend:
-    build:
-      context: .
-      dockerfile: apps/aos_backend/Dockerfile
+  postgres:
+    image: postgres:16-alpine
+    container_name: aos-postgres
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-aos}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      AOS_MEMORY_LLM: ${AOS_MEMORY_LLM:-0}
-      AOS_MEMORY_MODEL: ${AOS_MEMORY_MODEL:-deepseek:deepseek-chat}
-      AOS_AGENT_MODEL: ${AOS_AGENT_MODEL:-deepseek:deepseek-chat}
-    depends_on:
-      - postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aos
     ports:
-      - "8080:8080"
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    environment:
-      NEXT_PUBLIC_AOS_BACKEND_URL: http://backend:8080
-    depends_on:
-      - backend
-    ports:
-      - "3000:3000"
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:

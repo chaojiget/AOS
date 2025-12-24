@@ -1,7 +1,7 @@
 # OpenCode AOS Connector 架构文档
 
 ## 1. 模块概述
-`opencode/plugin/aos_connector.js` 是 OpenCode CLI 环境下的一个遥测插件。它作为 **数据采集端 (Producer)**，负责将开发过程中的非结构化交互事件（命令执行、文件编辑、LLM 对话、工具调用等）转化为结构化的可观测数据 (Trace/Log)，并实时上报给 AOS Backend。
+`.opencode/plugin/aos_connector.js` 是 OpenCode CLI 环境下的一个遥测插件。它作为 **数据采集端 (Producer)**，负责将开发过程中的非结构化交互事件（命令执行、文件编辑、LLM 对话、工具调用等）转化为结构化的可观测数据 (Trace/Log)，并实时上报给 AOS Backend。
 
 该模块不依赖外部庞大的 SDK，而是通过原生 JavaScript 实现了轻量级的 OpenTelemetry 风格链路追踪逻辑。
 

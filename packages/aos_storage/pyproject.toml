@@ -1,17 +1,16 @@
 [project]
 name = "aos_storage"
 version = "0.1.0"
-description = "AOS Storage: SQLModel schemas and database connection"
-readme = "README.md"
+description = "AOS Storage - SQLModel schemas and DB connection"
 requires-python = ">=3.10"
 dependencies = [
-    "sqlmodel",
-    "psycopg[binary]",
+    "sqlmodel>=0.0.22",
+    "psycopg[binary]>=3.2",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aos_storage"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/aos_storage"]

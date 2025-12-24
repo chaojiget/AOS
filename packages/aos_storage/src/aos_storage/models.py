@@ -1,36 +1,61 @@
-from datetime import datetime
-from typing import Optional
-from sqlmodel import Field, SQLModel
+"""SQLModel schemas for AOS."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlmodel import Column, Field, SQLModel
+from sqlalchemy.dialects.postgresql import JSONB
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class LogEntry(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    """Structured log entry from OpenCode or other sources."""
 
-    trace_id: Optional[str] = None
-    span_id: Optional[str] = None
-    parent_span_id: Optional[str] = None
-    span_name: Optional[str] = None
+    __tablename__ = "log_entries"
 
-    level: str
-    logger_name: str
-    message: str
+    id: int | None = Field(default=None, primary_key=True)
+    received_at: datetime = Field(default_factory=_utc_now, nullable=False)
+    timestamp: datetime | None = Field(default=None, nullable=True)
 
-    # Storing attributes as a JSON string for now (portable across SQLite/Postgres)
-    attributes: Optional[str] = None
+    # Trace context
+    trace_id: str | None = Field(default=None, nullable=True, index=True)
+    span_id: str | None = Field(default=None, nullable=True)
+    parent_span_id: str | None = Field(default=None, nullable=True)
+
+    # Event metadata
+    event_type: str | None = Field(default=None, nullable=True, index=True)
+
+    # JSONB fields
+    tags: list[str] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    dimensions: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    attributes: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
 
 
 class WisdomItem(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    source_trace_id: Optional[str] = None
+    """Long-term memory item distilled from logs."""
 
-    # The distilled knowledge
-    title: str = Field(description="Short summary of the lesson learned")
-    content: str = Field(description="Detailed explanation or context")
-    tags: str = Field(
-        description="Comma-separated tags, e.g., 'error-fix, python, optimization'"
-    )
+    __tablename__ = "wisdom_items"
 
-    # Metadata for vector search (future)
-    embedding_id: Optional[str] = None
+    id: int | None = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=_utc_now, nullable=False)
+    updated_at: datetime = Field(default_factory=_utc_now, nullable=False)
+
+    # Source trace
+    source_trace_id: str | None = Field(default=None, nullable=True, index=True)
+
+    # Content
+    title: str = Field(nullable=False)
+    content: str = Field(nullable=False)
+    summary: str | None = Field(default=None, nullable=True)
+
+    # Metadata
+    tags: list[str] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    extra_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+
+    # Vector embedding (for future semantic search)
+    embedding: list[float] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))

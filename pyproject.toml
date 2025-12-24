@@ -1,37 +1,36 @@
 [project]
-name = "aos-monorepo"
+name = "aos-workspace"
 version = "0.2.0"
-description = "AOS: Agent Operating System (Inverse Entropy Edition)"
+description = "Agent Operating System - Inverse Entropy Edition"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "aos_telemetry",
     "aos_storage",
-    "aos_memory",
+    "aos_telemetry",
     "aos_backend",
 ]
 
+[tool.uv.workspace]
+members = [
+    "packages/*",
+    "apps/aos_backend",
+]
+
 [tool.uv.sources]
-aos_telemetry = { workspace = true }
 aos_storage = { workspace = true }
-aos_memory = { workspace = true }
+aos_telemetry = { workspace = true }
 aos_backend = { workspace = true }
 
-[tool.uv.workspace]
-members = ["packages/*", "apps/aos_backend"]
+[tool.ruff]
+line-length = 100
+target-version = "py310"
 
-[dependency-groups]
-dev = [
-    "mypy>=1.19.1",
-    "pytest>=9.0.2",
-    "ruff>=0.14.9",
-]
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "A", "C4", "SIM"]
+ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"
-warn_unused_configs = true
-ignore_missing_imports = true
-exclude = "(^scripts/|^apps/aos_dashboard/app\\.py$)"
-
-[[tool.mypy.overrides]]
-module = ["aos_backend.main", "aos_memory.odysseus"]
-disable_error_code = ["arg-type", "attr-defined", "union-attr"]
+strict = true
+warn_return_any = true
+warn_unused_ignores = true

@@ -12,7 +12,7 @@ AOS 的“记忆”不是把上下文越堆越大，而是通过 **日志 → �
 
 
 - `apps/aos_backend`：FastAPI 后端（遥测写入/读取 + Agent/Memory/Entropy API）
-- `frontend`：Next.js 14 前端（Tailwind + shadcn 风格 + lucide-react），前后端分离的遥测 UI（默认中文/可切换英文）
+- `apps/aos_frontend`：Next.js 14 前端（Tailwind + shadcn 风格 + lucide-react），前后端分离的遥测 UI（默认中文/可切换英文）
 - `apps/aos_dashboard`：Streamlit 仪表板（legacy，可继续使用）
 
 ## 快速开始
@@ -55,7 +55,7 @@ uv run uvicorn aos_backend.main:app --reload --port 8080
 ### 3) 启动前端（Next.js 14）
 
 ```bash
-cd frontend
+cd apps/aos_frontend
 cp .env.example .env.local
 npm install
 npm run dev

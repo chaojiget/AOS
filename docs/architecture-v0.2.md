@@ -30,7 +30,8 @@ The foundational concept of AOS v0.2 is "Inverse Entropy". Unlike traditional ag
 │   └── aos_tools/         # [Skills] MCP Clients, Hooks, Standard Tools
 └── apps/                  # Deployable Applications
     ├── aos_backend/       # [Brain] FastAPI Agent Orchestrator
-    └── aos_dashboard/     # [Visage] Streamlit Admin UI
+    ├── aos_frontend/      # [Eyes] Next.js Telemetry UI
+    └── aos_dashboard/     # [Legacy] Streamlit Admin UI
 ```
 
 ## 4. Package Design Details
@@ -55,18 +56,23 @@ The foundational concept of AOS v0.2 is "Inverse Entropy". Unlike traditional ag
     *   `SisyphusContext`: Manages current sliding window. Calculates "Entropy/Anxiety" (Token usage, Error rate).
     *   `OdysseusRecall`: Retrieval engine for `WisdomItem`.
 
-### 4.4 `apps/aos_dashboard`
+### 4.4 `apps/aos_frontend`
 *   **Role**: The "Consciousness Viewer".
-*   **Tech**: Streamlit.
+*   **Tech**: Next.js 14.
 *   **Features**:
-    *   **Entropy Monitor**: Real-time gauge of context pressure.
     *   **Neural Stream**: Rolling log of agent thoughts/actions.
-    *   **Memory Vault**: Editor for long-term wisdom.
+    *   **Trace Chain**: Explore logs by Trace ID + span tree.
+    *   **Memory Vault**: Browse distilled wisdom items.
+    *   **Agent Chat**: AG-UI compatible chat interface.
+
+### 4.5 `apps/aos_dashboard` (legacy)
+*   **Role**: Streamlit admin UI (legacy).
+*   **Tech**: Streamlit.
 
 ## 5. Execution Roadmap
 
 1.  **Init Workspace**: `uv init --workspace`
 2.  **Telemetry Foundation**: Build `aos_telemetry` & `aos_storage`.
 3.  **Memory Core**: Implement `aos_memory` with reset logic.
-4.  **UI Layer**: Build Streamlit Dashboard to visualize the logs.
+4.  **UI Layer**: Build Next.js frontend to visualize the logs.
 5.  **Backend**: Connect Agent logic.

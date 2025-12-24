@@ -1,26 +1,25 @@
 [project]
 name = "aos_backend"
 version = "0.1.0"
-description = "AOS Backend: The Thinking Engine"
-readme = "README.md"
+description = "AOS Backend - FastAPI Agent Orchestrator"
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi",
-    "uvicorn",
-    "pydantic",
-    "aos_telemetry",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-dotenv>=1.0",
     "aos_storage",
-    "aos_memory",
+    "aos_telemetry",
+    "slowapi>=0.1.0",
+    "python-jose[cryptography]>=3.3.0",
+    "pydantic>=2.0",
 ]
 
-[tool.uv.sources]
-aos_telemetry = { workspace = true }
-aos_storage = { workspace = true }
-aos_memory = { workspace = true }
+[project.scripts]
+aos-backend = "aos_backend.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aos_backend"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/aos_backend"]

@@ -1,563 +1,231 @@
 const DEFAULT_BACKEND_URL = "http://localhost:8080";
-const TELEMETRY_PATH = "/api/v1/telemetry/logs";
-
+const LOGS_ENDPOINT_PATH = "/api/v1/telemetry/logs";
 const DEFAULT_FLUSH_MS = 750;
 const MAX_QUEUE_SIZE = 200;
-const MAX_STRING_LEN = 800;
+const BACKOFF_MS = 5000;
 const MESSAGE_PART_DEBOUNCE_MS = 1500;
+const MAX_STRING_LENGTH = 800;
 
-const DEBOUNCED_TYPES = new Set(["message.part.updated", "message.part.removed", "tui.prompt.append"]);
+const SENSITIVE_KEY_RE = /(api[_-]?key|token|password|secret|authorization)/i;
 
-const generateLocalTraceId = () => {
-  try {
-    if (typeof globalThis?.crypto?.randomUUID === "function") {
-      return `oc_${globalThis.crypto.randomUUID()}`;
-    }
-  } catch {}
-
-  return `oc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-};
-
-const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-
-const randomHex = (bytesLength) => {
-  try {
-    if (typeof globalThis?.crypto?.getRandomValues === "function") {
-      const bytes = new Uint8Array(bytesLength);
-      globalThis.crypto.getRandomValues(bytes);
-      return toHex(bytes);
-    }
-
-    if (typeof globalThis?.crypto?.randomUUID === "function") {
-      const uuidHex = globalThis.crypto.randomUUID().replace(/-/g, "");
-      return uuidHex.slice(0, bytesLength * 2).padEnd(bytesLength * 2, "0");
-    }
-  } catch {}
-
-  let out = "";
-  for (let i = 0; i < bytesLength * 2; i++) {
-    out += Math.floor(Math.random() * 16).toString(16);
-  }
-  return out;
-};
-
-const generateSpanId = () => randomHex(8);
-
-const sessionStates = new Map();
-
-const getSessionState = (sessionID) => {
-  let state = sessionStates.get(sessionID);
-  if (state) return state;
-
-  state = {
-    sessionID,
-    sessionSpanId: generateSpanId(),
-    messageSpans: new Map(),
-    toolSpans: new Map(),
-    callToMessage: new Map(),
-    lastAssistantMessageID: null,
-    lastSessionStatus: null,
-    seenMessageUpdated: new Set(),
-    seenToolEvents: new Set(),
-  };
-
-  sessionStates.set(sessionID, state);
-  return state;
-};
-
-const getOrCreateSpan = (spanMap, key) => {
-  if (typeof key !== "string" || !key.trim()) return null;
-
-  const normalized = key.trim();
-  let spanId = spanMap.get(normalized);
-  if (!spanId) {
-    spanId = generateSpanId();
-    spanMap.set(normalized, spanId);
-  }
-
-  return spanId;
-};
-
-const tagsFor = (type, payload) => {
-  const tags = ["opencode"];
-
-  if (type) {
-    const value = String(type);
-    tags.push(value);
-
-    const parts = value.split(".");
-    if (parts[0]) tags.push(parts[0]);
-    if (parts[1]) tags.push(parts[1]);
-  }
-
-  // Common dimensions
-  const sessionID = payload?.sessionID ?? payload?.info?.sessionID ?? payload?.part?.sessionID;
-  if (typeof sessionID === "string" && sessionID.trim()) tags.push(`session:${sessionID.trim()}`);
-
-  const projectID = payload?.info?.projectID;
-  if (typeof projectID === "string" && projectID.trim()) tags.push(`project:${projectID.trim()}`);
-
-  const messageID = payload?.info?.id ?? payload?.messageID ?? payload?.part?.messageID;
-  if (typeof messageID === "string" && messageID.trim()) tags.push(`message:${messageID.trim()}`);
-
-  const role = payload?.info?.role;
-  if (typeof role === "string" && role.trim()) tags.push(`role:${role.trim()}`);
-
-  const toolName = payload?.tool ?? payload?.part?.tool;
-  if (typeof toolName === "string" && toolName.trim()) tags.push(`tool:${toolName.trim()}`);
-
-  const callID = payload?.callID ?? payload?.part?.callID;
-  if (typeof callID === "string" && callID.trim()) tags.push(`call:${callID.trim()}`);
-
-  return Array.from(new Set(tags));
-};
-
-const env = (name) => {
-  const value = process.env[name];
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-};
-
-const normalizeBaseUrl = (value) => (value ? value.replace(/\/+$/, "") : "");
-
-const parseBool = (value, defaultValue) => {
-  if (value == null) return defaultValue;
+function parseBool(value, defaultValue) {
+  if (value == null || value === "") return defaultValue;
   const normalized = String(value).trim().toLowerCase();
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
   return defaultValue;
-};
+}
 
-const truncateString = (value, maxLen = MAX_STRING_LEN) => {
-  if (typeof value !== "string") return value;
-  if (value.length <= maxLen) return value;
-  return value.slice(0, maxLen) + "...";
-};
+function parseIntEnv(value, defaultValue) {
+  if (value == null || value === "") return defaultValue;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed)) return defaultValue;
+  return parsed;
+}
 
-const sanitizeJson = (value) => {
-  const seen = new WeakSet();
-  const secretKeyRe = /(api[_-]?key|token|password|secret|authorization)/i;
-
+function generateId() {
   try {
-    const json = JSON.stringify(value, (key, val) => {
-      if (secretKeyRe.test(key)) return "<redacted>";
-      if (typeof val === "bigint") return val.toString();
-      if (typeof val === "string") return truncateString(val);
-
-      if (val && typeof val === "object") {
-        if (seen.has(val)) return "[Circular]";
-        seen.add(val);
-      }
-
-      return val;
-    });
-
-    return json ? JSON.parse(json) : null;
+    const uuid = globalThis.crypto?.randomUUID?.();
+    if (uuid) return uuid;
   } catch {
-    return null;
+    // ignore
   }
-};
+  const t = Date.now().toString(16);
+  const r = Math.random().toString(16).slice(2);
+  return `${t}${r}`;
+}
 
-const extractTraceId = (event, fallback) => {
-  if (!event || typeof event !== "object") return fallback ?? null;
+function sanitizeJson(value, seen = new WeakSet()) {
+  if (value == null) return value;
 
-  const type = event.type;
-  const properties = event.properties ?? event.data ?? {};
-
-  let sessionID = null;
-
-  if (type === "session.created" || type === "session.updated" || type === "session.deleted") {
-    sessionID = properties.info?.id;
-  } else if (type === "message.updated") {
-    sessionID = properties.info?.sessionID;
-  } else if (type === "message.part.updated") {
-    sessionID = properties.part?.sessionID;
-  } else if (type === "message.part.removed" || type === "message.removed") {
-    sessionID = properties.sessionID;
-  } else if (type === "session.error" || type === "session.idle" || type === "session.status" || type === "session.compacted" || type === "session.diff") {
-    sessionID = properties.sessionID;
-  } else if (
-    type === "command.executed" ||
-    type === "todo.updated" ||
-    type === "permission.updated" ||
-    type === "permission.replied" ||
-    type === "tool.execute.before" ||
-    type === "tool.execute.after" ||
-    type === "chat.message"
-  ) {
-    sessionID = properties.sessionID;
-  } else {
-    sessionID = properties.sessionID ?? properties.sessionId ?? null;
+  const t = typeof value;
+  if (t === "string") {
+    if (value.length <= MAX_STRING_LENGTH) return value;
+    return `${value.slice(0, MAX_STRING_LENGTH)}…`;
   }
 
-  if (typeof sessionID === "string" && sessionID.trim()) return sessionID.trim();
+  if (t === "number" || t === "boolean") return value;
 
-  // Backwards-compat / ad-hoc shapes
-  const session = event.session ?? properties.session;
-  if (typeof session === "string" && session.trim()) return session.trim();
-
-  const traceId =
-    event.trace_id ??
-    event.traceId ??
-    event.session_id ??
-    event.sessionId ??
-    properties.trace_id ??
-    properties.traceId ??
-    properties.session_id ??
-    properties.sessionId ??
-    properties.session?.id ??
-    event.session?.id ??
-    fallback ??
-    null;
-
-  return typeof traceId === "string" && traceId.trim() ? traceId.trim() : traceId;
-};
-
-const shouldCapture = (type) =>
-  type === "command.executed" ||
-  type === "file.edited" ||
-  type === "file.watcher.updated" ||
-  type === "installation.updated" ||
-  type === "lsp.client.diagnostics" ||
-  type === "lsp.updated" ||
-  type === "message.part.updated" ||
-  type === "message.part.removed" ||
-  type === "message.updated" ||
-  type === "message.removed" ||
-  type === "permission.updated" ||
-  type === "permission.replied" ||
-  type === "server.connected" ||
-  type === "session.created" ||
-  type === "session.updated" ||
-  type === "session.error" ||
-  type === "session.idle" ||
-  type === "session.status" ||
-  type === "todo.updated" ||
-  type === "tool.execute.before" ||
-  type === "tool.execute.after" ||
-  type === "tui.prompt.append" ||
-  type === "tui.command.execute" ||
-  type === "tui.toast.show";
-
-const levelFor = (type, payload) => {
-  if (type === "session.error" || type === "tui.toast.show") return "ERROR";
-
-  if (type === "session.status") {
-    const statusType = payload?.status?.type;
-    if (statusType === "retry") return "WARNING";
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeJson(item, seen));
   }
 
-  if (type === "tool.execute.after") {
-    const status = payload?.state?.status;
-    if (status === "error") return "ERROR";
+  if (t !== "object") return String(value);
+
+  if (seen.has(value)) return "<circular>";
+  seen.add(value);
+
+  const output = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (SENSITIVE_KEY_RE.test(key)) {
+      output[key] = "<redacted>";
+      continue;
+    }
+    output[key] = sanitizeJson(raw, seen);
   }
+  return output;
+}
 
-  if (type === "permission.updated" || type === "permission.replied") return "WARNING";
+function shouldCapture(type) {
+  if (!type) return false;
 
-  return "INFO";
-};
+  return new Set([
+    "session.created",
+    "session.idle",
+    "session.error",
+    "message.updated",
+    "message.part.updated",
+    "tool.execute.before",
+    "tool.execute.after",
+    "file.edited",
+    "file.watcher.updated",
+    "command.executed",
+    "tui.command.execute",
+  ]).has(type);
+}
 
-const messageFor = (type, event) => {
-  const data = event?.properties ?? event?.data ?? {};
+const DEBOUNCED_TYPES = new Set(["message.part.updated", "tui.prompt.append"]);
 
-  if (type === "command.executed") {
-    const name = data.name;
-    const args = data.arguments;
-    return `command.executed${name ? `: ${name}` : ""}${args ? ` ${truncateString(String(args), 120)}` : ""}`;
-  }
+function getSessionId(event) {
+  return (
+    event?.sessionID ??
+    event?.sessionId ??
+    event?.session_id ??
+    event?.session?.id ??
+    event?.session?.sessionID ??
+    event?.session?.sessionId ??
+    event?.session?.session_id ??
+    null
+  );
+}
 
-  if (type === "file.edited") {
-    const filePath = data.file;
-    return `file.edited${filePath ? `: ${truncateString(String(filePath), 200)}` : ""}`;
-  }
+function normalizeBaseUrl(url) {
+  if (!url) return DEFAULT_BACKEND_URL;
+  return String(url).trim().replace(/\/+$/, "");
+}
 
-  if (type === "file.watcher.updated") {
-    const filePath = data.file;
-    const fileEvent = data.event;
-    return `file.watcher.updated${fileEvent ? `(${fileEvent})` : ""}${filePath ? `: ${truncateString(String(filePath), 200)}` : ""}`;
-  }
+function buildTags({ projectId, sessionId, toolName, role }) {
+  const tags = ["opencode"];
+  if (projectId) tags.push(`project:${projectId}`);
+  if (sessionId) tags.push(`session:${sessionId}`);
+  if (toolName) tags.push(`tool:${toolName}`);
+  if (role) tags.push(`role:${role}`);
+  return tags;
+}
 
-  if (type === "tool.execute.before" || type === "tool.execute.after") {
-    const tool = data.tool;
-    return `${type}${tool ? `: ${truncateString(String(tool), 200)}` : ""}`;
-  }
+function buildLogEntry({ event, projectId, directory, worktree, localTraceId }) {
+  const sessionId = getSessionId(event);
+  const traceId = sessionId ?? localTraceId;
 
-  if (type === "tui.prompt.append") {
-    const text = data.text;
-    return `tui.prompt.append${text ? `: ${truncateString(String(text), 200)}` : ""}`;
-  }
+  return {
+    timestamp: new Date().toISOString(),
+    trace_id: traceId,
+    span_id: generateId(),
+    parent_span_id: null,
+    event_type: event?.type ?? "unknown",
+    tags: buildTags({
+      projectId,
+      sessionId,
+      toolName: event?.tool,
+      role: event?.role,
+    }),
+    dimensions: {
+      project_id: projectId ?? null,
+      session_id: sessionId,
+      directory,
+      worktree,
+    },
+    attributes: sanitizeJson(event),
+  };
+}
 
-  if (type === "tui.command.execute") {
-    const command = data.command;
-    return `tui.command.execute${command ? `: ${truncateString(String(command), 200)}` : ""}`;
-  }
+export const AosConnector = async ({ project, directory, worktree }) => {
+  const enabled = parseBool(process.env.AOS_OPENCODE_TELEMETRY, true);
+  if (!enabled) return {};
 
-  if (type === "tui.toast.show") {
-    const variant = data.variant;
-    const toastMessage = data.message;
-    return `tui.toast.show${variant ? `(${variant})` : ""}${toastMessage ? `: ${truncateString(String(toastMessage), 200)}` : ""}`;
-  }
+  const backendUrl = normalizeBaseUrl(process.env.AOS_BACKEND_URL);
+  const flushMs = Math.max(200, parseIntEnv(process.env.AOS_OPENCODE_FLUSH_MS, DEFAULT_FLUSH_MS));
+  const endpointUrl = `${backendUrl}${LOGS_ENDPOINT_PATH}`;
 
-  if (type === "message.part.updated" || type === "message.part.removed") {
-    const part = data.part;
-    const sessionID = part?.sessionID;
-    const messageID = part?.messageID;
-
-    const delta = data.delta;
-    const partType = part?.type;
-
-    let text = partType === "text" ? part.text : undefined;
-    if (!text && typeof delta === "string") text = delta;
-
-    const toolName = partType === "tool" ? part.tool : undefined;
-    const status = partType === "tool" ? part.state?.status : undefined;
-
-    return `${type}${sessionID ? ` [${sessionID}]` : ""}${messageID ? ` ${messageID}` : ""}${partType ? ` <${partType}>` : ""}${toolName ? ` ${toolName}` : ""}${status ? `(${status})` : ""}${text ? `: ${truncateString(String(text), 200)}` : ""}`;
-  }
-
-  if (type === "message.updated") {
-    const info = data.info;
-    const sessionID = info?.sessionID;
-    const role = info?.role;
-    const messageID = info?.id;
-    return `message.updated${sessionID ? ` [${sessionID}]` : ""}${role ? `(${role})` : ""}${messageID ? ` ${messageID}` : ""}`;
-  }
-
-  return type || "unknown.event";
-};
-
-export const AOSConnector = async ({ project, directory, worktree }) => {
-  const baseUrl =
-    normalizeBaseUrl(env("AOS_BACKEND_URL") || env("AOS_TELEMETRY_URL") || env("OPENCODE_AOS_BACKEND_URL")) ||
-    DEFAULT_BACKEND_URL;
-
-  const endpoint = `${baseUrl}${TELEMETRY_PATH}`;
-
-  const enabled = parseBool(env("AOS_OPENCODE_TELEMETRY"), true);
-  const flushMs = Number(env("AOS_OPENCODE_FLUSH_MS") ?? DEFAULT_FLUSH_MS) || DEFAULT_FLUSH_MS;
-  const localTraceId = generateLocalTraceId();
-
+  const projectId = project?.id ?? null;
+  const localTraceId = generateId();
   const queue = [];
+  const debouncers = new Map();
+
   let flushing = false;
-  let flushTimer = null;
   let backoffUntil = 0;
-  let currentTraceId = null;
-  const debounceTimers = new Map();
-  const debouncePending = new Map();
 
-  const logPrefix = "[AOSConnector]";
-  console.log(`${logPrefix} loaded; telemetry=${enabled ? "on" : "off"} url=${endpoint}`);
+  function enqueue(entry) {
+    queue.push(entry);
+    while (queue.length > MAX_QUEUE_SIZE) queue.shift();
+  }
 
-  const scheduleFlush = () => {
-    if (flushTimer) return;
-
-    const now = Date.now();
-    const delay = Math.max(flushMs, backoffUntil - now);
-    flushTimer = setTimeout(flush, delay);
-  };
-
-  const enqueue = (telemetryEvent) => {
-    if (!enabled) return;
-
-    if (queue.length >= MAX_QUEUE_SIZE) queue.shift();
-    queue.push(telemetryEvent);
-    scheduleFlush();
-  };
-
-  const flush = async () => {
-    flushTimer = null;
-    if (!enabled) return;
+  async function flush() {
     if (flushing) return;
     if (queue.length === 0) return;
-
-    const now = Date.now();
-    if (backoffUntil > now) {
-      scheduleFlush();
-      return;
-    }
+    if (Date.now() < backoffUntil) return;
 
     flushing = true;
     const batch = queue.splice(0, queue.length);
-
     try {
-      const resp = await fetch(endpoint, {
+      const res = await fetch(endpointUrl, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+        },
         body: JSON.stringify(batch),
       });
-
-      if (!resp.ok) {
-        backoffUntil = Date.now() + 5000;
-        console.warn(`${logPrefix} telemetry POST failed (${resp.status})`);
-      } else {
-        backoffUntil = 0;
-      }
-    } catch (err) {
-      backoffUntil = Date.now() + 5000;
-      console.warn(`${logPrefix} telemetry POST error`, err);
+      if (!res.ok) throw new Error(`AOS connector HTTP ${res.status}`);
+    } catch {
+      queue.unshift(...batch);
+      backoffUntil = Date.now() + BACKOFF_MS;
     } finally {
       flushing = false;
     }
-  };
+  }
 
-  const recordEvent = (evt) => {
-    const type = evt?.type;
+  const interval = setInterval(() => {
+    flush().catch(() => undefined);
+  }, flushMs);
+  interval.unref?.();
 
-    currentTraceId = extractTraceId(evt, currentTraceId);
+  function debounce(key, fn, ms) {
+    const existing = debouncers.get(key);
+    if (existing?.timeoutId) clearTimeout(existing.timeoutId);
 
-    const traceId = currentTraceId || localTraceId;
+    const timeoutId = setTimeout(() => {
+      debouncers.delete(key);
+      fn();
+    }, ms);
 
-    const properties = evt?.properties ?? evt?.data;
-    const payload = sanitizeJson(properties);
-    if (payload == null) return;
-
-    const sessionID = currentTraceId;
-
-    let spanId = null;
-    let parentSpanId = null;
-
-    if (typeof sessionID === "string" && sessionID.trim()) {
-      const state = getSessionState(sessionID);
-
-      // De-dupe noisy session.status events.
-      if (type === "session.status") {
-        const statusType = payload?.status?.type;
-        const fingerprint = statusType ? String(statusType) : "unknown";
-        if (state.lastSessionStatus === fingerprint) return;
-        state.lastSessionStatus = fingerprint;
-      }
-
-      // De-dupe repeated message.updated for the same message id.
-      if (type === "message.updated") {
-        const msgId = payload?.info?.id;
-        if (typeof msgId === "string" && msgId.trim()) {
-          const key = msgId.trim();
-          if (state.seenMessageUpdated.has(key)) return;
-          state.seenMessageUpdated.add(key);
-
-          if (state.seenMessageUpdated.size > 200) state.seenMessageUpdated.clear();
-        }
-      }
-
-      // De-dupe tool.execute events by (callID,type)
-      if (type === "tool.execute.before" || type === "tool.execute.after") {
-        const callID = payload?.callID;
-        if (typeof callID === "string" && callID.trim()) {
-          const key = `${type}:${callID.trim()}`;
-          if (state.seenToolEvents.has(key)) return;
-          state.seenToolEvents.add(key);
-
-          if (state.seenToolEvents.size > 500) state.seenToolEvents.clear();
-        }
-      }
-
-      // Use a stable session span id as the root parent for the whole chain.
-      parentSpanId = state.sessionSpanId;
-      if (type === "session.created" || type === "session.updated" || type === "session.status" || type === "session.idle") {
-        spanId = state.sessionSpanId;
-        parentSpanId = null;
-      } else if (type === "message.updated") {
-        const messageID = payload?.info?.id;
-        spanId = getOrCreateSpan(state.messageSpans, messageID);
-
-        if (payload?.info?.role === "assistant" && typeof messageID === "string" && messageID.trim()) {
-          state.lastAssistantMessageID = messageID.trim();
-        }
-      } else if (type === "message.part.updated") {
-        const messageID = payload?.part?.messageID;
-        spanId = getOrCreateSpan(state.messageSpans, messageID);
-
-        const callID = payload?.part?.callID;
-        if (typeof callID === "string" && callID.trim() && typeof messageID === "string" && messageID.trim()) {
-          state.callToMessage.set(callID.trim(), messageID.trim());
-        }
-      } else if (type === "tool.execute.before" || type === "tool.execute.after") {
-        const callID = payload?.callID;
-        spanId = getOrCreateSpan(state.toolSpans, callID);
-
-        const mappedMessageID = typeof callID === "string" ? state.callToMessage.get(callID) : null;
-        const parentMessageID = mappedMessageID || state.lastAssistantMessageID;
-        const parentMessageSpan = getOrCreateSpan(state.messageSpans, parentMessageID);
-        if (parentMessageSpan) parentSpanId = parentMessageSpan;
-      }
-    }
-
-    const tags = tagsFor(type, payload);
-    const level = levelFor(type, payload);
-
-    // Project/worktree dimensions for aggregation.
-    const projectId = project?.id;
-    const projectName = project?.name;
-
-    const attributes = {
-      type,
-      tags,
-      trace_id: traceId,
-      project: project ? { id: projectId, name: projectName } : undefined,
-      directory,
-      worktree,
-      properties: payload,
-      dimensions: {
-        project_id: projectId,
-        project_name: projectName,
-        opencode_project_id: payload?.info?.projectID ?? null,
-        worktree,
-        directory,
-        session_id: typeof sessionID === "string" ? sessionID : null,
-        message_id: payload?.info?.id ?? payload?.part?.messageID ?? payload?.messageID ?? null,
-        role: payload?.info?.role ?? null,
-        tool: payload?.tool ?? payload?.part?.tool ?? null,
-        call_id: payload?.callID ?? payload?.part?.callID ?? null,
-        tool_status: payload?.state?.status ?? payload?.part?.state?.status ?? null,
-      },
-      otel: {
-        trace_id: traceId,
-        span_id: spanId,
-        parent_span_id: parentSpanId,
-        span_name: type,
-      },
-    };
-
-    enqueue({
-      level,
-      logger_name: "opencode",
-      message: messageFor(type, evt),
-      trace_id: traceId,
-      span_id: spanId,
-      timestamp: new Date().toISOString(),
-      attributes,
-    });
-  };
+    debouncers.set(key, { timeoutId });
+  }
 
   return {
     event: async ({ event }) => {
-      if (!enabled) return;
+      if (!shouldCapture(event?.type)) return;
 
-      const type = event?.type;
-      if (!type || !shouldCapture(type)) return;
+      const entry = buildLogEntry({
+        event,
+        projectId,
+        directory,
+        worktree,
+        localTraceId,
+      });
 
-      if (DEBOUNCED_TYPES.has(type)) {
-        const payload = event;
-        debouncePending.set(type, payload);
-
-        const existing = debounceTimers.get(type);
-        if (existing) clearTimeout(existing);
-
-        debounceTimers.set(
-          type,
-          setTimeout(() => {
-            const last = debouncePending.get(type);
-            debouncePending.delete(type);
-            debounceTimers.delete(type);
-            recordEvent(last);
-          }, MESSAGE_PART_DEBOUNCE_MS)
-        );
-
+      if (DEBOUNCED_TYPES.has(event.type)) {
+        const sessionId = getSessionId(event) ?? "local";
+        debounce(`${sessionId}:${event.type}`, () => {
+          enqueue(entry);
+        }, MESSAGE_PART_DEBOUNCE_MS);
         return;
       }
 
-      recordEvent(event);
+      enqueue(entry);
 
-      if (type === "session.idle") await flush();
+      if (event.type === "session.idle" || queue.length >= MAX_QUEUE_SIZE) {
+        await flush();
+      }
     },
   };
 };

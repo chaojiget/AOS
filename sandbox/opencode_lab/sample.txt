@@ -1,0 +1,2 @@
+This is a sandbox folder for running OpenCode.
+Edit this file or create new files to trigger telemetry events.
